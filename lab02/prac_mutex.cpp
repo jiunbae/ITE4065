@@ -23,7 +23,7 @@ void * ThreadFunc(void * arg) {
 int main(void) {
     pthread_t threads[NUM_THREAD];
 
-    for (int i = 0; i < NUM_INCREASE; i++) {
+    for (int i = 0; i < NUM_THREAD; i++) {
         if (pthread_create(&threads[i], 0, ThreadFunc, NULL) < 0) {
             printf("pthread_create error!\n");
             return 0;
