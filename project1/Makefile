@@ -1,18 +1,16 @@
 # Compiler and Compile options.
 CC = g++
-CXXFLAGS = -g -Wall -std=c++11
+CXXFLAGS = -g -Wall -std=c++11 -O3
 
 # Macros specifying path for compile.
 SRCS := src/main.cc
-OBJS := $(SRCS:.cpp=.o)
+OBJS := $(SRCS:.cc=.o)
 INC = include/
-LIB = lib/
-
+LIB = lib/*.cc
 
 # Pre-Processor.
 CPPFLAGS += -I$(INC)
 
-# Compile command.
 TARGET = run
 
 $(TARGET): $(OBJS)
