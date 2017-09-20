@@ -1,6 +1,7 @@
 #ifndef TIME_H
 #define TIME_H
 
+#include <iostream>
 #include <chrono>
 
 using namespace std;
