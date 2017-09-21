@@ -5,7 +5,7 @@
 
 using namespace std;
 
-int main(){
+int main() {
     int N;
     set<string> word_list;
     char cmd;

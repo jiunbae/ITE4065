@@ -8,19 +8,23 @@
 using namespace std;
 
 int main(int argc, char * argv[]) {
-    int n = read_int();
+    int n; 
     char cmd;
     string query;
     set<string> patterns;
 
+    cin >> n;
     for (int i = 0; i < n; i++) {
-        patterns.insert(read_string());
+        //read_string(query);
+        cin >> query;
+        patterns.insert(query);
     }
-    cout << "R" << std::endl;
+    cout << "R" << '\n';
 
     while(cin >> cmd){
         cin.get();
-        query = read_string();
+        //read_line(query);
+        getline(cin, query);
         switch(cmd){
             case 'Q':
                 {
@@ -39,7 +43,7 @@ int main(int argc, char * argv[]) {
                             cout << "|";
                         }
                     }
-                    cout << std::endl;
+                    cout << '\n';
                 }
                 break;
             case 'A':

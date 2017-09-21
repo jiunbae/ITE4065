@@ -11,9 +11,7 @@
     #define gc getchar_unlocked
 #endif
 
-static bool init = false;
-
-using namespace std;
+static bool _input_init = false;
 
 inline int read_int() {
     register int c = gc();
@@ -30,15 +28,20 @@ inline int read_int() {
     return (neg ? -1 : 1) * x;
 }
 
-inline std::string read_string() {
-    if (!init) {
+inline void read_string(std::string& line) {
+    if (!_input_init) {
         std::ios_base::sync_with_stdio(false);
-        std::cin.tie(NULL);
-        init = true;
+        _input_init = true;
     }
-    std::string line;
+    std::cin >> line;
+}
+
+inline void read_line(std::string& line) {
+    if (!_input_init) {
+        std::ios_base::sync_with_stdio(false);
+        _input_init = true;
+    }
     getline(std::cin, line);
-    return line;
 }
 
 #endif
