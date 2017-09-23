@@ -49,6 +49,7 @@ int main(int argc, char * argv[]) {
                 for (auto it = patterns.begin(); it != patterns.end(); it++) {
                     if ((*it) == query) {
                         patterns.erase(it);
+                        break;
                     }
                 }
                 table = create_table(patterns, init_state);
