@@ -6,7 +6,7 @@ using namespace std;
 #define CHAR_SIZE (26)
 #define CHAR_START ('a')
 
-using TABLE = vector<vector<char>>;
+using TABLE = vector<vector<int>>;
 using MATCH = vector<int>;
 
 TABLE create_table(const vector<string>& patterns, int& init_state) {
@@ -22,7 +22,7 @@ TABLE create_table(const vector<string>& patterns, int& init_state) {
     int pre_state = 0;
     char pre_char = 0;
 
-    TABLE table = vector<vector<char>>(table_size, vector<char>(CHAR_SIZE, -1));
+    TABLE table = vector<vector<int>>(table_size, vector<int>(CHAR_SIZE, -1));
 
     for (const auto& pattern : patterns) {
         for (const auto& ch : pattern) {
