@@ -19,8 +19,8 @@ TABLE create_table(const vector<string>& patterns, int& init_state) {
     int state = state_init;
     int state_num = state_init + 1;
     int state_final = 0;
-    int pre_state;
-    char pre_char;
+    int pre_state = 0;
+    char pre_char = 0;
 
     TABLE table = vector<vector<char>>(table_size, vector<char>(CHAR_SIZE, -1));
 
@@ -57,11 +57,9 @@ TABLE create_table(const vector<string>& patterns, int& init_state) {
 }
 
 MATCH find_match(const TABLE& table, const string& query, int init_state) {
-    int start;
-    int pos;
+    unsigned int start;
+    unsigned int pos;
     int state;
-    int inputChar;
-    int match_pattern = 0;
 
     MATCH result;
 
@@ -75,7 +73,7 @@ MATCH find_match(const TABLE& table, const string& query, int init_state) {
             if (state < init_state && state > -1) {
                 result.push_back(state);
             }
-        } while ((state != -1) && (pos < query.length()));
+        } while ((state != -1) && (pos < (size_t)query.length()));
     }
 
     return result;
