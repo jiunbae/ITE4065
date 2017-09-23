@@ -1,9 +1,11 @@
 #include <iostream>
 #include <string>
 #include <set>
-#include <map>
+#include <vector>
+#include <iostream>
 
 #include <input.h>
+#include <aho-corasick.h>
 
 using namespace std;
 
@@ -11,46 +13,45 @@ int main(int argc, char * argv[]) {
     int n; 
     char cmd;
     string query;
-    set<string> patterns;
+    TABLE table;
+    vector<string> patterns;
+    int init_state = 0;
 
     cin >> n;
     for (int i = 0; i < n; i++) {
         //read_string(query);
         cin >> query;
-        patterns.insert(query);
+        patterns.push_back(query);
     }
-    cout << "R" << '\n';
+    table = create_table(patterns, init_state);
+    cout << "R" << newl;
 
     while(cin >> cmd){
         cin.get();
         //read_line(query);
         getline(cin, query);
         switch(cmd){
-            case 'Q':
-                {
-                    multimap<size_t, string> result;
-                    for (set<string>::iterator it = patterns.begin();
-                            it != patterns.end(); it++){
-                        size_t pos = query.find(*it);
-                        if (pos != string::npos){
-                            result.insert(make_pair(pos, *it));
-                        }
-                    }
-                    multimap<size_t, string>::iterator it = result.begin();
-                    for (int cnt = result.size(); cnt != 0; cnt--, it++){
-                        cout << it->second;
-                        if (cnt != 1){
-                            cout << "|";
-                        }
-                    }
-                    cout << '\n';
-                }
+            case 'Q': {
+                MATCH matches = find_match(table, query, init_state);
+
+                auto begin = matches.begin();
+                if (begin != matches.end())
+                    cout << patterns[*begin++];
+                while (begin != matches.end())
+                    cout << '|' << patterns[*begin++];
+            }
                 break;
             case 'A':
-                patterns.insert(query);
+                patterns.push_back(query);
+                table = create_table(patterns, init_state);
                 break;
             case 'D':
-                patterns.erase(query);
+                for (auto it = patterns.begin(); it != patterns.end(); it++) {
+                    if ((*it) == query) {
+                        patterns.erase(it);
+                    }
+                }
+                table = create_table(patterns, init_state);
                 break;
         }
     }
