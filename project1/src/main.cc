@@ -1,10 +1,8 @@
 #include <iostream>
 #include <string>
-#include <set>
 #include <vector>
-#include <iostream>
 
-#include <input.h>
+#define newl ('\n')
 #include <aho-corasick.h>
 
 using namespace std;
@@ -17,6 +15,7 @@ int main(int argc, char * argv[]) {
     vector<string> patterns;
     int init_state = 0;
 
+    std::ios::sync_with_stdio(false);
     cin >> n;
     for (int i = 0; i < n; i++) {
         //read_string(query);
@@ -39,6 +38,7 @@ int main(int argc, char * argv[]) {
                     cout << patterns[*begin++];
                 while (begin != matches.end())
                     cout << '|' << patterns[*begin++];
+                cout << newl;
             }
                 break;
             case 'A':
