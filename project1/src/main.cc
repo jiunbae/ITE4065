@@ -1,59 +1,61 @@
 #include <iostream>
 #include <string>
+#include <set>
 #include <vector>
+#include <iostream>
+#include <algorithm>
+#include <iterator>
+
 
 #define newl ('\n')
-#include <aho-corasick.h>
+#define sep ('|')
+#include "aho-corasick.h"
 
 using namespace std;
 
 int main(int argc, char * argv[]) {
-    int n; 
+    int n = 0;
     char cmd;
     string query;
-    TABLE table;
-    vector<string> patterns;
-    int init_state = 0;
+    set<string> patterns;
 
-    std::ios::sync_with_stdio(false);
-    cin >> n;
+    std::ios_base::sync_with_stdio(false);
+    std::cin >> n;
     for (int i = 0; i < n; i++) {
-        //read_string(query);
-        cin >> query;
-        patterns.push_back(query);
+        std::cin >> query;
+        patterns.insert(query);
     }
-    table = create_table(patterns, init_state);
-    cout << "R" << newl;
+    Table* table = new Table(patterns);
+    std::cout << "R" << newl;
 
-    while(cin >> cmd){
-        cin.get();
-        //read_line(query);
-        getline(cin, query);
-        switch(cmd){
-            case 'Q': {
-                MATCH matches = find_match(table, query, init_state);
 
-                auto begin = matches.begin();
-                if (begin != matches.end())
-                    cout << patterns[*begin++];
-                while (begin != matches.end())
-                    cout << '|' << patterns[*begin++];
-                cout << newl;
-            }
-                break;
-            case 'A':
-                patterns.push_back(query);
-                table = create_table(patterns, init_state);
-                break;
-            case 'D':
-                for (auto it = patterns.begin(); it != patterns.end(); it++) {
-                    if ((*it) == query) {
-                        patterns.erase(it);
-                        break;
-                    }
+    while (std::cin >> cmd) {
+        std::cin.get();
+        getline(std::cin, query);
+
+        switch (cmd) {
+        case 'Q': {
+            list<string> matches = table->match(query);
+
+            auto begin = matches.begin();
+            if (begin != matches.end()) {
+                std::cout << *(begin++);
+                while (begin != matches.end()) {
+                    std::cout << sep;
+                    std::cout << *(begin++);
                 }
-                table = create_table(patterns, init_state);
-                break;
+            } else {
+                std::cout << -1;
+            }
+            std::cout << newl;
+        }
+                  break;
+        case 'A':
+            table->add(query);
+            break;
+        case 'D':
+            table->remove(query);
+            break;
         }
     }
     return 0;
