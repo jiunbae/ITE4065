@@ -1,11 +1,10 @@
 #!/bin/bash
-@Echo off
 
 make clean
 make all
 
 # INIT TEST
-TEST_PATH="test/data/tiny"
+TEST_PATH="test/data/small"
 TEST_INIT="$TEST_PATH.init"
 TEST_WORK="$TEST_PATH.work"
 TEST_RESULT="$TEST_PATH.result"
@@ -39,6 +38,8 @@ RESULT_REF=`$WORK $TEST_INIT $TEST_WORK $TEST_RESULT $REF`
 
 echo "$TEST_INFO $RESULT_RUN" > "$TEST_FILE-RUN"
 echo "$TEST_INFO $RESULT_REF" > "$TEST_FILE-REF"
+
+echo "$RESULT_RUN"
 
 echo $((TEST_NUM + 1)) > $TEST_NUM_FILE
 
