@@ -35,11 +35,16 @@ int main() {
                         }
                     }
                     multimap<size_t, string>::iterator it = result.begin();
-                    for (int cnt = result.size(); cnt != 0; cnt--, it++){
-                        cout << it->second;
-                        if (cnt != 1){
-                            cout << "|";
+                    int cnt = result.size();
+                    if (cnt) {
+                        for (; cnt != 0; cnt--, it++){
+                            cout << it->second;
+                            if (cnt != 1){
+                                cout << "|";
+                            }
                         }
+                    } else {
+                        cout << -1;
                     }
                     cout << std::endl;
                 }
