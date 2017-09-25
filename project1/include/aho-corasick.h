@@ -88,7 +88,7 @@ private:
             return;
 
         for (const auto& pattern : pre_add) {
-            patterns.insert(pattern).second;
+            patterns.insert(pattern);
             _table_size += pattern.length() + 1;
         }
         
