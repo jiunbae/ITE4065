@@ -20,6 +20,7 @@ int main(int argc, char * argv[]) {
     set<string> patterns;
 
     std::ios_base::sync_with_stdio(false);
+    query.resize(1024);
     std::cin >> n;
     for (int i = 0; i < n; i++) {
         std::cin >> query;
