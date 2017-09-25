@@ -1,7 +1,5 @@
-g++ prime_main.cpp -std=c++0x -lpthread
-
 CC = g++
-CXXFLAGS = -g -Wall -std=c++0x -O3 -lpthread
+CXXFLAGS = -g -Wall -std=c++0x -O3 -pthread
 
 SRC := prime_main.cpp
 OBJ := $(SRC:.cpp=.o)
