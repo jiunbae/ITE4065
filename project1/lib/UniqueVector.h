@@ -1,5 +1,6 @@
 #include <vector>
 #include <unordered_set>
+#include <set>
 
 #ifndef UNIQUE_VECTOR_H
 #define UNIQUE_VECTOR_H
@@ -8,14 +9,15 @@
 
 template <typename T>
 class UniqueVector {
-public:
+public:    
+    typedef typename std::vector<T>::iterator iterator;
+    typedef const typename std::vector<T>::const_iterator const_iterator;
+
     UniqueVector() {
-        container.resize(UNIQUE_VECTOR_DEFAULT_SIZE);
-        unique.resize(UNIQUE_VECTOR_DEFAULT_SIZE);
+        container.reserve(UNIQUE_VECTOR_DEFAULT_SIZE);
     }
     UniqueVector(size_t size) {
-        container.resize(size);
-        unique.resize(size);
+        container.reserve(size);
     }
     ~UniqueVector() {}
 
@@ -23,12 +25,12 @@ public:
         return _insert(element);
     }
 
-    bool remove(const int index) {
-
+    bool remove(int index) {
+        return _remove(container.begin() + index);
     }
 
-    bool remove(const T element) {
-
+    bool remove(const T& element) {
+        return _remove(container.find(element));
     }
 
     T& operator[] (int index) {
@@ -38,6 +40,20 @@ public:
     T at(int index) const {
         return container[index];
     }
+
+    int find(const T& element) const {
+        return std::distance(container.begin(), find(container.begin(), container.end(), element));
+    }
+
+    size_t size() const {
+        return container.size();
+    }
+
+    iterator begin() { return container.begin(); }
+    const_iterator begin() const { return container.begin(); }
+    iterator end() { return container.end(); }
+    const_iterator end() const { return container.end(); }
+
 private:
     std::vector<T> container;
     std::set<T> unique;
@@ -46,7 +62,7 @@ private:
         return unique.find(element) != unique.end();
     }
 
-    void _insert(const T element) {
+    bool _insert(const T element) {
         if (contain(element))
             return false;
 
@@ -55,10 +71,15 @@ private:
         return true;
     }
 
-    void _remove(int index) {
-        if (!contain(at(index)))
+    template <typename IT>
+    bool _remove(IT it) {
+        if (!contain(*it))
             return false;
+
+        container.erase(it);
+        unique.erase(*it);
+        return true;
     }
-}
+};
 
 #endif
