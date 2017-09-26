@@ -1,20 +1,14 @@
 #include <vector>
 #include <string>
 #include <list>
-#include <unordered_map>
-#include <queue>
-
-using TABLE = std::vector<std::vector<int>>;
-
-using namespace std;
+#include <pool.h>
 
 #define CHAR_SIZE (26)
 #define CHAR_START ('a')
+#define DEFAULT_THREAD_SIZE 10
 
 class Table {
 public:
-    std::set<std::string> patterns;
-
     Table(const std::set<std::string>& patterns) : patterns(patterns) {
         for (const auto& pattern : patterns) {
             table_size += pattern.length() + 1;
@@ -31,36 +25,50 @@ public:
         }
     }
 
-    list<string> match(const string& query) {
-        unsigned int start;
-        unsigned int pos;
-        int state;
-
+    std::list<std::string> match(const std::string& query) {
         sync();
 
-        list<string> result;
-        for (start = 0; start < query.length(); start++) {
-            string r = "";
-            state = state_init;
-            pos = start;
-            do {
-                r += query[pos];
-                state = raw[state][query[pos++] - CHAR_START];
-                if (state < state_init && state > -1) {
-                    auto iter = find(result.begin(), result.end(), r);
-                    if (iter == result.end())
-                        result.push_back(r);
-                }
-            } while ((state != -1) && (pos < query.length()));
+        std::vector<std::future<std::pair<int, std::list<int>>>> tasks;
+
+        for (size_t start = 0, length = query.length(); start < length; start++) {
+            results.emplace_back({start, pool->push(
+                [state_init](const char * query, size_t length) -> std::list {
+                    std::list result;
+                    int state = state_init;
+                    size_t pos = 0;
+                    do {
+                        state = raw[state][query[pos++] - CHAR_START];
+                        if (state < state_init && state > -1)
+                            result.push_back(state);
+                    } while ((state != -1) && (pos < length));
+                    return result;
+                }, query.c_str() + start, length - start)
+            });
         }
-        return result;
+
+        std::vector<std::pair<int, std::list<int>>> results;
+        for (auto&& task : tasks) {
+            results.push_back(task.get());
+        }
+
+        std::sort(results.begin(), results.end());
+
+        std::list<std::string> tq;
+        for (const auto& result : results) {
+            tq.push_back()
+        }
+        return tq;
     }
 
-    void add(const string& pattern) {
+    void resize(size_t size) {
+        pool = new Thread::Pool(size);
+    }
+
+    void add(const std::string& pattern) {
         pre_add.insert(pattern);
     }
 
-    void remove(const string& pattern) {
+    void remove(const std::string& pattern) {
         pre_rem.insert(pattern);
     }
 
@@ -78,8 +86,12 @@ private:
     int pre_state = 0;
     char pre_char = 0;
 
+    std::set<std::string> patterns;
     std::vector<std::vector<int>> raw;
+    std::vector<std::string>
     std::set<std::string> pre_add, pre_rem;
+
+    Thread::Pool * pool;
 
     void sync() {
         int _table_size = table_size;
@@ -120,7 +132,7 @@ private:
         pre_rem.clear();
     }
 
-    void update_table(const string& pattern) {
+    void update_table(const std::string& pattern) {
         for (const auto& ch : pattern) {
             if (raw[state][ch - CHAR_START] == -1) {
                 raw[state][ch - CHAR_START] = state_num;
