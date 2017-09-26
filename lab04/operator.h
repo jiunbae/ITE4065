@@ -25,7 +25,7 @@ public:
         int token = (e - s) / (threadpool->size() * 2);
         if (token <= 0) token = 1;
 
-        std::vector< std::future<int> > results;
+        std::vector<std::future<int>> results;
         for (int i = s; i <= e; i += token) {
             results.emplace_back(threadpool->push([this](int s, int e) -> int {
                 int sum = 0;
