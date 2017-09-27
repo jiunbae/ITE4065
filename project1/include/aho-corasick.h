@@ -3,17 +3,17 @@
 #include <list>
 #include <unordered_map>
 #include <queue>
+#include <functional>
+#include <iostream>
 
 using TABLE = std::vector<std::vector<int>>;
-
-using namespace std;
 
 #define CHAR_SIZE (26)
 #define CHAR_START ('a')
 
 class Table {
 public:
-    std::set<std::string> patterns;
+    using _return_type = std::queue<std::string>;
 
     Table(const std::set<std::string>& patterns) : patterns(patterns) {
         for (const auto& pattern : patterns) {
@@ -31,36 +31,47 @@ public:
         }
     }
 
-    list<string> match(const string& query) {
+    _return_type& match(const std::string& query) {
         unsigned int start;
         unsigned int pos;
         int state;
 
         sync();
 
-        list<string> result;
+        std::set<std::string> uniquer;
         for (start = 0; start < query.length(); start++) {
-            string r = "";
+            std::string r = "";
             state = state_init;
             pos = start;
             do {
                 r += query[pos];
                 state = raw[state][query[pos++] - CHAR_START];
                 if (state < state_init && state > -1) {
-                    auto iter = find(result.begin(), result.end(), r);
-                    if (iter == result.end())
-                        result.push_back(r);
+                    if (uniquer.find(r) == uniquer.end()) {
+                        fin.push(r);
+                        uniquer.insert(r);
+                    }
                 }
             } while ((state != -1) && (pos < query.length()));
         }
-        return result;
+        return fin;
     }
 
-    void add(const string& pattern) {
+    bool wrapper(_return_type& request, std::function<void(const std::string&)> task) {
+        if (request.empty()) return false;
+
+        while (!request.empty()) {
+            task(request.front());
+            request.pop();
+        }
+        return true;
+    }
+
+    void add(const std::string& pattern) {
         pre_add.insert(pattern);
     }
 
-    void remove(const string& pattern) {
+    void remove(const std::string& pattern) {
         pre_rem.insert(pattern);
     }
 
@@ -80,6 +91,8 @@ private:
 
     std::vector<std::vector<int>> raw;
     std::set<std::string> pre_add, pre_rem;
+    std::set<std::string> patterns;
+    _return_type fin;
 
     void sync() {
         int _table_size = table_size;
@@ -120,7 +133,7 @@ private:
         pre_rem.clear();
     }
 
-    void update_table(const string& pattern) {
+    void update_table(const std::string& pattern) {
         for (const auto& ch : pattern) {
             if (raw[state][ch - CHAR_START] == -1) {
                 raw[state][ch - CHAR_START] = state_num;
