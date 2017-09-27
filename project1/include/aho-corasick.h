@@ -1,12 +1,12 @@
 #include <vector>
 #include <string>
 #include <list>
-#include <pool.h>
-#include <unique.h>
+#include "pool.h"
+#include "unique.h"
 
 #define CHAR_SIZE (26)
 #define CHAR_START ('a')
-#define DEFAULT_THREAD_SIZE 10
+#define DEFAULT_THREAD_SIZE 24
 #define DEFAULT_RESERVE_SIZE 4096
 
 class Table {
@@ -40,16 +40,16 @@ public:
         for (size_t start = 0, length = query.length(); start < length; start++) {
             tasks.emplace_back(start, pool->push(
                 [=](const char * query, size_t length) -> std::list<int> {
-                    std::list<int> result;
-                    int state = state_init;
-                    size_t pos = 0;
-                    do {
-                        state = raw[state][query[pos++] - CHAR_START];
-                        if (state < state_init && state > -1)
-                            result.push_back(state);
-                    } while ((state != -1) && (pos < length));
-                    return result;
-                }, query.c_str() + start, length - start)
+                std::list<int> result;
+                int state = state_init;
+                size_t pos = 0;
+                do {
+                    state = raw[state][query[pos++] - CHAR_START];
+                    if (state < state_init && state > -1)
+                        result.push_back(state);
+                } while ((state != -1) && (pos < length));
+                return result;
+            }, query.c_str() + start, length - start)
             );
         }
 
@@ -122,7 +122,7 @@ private:
             patterns.insert(pattern);
             _table_size += pattern.length() + 1;
         }
-        
+
         for (const auto& pattern : pre_rem) {
             patterns.erase(pattern);
             _table_size -= pattern.length() + 1;
@@ -139,9 +139,8 @@ private:
         }
 
         state_final = 0;
-        state_init = patterns.size();
+        state = state_init = patterns.size();
         state_num = state_init + 1;
-        state = state_init;
 
         for (const auto& pattern : patterns) {
             update_table(pattern);
@@ -152,23 +151,22 @@ private:
     }
 
     void update_table(const std::string& pattern) {
+        bool check = false;
+
         for (const auto& ch : pattern) {
             if (raw[state][ch - CHAR_START] == -1) {
-                raw[state][ch - CHAR_START] = state_num;
-                pre_state = state;
-                pre_char = ch - CHAR_START;
-                state = state_num++;
-            }
-            else {
+                state = raw[pre_state = state][pre_char = ch - CHAR_START] = state_num++;
+                check = true;
+            } else {
                 state = raw[pre_state = state][pre_char = ch - CHAR_START];
             }
         }
         raw[pre_state][pre_char] = state_final;
+        std::swap(raw[state_final], raw[state]);
+        std::fill(raw[state].begin(), raw[state].end(), -1);
 
-        swap(raw[state_final], raw[state]);
-        fill(raw[state].begin(), raw[state].end(), -1);
-
-        --state_num;
+        if (check)
+            --state_num;
         state = state_init;
         ++state_final;
     }
