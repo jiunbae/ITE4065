@@ -10,10 +10,11 @@
 #define CHAR_START ('a')
 #define DEFAULT_THREAD_SIZE 20
 #define DEFAULT_RESERVE_SIZE 2048
+
 using namespace std;
 class Table {
 public:
-    using _return_type = std::queue<std::string>;
+    using _return_type = std::queue<int>;
 
     Table() {
         init();
@@ -40,31 +41,26 @@ public:
     _return_type& match(const std::string& query) {
         sync();
 
+        while (!fin.empty()) fin.pop();
+
         std::fill(uniques.begin(), uniques.begin() + patterns.size(), false);
         std::queue<std::future<void>> tasks;
 
         for (size_t start = 0, length = query.length(); start < length; start++) {
-            tasks.emplace(pool->push([=](int tid, const char * query, size_t length) -> void {
+            tasks.emplace(pool->push([=](const char * query, size_t length) -> void {
                 size_t pos = 0;
                 for (int state = state_init; state != -1 && pos < length; ++pos) {
                     state = raw[state][query[pos] - CHAR_START];
                     if (-1 < state && state < state_init) {
-                        dumps[tid].emplace(length, state + 1);
+                        results.emplace_back(length, state + 1);
                     }
                 }
-            }, start % DEFAULT_THREAD_SIZE, query.c_str() + start, length - start));
+            }, query.c_str() + start, length - start));
         }
 
         while (!tasks.empty()) {
             tasks.front().get();
             tasks.pop();
-        }
-
-        for (auto& dump : dumps) {
-            while (!dump.empty()) {
-                results.push_back(dump.front());
-                dump.pop();
-            }
         }
 
         std::sort(results.begin(), results.end(), [=](const std::pair<int, int>& lhs, const std::pair<int, int>& rhs) {
@@ -75,7 +71,7 @@ public:
 
         for (const auto& result : results) {
             if (!uniques[result.second - 1]) {
-                fin.push(patterns[result.second - 1]);
+                fin.push(result.second - 1);
                 uniques[result.second - 1] = true;
             }
         }
@@ -89,7 +85,7 @@ public:
             return false;
 
         while (!request.empty()) {
-            task(request.front());
+            task(patterns[request.front()]);
             request.pop();
         }
         return true;
@@ -125,10 +121,8 @@ private:
     unique::vector<std::string> patterns;
 
     std::vector<bool> uniques;
-    std::vector<std::queue<std::pair<int, int>>> dumps;
     std::vector<std::pair<int, int>> results;
-
-    std::queue<std::string> fin;
+    _return_type fin;
 
     Thread::Pool * pool;
 
@@ -138,12 +132,9 @@ private:
         raw.reserve(DEFAULT_RESERVE_SIZE);
         results.reserve(DEFAULT_RESERVE_SIZE);
         uniques.reserve(DEFAULT_RESERVE_SIZE);
-        dumps.reserve(DEFAULT_THREAD_SIZE);
 
         raw = std::vector<std::vector<int>>(DEFAULT_RESERVE_SIZE, std::vector<int>(CHAR_SIZE, -1));
         uniques = std::vector<bool>(DEFAULT_RESERVE_SIZE, false);
-        dumps = std::vector<std::queue<std::pair<int, int>>>(DEFAULT_THREAD_SIZE);
-
     }
 
     void sync() {

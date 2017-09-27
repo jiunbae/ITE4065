@@ -36,6 +36,7 @@ int main(int argc, char * argv[]) {
         switch (cmd) {
         case 'Q': {
             bool flag = false;
+           
             if (!table->wrapper(table->match(query), [&flag](const std::string& pattern) {
                 if (!flag) {
                     std::cout << pattern;
