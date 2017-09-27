@@ -114,6 +114,7 @@ private:
     void sync() {
         size_t _table_size = table_size;
 
+        std::fill(pCheck.begin(), pCheck.begin() + patterns.size(), false);
         if (pre_add.empty() && pre_rem.empty())
             return;
 
@@ -145,8 +146,6 @@ private:
         for (const auto& pattern : patterns) {
             update_table(pattern);
         }
-
-        std::fill(pCheck.begin(), pCheck.begin() + patterns.size(), false);
 
         pre_add.clear();
         pre_rem.clear();
