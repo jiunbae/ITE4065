@@ -10,6 +10,8 @@
 #define sep ('|')
 #include <aho-corasick.h>
 
+#define DEFAULT_RESERVE_SIZE 1024
+
 using namespace std;
 
 int main(int argc, char * argv[]) {
@@ -19,7 +21,7 @@ int main(int argc, char * argv[]) {
     vector<string> patterns;
 
     std::ios_base::sync_with_stdio(false);
-    query.reserve(1024);
+    query.reserve(DEFAULT_RESERVE_SIZE);
     std::cin >> n;
     for (int i = 0; i < n; i++) {
         std::cin >> query;
