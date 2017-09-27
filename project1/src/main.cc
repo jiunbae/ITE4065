@@ -8,7 +8,7 @@
 
 #define newl ('\n')
 #define sep ('|')
-#include <aho-corasick.h>
+#include "aho-corasick.h"
 
 using namespace std;
 
@@ -35,18 +35,16 @@ int main(int argc, char * argv[]) {
 
         switch (cmd) {
         case 'Q': {
-            list<string> matches = table->match(query);
-
-            auto begin = matches.begin();
-            if (begin != matches.end()) {
-                std::cout << *(begin++);
-                while (begin != matches.end()) {
-                    std::cout << sep;
-                    std::cout << *(begin++);
+            bool flag = false;
+            if (!table->wrapper(table->match(query), [&flag](const std::string& pattern) {
+                if (!flag) {
+                    std::cout << pattern;
+                    flag = true;
+                } else {
+                    std::cout << sep << pattern;
                 }
-            } else {
-                std::cout << -1;
-            }
+            })) std::cout << -1;
+
             std::cout << newl;
         }
                   break;
