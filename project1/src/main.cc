@@ -8,7 +8,7 @@
 
 #define newl ('\n')
 #define sep ('|')
-#include "aho-corasick.h"
+#include <aho-corasick.h>
 
 using namespace std;
 

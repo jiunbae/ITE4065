@@ -16,6 +16,8 @@ namespace Thread {
         Pool(size_t);
         ~Pool();
         int size() { return _size; }
+        bool done() { return tasks.empty(); }
+
         template <class F, class... Args>
         auto push(F&& f, Args&&... args) 
             -> std::future<typename std::result_of<F(Args...)>::type>;
@@ -38,7 +40,7 @@ namespace Thread {
                             this->cond.wait(lock, [this]() -> bool {
                                 return this->stop || !this->tasks.empty();
                             });
-                            if(this->stop && this->tasks.empty())
+                            if (this->stop && this->tasks.empty())
                                 return;
                             task = std::move(this->tasks.front());
                             this->tasks.pop();
