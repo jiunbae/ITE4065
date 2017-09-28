@@ -6,29 +6,28 @@
 #include <functional>
 #include <iostream>
 
-using TABLE = std::vector<std::vector<int>>;
+#include <unique.h>
 
 #define CHAR_SIZE (26)
 #define CHAR_START ('a')
 
+#define _RESERVE_SIZE_ 2048
+#define _THREAD_SIZE_ 10
+
 class Table {
 public:
     using _return_type = std::queue<std::string>;
+    using _raw = std::vector<std::vector<int>>;
+    using _u_container = unique::vector<std::string>;
 
-    Table(const std::set<std::string>& patterns) : patterns(patterns) {
-        for (const auto& pattern : patterns) {
-            table_size += pattern.length() + 1;
-        }
+    template<typename Iterable>
+    Table(Iterable container) : patterns(container) {
+        init();
+    }
 
-        state_init = patterns.size();
-        state_num = state_init + 1;
-        state = state_init;
-
-        raw = std::vector<std::vector<int>>(table_size, std::vector<int>(CHAR_SIZE, -1));
-
-        for (const auto& pattern : patterns) {
-            update_table(pattern);
-        }
+    template<typename Iterator>
+    Table(Iterator begin, Iterator end) : patterns(begin, end) {
+        init();
     }
 
     _return_type& match(const std::string& query) {
@@ -68,11 +67,11 @@ public:
     }
 
     void add(const std::string& pattern) {
-        pre_add.insert(pattern);
+        pre_add.emplace(pattern);
     }
 
     void remove(const std::string& pattern) {
-        pre_rem.insert(pattern);
+        pre_rem.emplace(pattern);
     }
 
     int init_state() const {
@@ -89,28 +88,44 @@ private:
     int pre_state = 0;
     char pre_char = 0;
 
-    std::vector<std::vector<int>> raw;
-    std::set<std::string> pre_add, pre_rem;
-    std::set<std::string> patterns;
+    _raw raw;
     _return_type fin;
+    _u_container patterns;
+    std::queue<std::string> pre_add, pre_rem;
+
+    void init() {
+        table_size = patterns.rsize();
+        state_init = patterns.size();
+        state_num = state_init + 1;
+        state = state_init;
+
+        raw.reserve(_RESERVE_SIZE_);
+        patterns.reserve(_RESERVE_SIZE_);
+
+        raw = std::vector<std::vector<int>>(_RESERVE_SIZE_, std::vector<int>(CHAR_SIZE, -1));
+
+        for (const auto& pattern : patterns) {
+            update_table(pattern);
+        }
+    }
 
     void sync() {
-        int _table_size = table_size;
-
         if (pre_add.empty() && pre_rem.empty())
             return;
 
-        for (const auto& pattern : pre_add) {
-            patterns.insert(pattern);
-            _table_size += pattern.length() + 1;
-        }
-        
-        for (const auto& pattern : pre_rem) {
-            patterns.erase(pattern);
-            _table_size -= pattern.length() + 1;
+        while (!pre_add.empty()) {
+            patterns.insert(pre_add.front());
+            pre_add.pop();
         }
 
-        if (_table_size > table_size) {
+        while (!pre_rem.empty()) {
+            patterns.erase(pre_rem.front());
+            pre_rem.pop();
+        }
+
+        int _table_size = patterns.rsize();
+
+        if (_table_size > raw.capacity()) {
             raw.resize(_table_size, std::vector<int>(CHAR_SIZE, -1));
         }
 
@@ -128,29 +143,23 @@ private:
         for (const auto& pattern : patterns) {
             update_table(pattern);
         }
-
-        pre_add.clear();
-        pre_rem.clear();
     }
 
     void update_table(const std::string& pattern) {
+        int flag = false;
         for (const auto& ch : pattern) {
             if (raw[state][ch - CHAR_START] == -1) {
-                raw[state][ch - CHAR_START] = state_num;
-                pre_state = state;
-                pre_char = ch - CHAR_START;
-                state = state_num++;
-            }
-            else {
+                state = raw[pre_state = state][pre_char = ch - CHAR_START] = state_num++;
+                flag = true;
+            } else {
                 state = raw[pre_state = state][pre_char = ch - CHAR_START];
             }
         }
         raw[pre_state][pre_char] = state_final;
-
         swap(raw[state_final], raw[state]);
         fill(raw[state].begin(), raw[state].end(), -1);
 
-        --state_num;
+        if (flag) --state_num;
         state = state_init;
         ++state_final;
     }

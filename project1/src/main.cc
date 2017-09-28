@@ -17,14 +17,14 @@ int main(int argc, char * argv[]) {
     int n = 0;
     char cmd;
     string query;
-    set<string> patterns;
+    vector<string> patterns;
 
     std::ios_base::sync_with_stdio(false);
     query.resize(1024);
     std::cin >> n;
     for (int i = 0; i < n; i++) {
         std::cin >> query;
-        patterns.insert(query);
+        patterns.emplace_back(query);
     }
     Table* table = new Table(patterns);
     std::cout << "R" << newl;
@@ -38,11 +38,12 @@ int main(int argc, char * argv[]) {
         case 'Q': {
 
             bool flag = false;
-            if (!table->wrapper(table->match(query), [&flag](const std::string& pattern) -> void{
+            if (!table->wrapper(table->match(query), [&flag](const std::string& pattern) -> void {
                 if (!flag) {
                     std::cout << pattern;
                     flag = true;
-                } else {
+                }
+                else {
                     std::cout << sep << pattern;
                 }
             })) {
