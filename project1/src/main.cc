@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <iterator>
 
+
 #define newl ('\n')
 #define sep ('|')
 #include <aho-corasick.h>
@@ -19,11 +20,11 @@ int main(int argc, char * argv[]) {
     vector<string> patterns;
 
     std::ios_base::sync_with_stdio(false);
-    query.reserve(1024);
+    query.resize(1024);
     std::cin >> n;
     for (int i = 0; i < n; i++) {
         std::cin >> query;
-        patterns.push_back(query);
+        patterns.emplace_back(query);
     }
     Table* table = new Table(patterns);
     std::cout << "R" << newl;
@@ -35,17 +36,19 @@ int main(int argc, char * argv[]) {
 
         switch (cmd) {
         case 'Q': {
+
             bool flag = false;
-           
-            if (!table->wrapper(table->match(query), [&flag](const std::string& pattern) {
+            if (!table->wrapper(table->match(query), [&flag](const std::string& pattern) -> void {
                 if (!flag) {
                     std::cout << pattern;
                     flag = true;
-                } else {
+                }
+                else {
                     std::cout << sep << pattern;
                 }
-            })) std::cout << -1;
-
+            })) {
+                std::cout << -1;
+            }
             std::cout << newl;
         }
                   break;
