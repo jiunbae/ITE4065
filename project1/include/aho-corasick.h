@@ -101,8 +101,8 @@ private:
 
         raw.reserve(_RESERVE_SIZE_);
         patterns.reserve(_RESERVE_SIZE_);
-
-        raw = std::vector<std::vector<int>>(_RESERVE_SIZE_, std::vector<int>(CHAR_SIZE, -1));
+        
+        raw = std::vector<std::vector<int>>(std::max(_RESERVE_SIZE_, table_size), std::vector<int>(CHAR_SIZE, -1));
 
         for (const auto& pattern : patterns) {
             update_table(pattern);
