@@ -22,21 +22,59 @@ namespace ahocorasick {
     using pattern_type = std::string;                       // pattern type
     using node_type = std::array<index_type, CHAR_SIZE>;    // node type
     using block_type = std::vector<node_type>;              // block type
+    using multi_index = std::pair<index_type, element_type>;
 
     bool operator==(const index_type& index, state state) {
-        if (state::init == index) {
+        if (state::init == index)
             return true;
-        } else {
-            return !(state > 0 ^ index > 0);
-        }
+        return !(state > 0 ^ index > 0);
+    }
+
+    bool operator!=(const index_Type& index, state state) {
+        if (state::init == index)
+            return false;
+        return state > 0 ^ index > 0;
     }
 
     class Map {
     public:
-        class iterator {
-        public: 
+
+        class tracer {            
+        public:
+            using value_type = multi_index;
+            using pointer = value_type*;
+            using reference = value_type&;
+
+            tracer(const Map& map, const pattern_type& pattern) {
+                ptr = { 0, pattern[index++] };
+            }
+            tracer operator++() {
+                tracer t = *this;
+                ptr = map[ptr][pattern[index++]];
+                return t;
+            }
+            tracer operator++(int junk) {
+                ptr = map[ptr][pattern[index++]];
+                return *this;
+            }
+            reference operator*() {
+                return *map[ptr][pattern[index]];
+            }
+            tracer operator->() {
+                return ptr;
+            }
+            bool oeprator==(const tracer& rhs) {
+                return ptr == rhs.ptr;
+            }
+            bool operator!=(const tracer& rhs) {
+                return ptr != rhs.ptr;
+            }
         private:
+            index_unsinged_type index;
+            pointer ptr;
         };
+
+        const static index_type init_state = 0;
 
         Map() { init(DEFAULT_RESERVE_SIZE); }
         Map(size_t size) { init(size); }
@@ -87,7 +125,6 @@ namespace ahocorasick {
                 }
             }
             
-            // 마지막 f-state부터 자신의 끝까지 pop 실행
             for (state = cstate; cstate != pstate;) {
                 state = at(state)[element];
             }
@@ -109,26 +146,34 @@ namespace ahocorasick {
             _reserve(nstates, size);
         }
 
-        node_type& at(int index) {
+        index_type& at(index_type index, element_type element) {
+            return at(index)[element];
+        }
+
+        index_type& at(const multi_index& index) {
+            return at(index.first)[index.second];
+        }
+
+        node_type& at(index_type index) {
             if (index < 0) {
                 return fstates[-index];
-            }
-            else if (index > 0) {
+            } else if (index > 0) {
                 return nstates[index];
-            }
-            else {
+            } else {
                 return istates;
             }
         }
 
-        node_type& operator[](int index) {
+        index_type& operator[](const multi_index& index) {
+            return at(index.first)[index.second];
+        }
+
+        node_type& operator[](index_type index) {
             if (index < 0) {
                 return fstates[-index];
-            }
-            else if (index > 0) {
+            } else if (index > 0) {
                 return nstates[index];
-            }
-            else {
+            } else {
                 return istates;
             }
         }
@@ -141,7 +186,6 @@ namespace ahocorasick {
         size_t final_size;
         std::queue<index_type> node_empty;
         std::queue<index_type> final_empty;
-        const static index_type init_state = 0;
 
         void init(size_t size) {
             istates = std::array<index_type, CHAR_SIZE>();
