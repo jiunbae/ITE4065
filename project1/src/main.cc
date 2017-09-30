@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <iterator>
 
-#include <acmap.h>
+#include <ahocorasick.h>
 
 #define newl ('\n')
 #define sep ('|')
