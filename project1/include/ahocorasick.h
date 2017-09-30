@@ -17,7 +17,7 @@
 
 #define init_state (0)
 
-#define DEFAULT_RESERVE_SIZE (1024)
+#define DEFAULT_RESERVE_SIZE (65536)
 #define AVERAGE_PATTERN_SIZE (1024)
 
 namespace ahocorasick {
