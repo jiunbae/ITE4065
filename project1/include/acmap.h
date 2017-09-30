@@ -10,16 +10,14 @@
 #include <array>
 #include <queue>
 
-#include <iostream>
-
-
 #define CHAR_START ('a')
 #define CHAR_END ('z')
 #define CHAR_SIZE (CHAR_END - CHAR_START + 1)
 
 #define init_state (0)
 
-#define DEFAULT_RESERVE_SIZE (2048)
+#define DEFAULT_RESERVE_SIZE (65536)
+
 
 namespace ahocorasick {
     enum State {
@@ -63,10 +61,11 @@ namespace ahocorasick {
                 state = map.const_at(state, *pattern);
                 if (!(*pattern)) {
                     pattern = '\0';
-                } else {
+                }
+                else {
                     pattern += 1;
                 }
-                
+
                 return *this;
             }
             tracer operator++(int temp) {
@@ -170,17 +169,15 @@ namespace ahocorasick {
             _reserve(nstates, size);
         }
 
-        const index_type& const_at(index_type index, element_type element) const {
-            if (element >= CHAR_START)
-                element -= CHAR_START;
-            return const_at(index)[element];
+        const index_type& const_at(const index_type& index, const element_type& element) const {
+            return const_at(index)[element - (element >= CHAR_START ? CHAR_START : 0)];
         }
 
         const index_type& const_at(const multi_index& index) const {
             return const_at(index.first)[index.second - (index.second >= CHAR_START ? CHAR_START : 0)];
         }
 
-        const node_type& const_at(index_type index) const {
+        const node_type& const_at(const index_type& index) const {
             if (index < 0) {
                 return fstates[-(index + 1)];
             } else if (index > 0) {
@@ -190,20 +187,22 @@ namespace ahocorasick {
             }
         }
 
-        index_type& at(index_type index, element_type element) {
-            if (element >= CHAR_START)
-                element -= CHAR_START;
-            return at(index)[element];
+        index_type& at(const index_type& index, const element_type& element) {
+            return at(index)[element - (element >= CHAR_START ? CHAR_START : 0)];
         }
 
         index_type& at(const multi_index& index) {
             return at(index.first)[index.second - (index.second >= CHAR_START ? CHAR_START : 0)];
         }
 
-        node_type& at(index_type index) {
+        node_type& at(const index_type& index) {
             if (index < 0) {
                 return fstates[-(index + 1)];
             } else if (index > 0) {
+                if (index >= nstates.size()) {
+                    std::cout << "wtf" << '\n';
+                    std::cout << index << ", " << nstates.size() << '\n';
+                }
                 return nstates[index - 1];
             } else {
                 return istates;
@@ -211,10 +210,10 @@ namespace ahocorasick {
         }
 
         index_type& operator[](const multi_index& index) {
-            return at(index.first)[index.second];
+            return at(index.first)[index.second - (index.second >= CHAR_START ? CHAR_START : 0)];
         }
 
-        node_type& operator[](index_type index) {
+        node_type& operator[](const index_type& index) {
             if (index < 0) {
                 return fstates[-(index + 1)];
             } else if (index > 0) {
@@ -254,31 +253,32 @@ namespace ahocorasick {
         }
 
         index_type next(State state) {
-            if (final_size == fstates.size())
+            if (final_size >= fstates.size())
                 _resize(fstates, final_size * 2);
 
-            if (node_size == nstates.size())
+            if (node_size >= nstates.size()) {
                 _resize(nstates, node_size * 2);
+            }
 
             switch (state) {
-                case (State::normal): {
-                    if (!node_empty.empty()) {
-                        index_type index = node_empty.front();
-                        node_empty.pop();
-                        return index;
-                    }
-                    return ++node_size;
+            case (State::normal): {
+                if (!node_empty.empty()) {
+                    index_type index = node_empty.front();
+                    node_empty.pop();
+                    return index;
                 }
-                case (State::final): {
-                    if (!final_empty.empty()) {
-                        index_type index = final_empty.front();
-                        final_empty.pop();
-                        return index;
-                    }
-                    return -1 * (++final_size);
+                return ++node_size;
+            }
+            case (State::final): {
+                if (!final_empty.empty()) {
+                    index_type index = final_empty.front();
+                    final_empty.pop();
+                    return index;
                 }
-                default:
-                    return 0;
+                return -1 * (++final_size);
+            }
+            default:
+                return 0;
             }
         }
 
@@ -387,8 +387,8 @@ namespace ahocorasick {
                 index_unsinged_type state = map.insert(pattern);
                 while (state > patterns.size())
                     patterns.resize(pattern.size() * 2);
-                patterns[state] = pattern;
-                uniques.insert(pattern);
+                patterns[state] = std::string(pattern);
+                uniques.emplace(patterns[state]);
             }
         }
 
