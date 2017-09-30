@@ -17,12 +17,13 @@ int main(int argc, char * argv[]) {
     char cmd;
     std::string query;
 
-    std::ios_base::sync_with_stdio(false);
+    //std::ios_base::sync_with_stdio(false);
     std::cin >> n;
 
     query.reserve(DEFAULT_RESERVE_SIZE);
     ahocorasick::Operator op;
     for (int i = 0; i < n; i++) {
+        //std::cout << i << newl;
         std::cin >> query;
         op.insert(query);
     }
