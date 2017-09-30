@@ -373,7 +373,8 @@ namespace ahocorasick {
                 return false;
 
             while (!request.empty()) {
-                task(patterns[request.front()]);
+                if (uniques.find(patterns[request.front()]) != uniques.end())
+                    task(patterns[request.front()]);
                 request.pop();
             }
             return true;
@@ -391,7 +392,7 @@ namespace ahocorasick {
 
         void erase(const pattern_type& pattern) {
             if (uniques.find(pattern) != uniques.end()) {
-                map.erase(pattern);
+                //map.erase(pattern);
                 uniques.erase(pattern);
             }
         }
