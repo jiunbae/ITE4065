@@ -1,5 +1,5 @@
-#ifndef ACMAP_H
-#define ACMAP_H
+#ifndef AHOCORASICK_H
+#define AHOCORASICK_H
 
 #include <utility>
 #include <algorithm>
@@ -16,7 +16,7 @@
 
 #define init_state (0)
 
-#define DEFAULT_RESERVE_SIZE (8192)
+#define DEFAULT_RESERVE_SIZE (32768)
 
 namespace ahocorasick {
     enum State {
