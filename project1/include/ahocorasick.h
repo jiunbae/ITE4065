@@ -153,11 +153,13 @@ namespace ahocorasick {
                 states[i] = state;
                 state = at(state, pattern[i]);
             }
+            
+            pop(states[length - 1], pattern[length - 1]);
 
-            for (size_t i = length - 1; i + 1; --i)
-                if ((i < length - 1 && const_at(states[i], pattern[i]) == State::final) ||
-                    !pop(states[i], pattern[i]))
-                    break;
+            // for (size_t i = length - 1; i + 1; --i)
+            //     if ((i < length - 1 && const_at(states[i], pattern[i]) == State::final) ||
+            //         !pop(states[i], pattern[i]))
+            //         break;
 
             // TODO: check which is faster, front -base or back -pop
             // THINK: how about insert same as erased pattern
