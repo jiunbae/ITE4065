@@ -16,7 +16,7 @@
 
 #define init_state (0)
 
-#define DEFAULT_RESERVE_SIZE (655360)
+#define DEFAULT_RESERVE_SIZE (8192)
 
 namespace ahocorasick {
     enum State {
@@ -60,8 +60,7 @@ namespace ahocorasick {
                 state = map.const_at(state, *pattern);
                 if (!(*pattern)) {
                     pattern = '\0';
-                }
-                else {
+                } else {
                     pattern += 1;
                 }
 
@@ -122,21 +121,21 @@ namespace ahocorasick {
         template<template<typename T, typename All = std::allocator<T>> typename _container, typename _item>
         _container<index_type>& insert(const _container<_item>& container) {
             _container<index_type> results;
-            for (const auto& pattern : container) {
+            for (const auto& pattern : container)
                 results.emplace(-(_insert(pattern) + 1));
-            }
             return results;
         }
 
         index_type insert(const pattern_type& pattern) {
+            if (pattern.length() + node_size > nstates.size())
+                _resize(nstates, nstates.size() * 2);
             return -(_insert(pattern) + 1);
         }
 
         template<template<typename T, typename All = std::allocator<T>> typename _container, typename _item>
         void erase(const _container<_item>& container) {
-            for (const auto& pattern : container) {
+            for (const auto& pattern : container)
                 erase(pattern);
-            }
         }
 
         void erase(const pattern_type& pattern) {
@@ -198,10 +197,6 @@ namespace ahocorasick {
             if (index < 0) {
                 return fstates[-(index + 1)];
             } else if (index > 0) {
-                if (index >= nstates.size()) {
-                    std::cout << "wtf" << '\n';
-                    std::cout << index << ", " << nstates.size() << '\n';
-                }
                 return nstates[index - 1];
             } else {
                 return istates;
@@ -252,15 +247,11 @@ namespace ahocorasick {
         }
 
         index_type next(State state) {
-            if (final_size >= fstates.size())
-                _resize(fstates, final_size * 2);
-
-            if (node_size >= nstates.size()) {
-                _resize(nstates, node_size * 2);
-            }
-
             switch (state) {
             case (State::normal): {
+                while (node_size >= nstates.size())
+                    _resize(nstates, nstates.size() * 2);
+
                 if (!node_empty.empty()) {
                     index_type index = node_empty.front();
                     node_empty.pop();
@@ -269,6 +260,9 @@ namespace ahocorasick {
                 return ++node_size;
             }
             case (State::final): {
+                while (final_size >= fstates.size())
+                    _resize(fstates, fstates.size() * 2);
+
                 if (!final_empty.empty()) {
                     index_type index = final_empty.front();
                     final_empty.pop();
@@ -350,20 +344,16 @@ namespace ahocorasick {
         }
 
         result_type& match(const pattern_type& pattern) {
-
-            if (checker.size() < map.size(State::final)) {
+            if (checker.size() < map.size(State::final))
                 checker.resize(map.size(State::final), false);
-            }
 
             for (index_unsinged_type i = 0; i < pattern.length(); ++i) {
-                for (auto it = map.begin(pattern.c_str() + i); it != State::out; it++) {
-                    if (it == State::final) {
+                for (auto it = map.begin(pattern.c_str() + i); it != State::out; it++)
+                    if (it == State::final)
                         if (!checker[-(*it) - 1]) {
                             results.push(-(*it) - 1);
                             checker[-(*it) - 1] = true;
                         }
-                    }
-                }
             }
 
             std::fill(checker.begin(), checker.end(), false);
