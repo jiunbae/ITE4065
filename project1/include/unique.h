@@ -20,9 +20,6 @@ namespace unique {
         vector() {
             container.reserve(UNIQUE_VECTOR_DEFAULT_SIZE);
         }
-        vector(size_t size) {
-            container.reserve(size);
-        }
         template<typename Iterable>
         vector(Iterable container) {
             container.reserve(UNIQUE_VECTOR_DEFAULT_SIZE);
@@ -37,8 +34,11 @@ namespace unique {
                 _insert(*it);
             }
         }
-
         ~vector() {}
+
+        void reserve(size_t size) {
+            container.reserve(size);
+        }
 
         template<typename... Args>
         bool insert(Args... elements) {
@@ -77,6 +77,10 @@ namespace unique {
             return container.size();
         }
 
+        size_t rsize() const {
+            return t_size;
+        }
+
         iterator begin() { return container.begin(); }
         const_iterator begin() const { return container.begin(); }
         iterator end() { return container.end(); }
@@ -85,6 +89,7 @@ namespace unique {
     private:
         _container container;
         _uniquely inspector;
+        size_t t_size = 0;
 
         bool contain(const T& element) const {
             return inspector.find(element) != inspector.end();
@@ -92,11 +97,13 @@ namespace unique {
 
         template <typename... Args>
         bool _insert(const Args... elements) {
-            if (contain(T((elements)...)))
+            T dump = T((elements)...);
+            if (contain(dump))
                 return false;
 
             container.emplace_back((elements)...);
             inspector.emplace((elements)...);
+            t_size += dump.size();
             return true;
         }
 
@@ -104,6 +111,7 @@ namespace unique {
             if (contain(element))
                 return false;
 
+            t_size += element.size();
             container.push_back(element);
             inspector.insert(element);
             return true;
@@ -113,6 +121,7 @@ namespace unique {
             if (it == container.end() || !contain(*it))
                 return false;
 
+            t_size -= it->size();
             inspector.erase(*it);
             container.erase(it);
             return true;
