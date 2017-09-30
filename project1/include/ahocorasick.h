@@ -12,11 +12,13 @@
 
 #define CHAR_START ('a')
 #define CHAR_END ('z')
-#define CHAR_SIZE (CHAR_END - CHAR_START + 1)
+#define CHAR_SIZE (CHAR_END - CHAR_START + 1)       // total array size
+#define EOP ('\0')                                  // End Of Pattern
 
 #define init_state (0)
 
-#define DEFAULT_RESERVE_SIZE (32768)
+#define DEFAULT_RESERVE_SIZE (1024)
+#define AVERAGE_PATTERN_SIZE (1024)
 
 namespace ahocorasick {
     enum State {
@@ -59,7 +61,7 @@ namespace ahocorasick {
             tracer& operator++() {
                 state = map.const_at(state, *pattern);
                 if (!(*pattern)) {
-                    pattern = '\0';
+                    pattern = EOP;
                 } else {
                     pattern += 1;
                 }
@@ -77,9 +79,9 @@ namespace ahocorasick {
             inline bool operator==(const State& _state) {
                 switch (_state) {
                 case out:
-                    return pattern == '\0' || state == State::init;
+                    return pattern == EOP || state == State::init;
                 case terminal:
-                    return *pattern == '\0' && state == State::final;
+                    return *pattern == EOP && state == State::final;
                 default:
                     return state == _state;
                 }
@@ -87,9 +89,9 @@ namespace ahocorasick {
             inline bool operator!=(const State& _state) {
                 switch (_state) {
                 case out:
-                    return pattern != '\0' && state != State::init;
+                    return pattern != EOP && state != State::init;
                 case terminal:
-                    return *pattern != '\0' || state != State::final;
+                    return *pattern != EOP || state != State::final;
                 default:
                     return state != _state;
                 }
@@ -127,8 +129,12 @@ namespace ahocorasick {
         }
 
         index_type insert(const pattern_type& pattern) {
-            if (pattern.length() + node_size > nstates.size())
+            if (pattern.length() + node_size >= nstates.size())
                 _resize(nstates, nstates.size() * 2);
+            
+            if (final_size >= fstates.size())
+                _resize(fstates, fstates.size() * 2);
+
             return -(_insert(pattern) + 1);
         }
 
@@ -159,12 +165,12 @@ namespace ahocorasick {
 
         void resize(size_t size) {
             _resize(fstates, size);
-            _resize(nstates, size);
+            _resize(nstates, size * AVERAGE_PATTERN_SIZE);
         }
 
         void reserve(size_t size) {
             _reserve(fstates, size);
-            _reserve(nstates, size);
+            _reserve(nstates, size * AVERAGE_PATTERN_SIZE);
         }
 
         const index_type& const_at(const index_type& index, const element_type& element) const {
@@ -374,8 +380,8 @@ namespace ahocorasick {
         void insert(const pattern_type& pattern) {
             if (uniques.find(pattern) == uniques.end()) {
                 index_unsinged_type state = map.insert(pattern);
-                while (state > patterns.size())
-                    patterns.resize(pattern.size() * 2);
+                while (state >= patterns.size())
+                    patterns.resize(patterns.size() * 2);
                 patterns[state] = std::string(pattern);
                 uniques.emplace(patterns[state]);
             }
