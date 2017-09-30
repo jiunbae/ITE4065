@@ -4,6 +4,7 @@
 - [x] Implement aho-corasick
     - [x] failure link
     - [x] prefix map
+    - [x] O(n) delete
 - [x] Build project structure
     - [x] add reference solution
     - [x] add marker (to check)
