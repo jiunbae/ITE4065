@@ -16,8 +16,7 @@
 
 #define init_state (0)
 
-#define DEFAULT_RESERVE_SIZE (65536)
-
+#define DEFAULT_RESERVE_SIZE (655360)
 
 namespace ahocorasick {
     enum State {
