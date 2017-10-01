@@ -9,8 +9,12 @@
 #include <vector>
 #include <array>
 #include <queue>
+#include <string>
 
-#include <pool.h>
+#include "pool.h"
+
+#include <iostream>
+
 
 #define CHAR_START ('a')
 #define CHAR_END ('z')
@@ -19,9 +23,9 @@
 
 #define init_state (0)
 
-#define DEFAULT_THREAD_SIZE (64)
-#define DEFAULT_RESERVE_SIZE (1024)
-#define AVERAGE_PATTERN_SIZE (128)
+#define DEFAULT_THREAD_SIZE (24)
+#define DEFAULT_RESERVE_SIZE (2048)
+#define AVERAGE_PATTERN_SIZE (256)
 
 namespace ahocorasick {
     enum State {
@@ -373,17 +377,13 @@ namespace ahocorasick {
             if (matched.size() < pattern.size())
                 matched.resize(pattern.size());
 
-            std::queue<std::future<void>> tasks;
-
-            auto m = static_cast<const Map&>(map);
-
             for (index_unsigned_type i = 0; i < pattern.length(); ++i) {
                 tasks.emplace(pool.push(
-                    [&m, &c = matched](const element_type* pt, const index_unsigned_type& length)
+                    [&m = map, &c = matched[i]](const element_type* pt, const index_unsigned_type& length)
                         -> void {
                     for (auto it = m.begin(pt); it != State::out; it++) {
                         if (it == State::final) {
-                            c[length].push(-(*it) - 1);
+                            c.push(-(*it) - 1);
                         }
                     }
                 }, pattern.c_str() + i, i));
@@ -407,7 +407,7 @@ namespace ahocorasick {
             return results;
         }
 
-        bool wrapper(result_type& request, std::function<void(const std::string)> task) {
+        bool wrapper(result_type& request, std::function<void(const std::string&)> task) {
             if (request.empty())
                 return false;
 
@@ -440,9 +440,12 @@ namespace ahocorasick {
         Thread::Pool pool;
         result_type results;
         matched_type matched;
+        std::queue<std::future<void>> tasks;
+        
         std::vector<bool> checker;
         std::vector<std::string> patterns;
         std::set<std::string> uniques;
+
     };
 }
 
