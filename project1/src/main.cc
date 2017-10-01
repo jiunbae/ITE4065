@@ -36,18 +36,17 @@ int main(int argc, char * argv[]) {
         case 'Q': {
             bool flag = false;
 
-            if (!op.wrapper(op.match(query), [&flag](const std::string& pattern) {
+            if (!op.wrapper(op.match(query), [&flag](const std::string pattern) {
                 if (!flag) {
                     std::cout << pattern;
                     flag = true;
-                }
-                else
+                } else
                     std::cout << sep << pattern;
             }))
                 std::cout << -1;
             std::cout << newl;
         }
-                  break;
+            break;
         case 'A':
             op.insert(query);
             break;
