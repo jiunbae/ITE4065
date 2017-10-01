@@ -31,7 +31,7 @@ namespace ahocorasick {
     };
 
     using index_type = int;
-    using index_unsinged_type = size_t;
+    using index_unsigned_type = size_t;
     using element_type = char;                                  // element type
     using pattern_type = std::string;                           // pattern type
     using node_type = std::array<index_type, CHAR_SIZE>;        // node type
