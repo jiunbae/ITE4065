@@ -132,11 +132,11 @@ namespace ahocorasick {
                 state = at(state, pattern[i]);
             }
             
-            pop(states[length - 1], pattern[length - 1]);
-            // for (size_t i = length - 1; i + 1; --i)
-            //     if ((i < length - 1 && const_at(states[i], pattern[i]) == State::final) ||
-            //         !pop(states[i], pattern[i]))
-            //         break;
+            // pop(states[length - 1], pattern[length - 1]);
+            for (size_t i = length - 1; i + 1; --i)
+                if ((i < length - 1 && const_at(states[i], pattern[i]) == State::final) ||
+                    !pop(states[i], pattern[i]))
+                    break;
             // TODO: check which is faster, front -base or back -pop
             // THINK: how about insert same as erased pattern
         }
@@ -306,17 +306,7 @@ namespace ahocorasick {
             patterns.resize(DEFAULT_RESERVE_SIZE);
         }
         result_type& match(const pattern_type& pattern) {
-            bool f = false;
-            while (!buffer.empty()) {
-                uniques.erase(buffer.front());
-                f = true;
-                buffer.pop();
-            }
-            if (f) {
-                map.clear();
-                for (const auto& pat : uniques)
-                    patterns[map.insert(pat)] = pat;
-            }
+            std::fill(checker.begin(), checker.end(), false);
             if (checker.size() < map.size(State::final))
                 checker.resize(map.size(State::final), false);
             for (index_unsinged_type i = 0; i < pattern.length(); ++i) {
@@ -350,8 +340,9 @@ namespace ahocorasick {
         }
         void erase(const pattern_type& pattern) {
             if (uniques.find(pattern) != uniques.end()) {
-                // map.erase(pattern);
-                buffer.push(pattern);
+                map.erase(pattern);
+                //buffer.push(pattern);
+                uniques.erase(pattern);
             }
         }
     private:
