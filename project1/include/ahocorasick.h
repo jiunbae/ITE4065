@@ -10,6 +10,8 @@
 #include <array>
 #include <queue>
 
+#include <pool.h>
+
 #define CHAR_START ('a')
 #define CHAR_END ('z')
 #define CHAR_SIZE (CHAR_END - CHAR_START + 1)       // total array size
@@ -17,6 +19,7 @@
 
 #define init_state (0)
 
+#define DEFAULT_THREAD_SIZE (64)
 #define DEFAULT_RESERVE_SIZE (1024)
 #define AVERAGE_PATTERN_SIZE (128)
 
@@ -26,13 +29,14 @@ namespace ahocorasick {
     };
 
     using index_type = int;
-    using index_unsinged_type = size_t;
+    using index_unsigned_type = size_t;
     using element_type = char;                                  // element type
     using pattern_type = std::string;                           // pattern type
     using node_type = std::array<index_type, CHAR_SIZE>;        // node type
     using block_type = std::vector<node_type>;                  // block type
     using multi_index = std::pair<index_type, element_type>;    // multi indexer
-    using result_type = std::queue<int>;                        // result type
+    using result_type = std::queue<index_unsigned_type>;                 // result type
+    using matched_type = std::vector<result_type>;
 
     inline bool operator==(const index_type& index, State state) {
         if (index == 0 || state == init)
@@ -56,13 +60,14 @@ namespace ahocorasick {
             using pointer = value_type*;
             using reference = value_type&;
 
-            tracer(Map& map, const element_type * pattern, const index_type state = init_state)
+            tracer(const Map& map, const element_type * pattern, const index_type state = init_state)
                 : map(map), pattern(pattern), state(state) {}
             tracer& operator++() {
                 state = map.const_at(state, *pattern);
                 if (!(*pattern)) {
                     pattern = EOP;
-                } else {
+                }
+                else {
                     pattern += 1;
                 }
 
@@ -112,10 +117,10 @@ namespace ahocorasick {
         Map(size_t size) { init(size); }
         ~Map() {}
 
-        tracer begin(const element_type* pattern) {
+        tracer begin(const element_type* pattern) const {
             return tracer(*this, pattern + 1, const_at(init_state, *pattern));
         }
-
+        
         State end() const {
             return State::terminal;
         }
@@ -131,7 +136,7 @@ namespace ahocorasick {
         index_type insert(const pattern_type& pattern) {
             if (pattern.length() + node_size >= nstates.size())
                 _resize(nstates, nstates.size() * 2);
-            
+
             if (final_size >= fstates.size())
                 _resize(fstates, fstates.size() * 2);
 
@@ -153,8 +158,6 @@ namespace ahocorasick {
                 states[i] = state;
                 state = at(state, pattern[i]);
             }
-            
-            // pop(states[length - 1], pattern[length - 1]);
 
             for (size_t i = length - 1; i + 1; --i)
                 if ((i < length - 1 && const_at(states[i], pattern[i]) == State::final) ||
@@ -186,9 +189,11 @@ namespace ahocorasick {
         const node_type& const_at(const index_type& index) const {
             if (index < 0) {
                 return fstates[-(index + 1)];
-            } else if (index > 0) {
+            }
+            else if (index > 0) {
                 return nstates[index - 1];
-            } else {
+            }
+            else {
                 return istates;
             }
         }
@@ -204,9 +209,11 @@ namespace ahocorasick {
         node_type& at(const index_type& index) {
             if (index < 0) {
                 return fstates[-(index + 1)];
-            } else if (index > 0) {
+            }
+            else if (index > 0) {
                 return nstates[index - 1];
-            } else {
+            }
+            else {
                 return istates;
             }
         }
@@ -218,14 +225,16 @@ namespace ahocorasick {
         node_type& operator[](const index_type& index) {
             if (index < 0) {
                 return fstates[-(index + 1)];
-            } else if (index > 0) {
+            }
+            else if (index > 0) {
                 return nstates[index - 1];
-            } else {
+            }
+            else {
                 return istates;
             }
         }
 
-        index_unsinged_type size(State state) const {
+        index_unsigned_type size(State state) const {
             switch (state) {
             case (State::normal):
                 return node_size;
@@ -240,8 +249,8 @@ namespace ahocorasick {
         block_type fstates;
         block_type nstates;
         node_type istates;
-        index_unsinged_type node_size;
-        index_unsinged_type final_size;
+        index_unsigned_type node_size;
+        index_unsigned_type final_size;
         std::queue<index_type> node_empty;
         std::queue<index_type> final_empty;
 
@@ -295,12 +304,14 @@ namespace ahocorasick {
                 }
                 at(index, element) = init_state;
                 return true;
-            } else if (index_next == State::normal) {
+            }
+            else if (index_next == State::normal) {
                 if (!_is_empty(nstates[index_next - 1]))
                     return false;
                 at(index, element) = init_state;
                 node_empty.push(index_next);
-            } else {
+            }
+            else {
                 istates[element] = init_state;
                 return false;
             }
@@ -314,7 +325,8 @@ namespace ahocorasick {
             for (const auto& element : pattern) {
                 if (const_at(state, element) == init_state) {
                     state = at(pre_state = state, pre_elem = element) = next(State::normal);
-                } else {
+                }
+                else {
                     state = at(pre_state = state, pre_elem = element);
                 }
             }
@@ -344,10 +356,12 @@ namespace ahocorasick {
 
     class Operator {
     public:
-        Operator() {
+        Operator() : map(DEFAULT_RESERVE_SIZE), pool(DEFAULT_THREAD_SIZE) {
             patterns.reserve(DEFAULT_RESERVE_SIZE);
+            matched.reserve(DEFAULT_RESERVE_SIZE);
             checker.reserve(DEFAULT_RESERVE_SIZE);
 
+            matched.resize(DEFAULT_RESERVE_SIZE);
             patterns.resize(DEFAULT_RESERVE_SIZE);
         }
 
@@ -356,13 +370,38 @@ namespace ahocorasick {
             if (checker.size() < map.size(State::final))
                 checker.resize(map.size(State::final), false);
 
-            for (index_unsinged_type i = 0; i < pattern.length(); ++i) {
-                for (auto it = map.begin(pattern.c_str() + i); it != State::out; it++)
-                    if (it == State::final)
-                        if (!checker[-(*it) - 1]) {
-                            results.push(-(*it) - 1);
-                            checker[-(*it) - 1] = true;
+            if (matched.size() < pattern.size())
+                matched.resize(pattern.size());
+
+            std::queue<std::future<void>> tasks;
+
+            auto m = static_cast<const Map&>(map);
+
+            for (index_unsigned_type i = 0; i < pattern.length(); ++i) {
+                tasks.emplace(pool.push(
+                    [&m, &c = matched](const element_type* pt, const index_unsigned_type& length)
+                        -> void {
+                    for (auto it = m.begin(pt); it != State::out; it++) {
+                        if (it == State::final) {
+                            c[length].push(-(*it) - 1);
                         }
+                    }
+                }, pattern.c_str() + i, i));
+            }
+
+            while (!tasks.empty()) {
+                tasks.front().get();
+                tasks.pop();
+            }
+
+            for (auto& result : matched) {
+                while (!result.empty()) {
+                    if (!checker[result.front()]) {
+                        results.push(result.front());
+                        checker[result.front()] = true;
+                    }
+                    result.pop();
+                }
             }
 
             return results;
@@ -381,7 +420,7 @@ namespace ahocorasick {
 
         void insert(const pattern_type& pattern) {
             if (uniques.find(pattern) == uniques.end()) {
-                index_unsinged_type state = map.insert(pattern);
+                index_unsigned_type state = map.insert(pattern);
                 while (state >= patterns.size())
                     patterns.resize(patterns.size() * 2);
                 patterns[state] = std::string(pattern);
@@ -398,7 +437,9 @@ namespace ahocorasick {
 
     private:
         Map map;
+        Thread::Pool pool;
         result_type results;
+        matched_type matched;
         std::vector<bool> checker;
         std::vector<std::string> patterns;
         std::set<std::string> uniques;
