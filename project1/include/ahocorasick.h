@@ -17,8 +17,8 @@
 
 #define init_state (0)
 
-#define DEFAULT_RESERVE_SIZE (32768)
-#define AVERAGE_PATTERN_SIZE (8192)
+#define DEFAULT_RESERVE_SIZE (256)
+#define AVERAGE_PATTERN_SIZE (256)
 
 namespace ahocorasick {
     enum State {
@@ -163,6 +163,15 @@ namespace ahocorasick {
 
             // TODO: check which is faster, front -base or back -pop
             // THINK: how about insert same as erased pattern
+        }
+
+        void clear() {
+            nstates = std::vector<std::array<index_type, CHAR_SIZE>>(DEFAULT_RESERVE_SIZE);
+            fstates = std::vector<std::array<index_type, CHAR_SIZE>>(DEFAULT_RESERVE_SIZE);
+
+            std::fill(istates.begin(), istates.end(), init_state);
+            node_size = 0;
+            final_size = 0;
         }
 
         void resize(size_t size) {
@@ -352,6 +361,19 @@ namespace ahocorasick {
         }
 
         result_type& match(const pattern_type& pattern) {
+            bool f = false;
+            while (!buffer.empty()) {
+                uniques.erase(buffer.front());
+                f = true;
+                buffer.pop();
+            }
+            if (f) {
+                map.clear();
+                for (const auto& pat : uniques)
+                    patterns[map.insert(pat)] = pat;
+            }
+
+
             if (checker.size() < map.size(State::final))
                 checker.resize(map.size(State::final), false);
 
@@ -391,8 +413,8 @@ namespace ahocorasick {
 
         void erase(const pattern_type& pattern) {
             if (uniques.find(pattern) != uniques.end()) {
-                map.erase(pattern);
-                uniques.erase(pattern);
+                // map.erase(pattern);
+                buffer.push(pattern);
             }
         }
 
@@ -402,6 +424,7 @@ namespace ahocorasick {
         std::vector<bool> checker;
         std::vector<std::string> patterns;
         std::set<std::string> uniques;
+        std::queue<std::string> buffer;
     };
 }
 
