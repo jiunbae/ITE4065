@@ -4,6 +4,7 @@
 #include <utility>
 #include <algorithm>
 #include <functional>
+#include <future>
 
 #include <set>
 #include <vector>
@@ -12,8 +13,6 @@
 #include <string>
 
 #include <pool.h>
-
-#include <iostream>
 
 #define CHAR_START ('a')
 #define CHAR_END ('z')
