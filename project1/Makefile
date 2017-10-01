@@ -1,6 +1,7 @@
 # Compiler and Compile options.
 CC = g++
-CXXFLAGS = -g -Wall -std=c++11 -pthread -O3
+
+CXXFLAGS = -g -Wall -O3 -std=c++14 -pthread
 
 # Macros specifying path for compile.
 SRCS := src/main.cc
