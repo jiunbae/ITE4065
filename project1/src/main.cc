@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <iterator>
 
-#include "ahocorasick.h"
+#include <ahocorasick.h>
 
 #define newl ('\n')
 #define sep ('|')
@@ -43,9 +43,8 @@ int main(int argc, char * argv[]) {
                 }
                 else
                     std::cout << sep << pattern;
-            })) {
+            }))
                 std::cout << -1;
-            }
             std::cout << newl;
         }
                   break;

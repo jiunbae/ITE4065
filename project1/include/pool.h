@@ -3,20 +3,84 @@
 
 #include <vector>
 #include <queue>
-#include <memory>
+#include <list>
+
 #include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <future>
+#include <memory>
 #include <functional>
 
 namespace Thread {
+    namespace Safe {
+        template<typename T>
+        class Queue {
+        public:
+            Queue() : _queue(), qutex(), cond(), _size(0) {}
+            virtual ~Queue() {}
+
+            virtual void push(const T& element) {
+                {
+                    std::unique_lock<std::mutex> lock(qutex);
+                    _push(element);
+                    cond.notify_all();
+                }
+            }
+            virtual const T& pop() {
+                T& ret = nullptr;
+                {
+                    std::unique_lock<std::mutex> lock(qutex);
+                    wait(lock);
+                    ret = _pop();
+                }
+                return ret;
+            }
+
+            size_t size() const { return _size; }
+
+        protected:
+            void wait(std::unique_lock<std::mutex>& lock) {
+                while (_queue.empty())
+                    cond.wait(lock);
+            }
+
+            void _push(const T& element) {
+                _queue.push_back(element);
+                ++_size;
+            }
+
+            T& _pop() {
+                if (!_queue.empty()) {
+                    T& ret = _queue.front();
+                    _queue.pop_front();
+                    --_size;
+                    return ret;
+                }
+                return nullptr;
+            }
+
+            std::list<T> _queue;
+            std::mutex qutex;
+            std::condition_variable cond;
+            size_t _size;
+        };
+    }
+
     class Pool {
     public:
         Pool(size_t);
         ~Pool();
-        int size() { return _size; }
-        bool done() { return tasks.empty(); }
+        void wait() {
+            {
+                std::unique_lock<std::mutex> lock(qutex);
+                cond.wait(lock, [this]() -> bool {
+                    return tasks.empty();
+                });
+            }
+        }
+
+        size_t size() { return _size; }
 
         template <class F, class... Args>
         auto push(F&& f, Args&&... args) 

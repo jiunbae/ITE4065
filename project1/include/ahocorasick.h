@@ -15,7 +15,6 @@
 
 #include <iostream>
 
-
 #define CHAR_START ('a')
 #define CHAR_END ('z')
 #define CHAR_SIZE (CHAR_END - CHAR_START + 1)       // total array size
@@ -23,7 +22,7 @@
 
 #define init_state (0)
 
-#define DEFAULT_THREAD_SIZE (24)
+#define DEFAULT_THREAD_SIZE (17)
 #define DEFAULT_RESERVE_SIZE (2048)
 #define AVERAGE_PATTERN_SIZE (256)
 
@@ -124,7 +123,7 @@ namespace ahocorasick {
         tracer begin(const element_type* pattern) const {
             return tracer(*this, pattern + 1, const_at(init_state, *pattern));
         }
-        
+
         State end() const {
             return State::terminal;
         }
@@ -255,6 +254,7 @@ namespace ahocorasick {
         node_type istates;
         index_unsigned_type node_size;
         index_unsigned_type final_size;
+
         std::queue<index_type> node_empty;
         std::queue<index_type> final_empty;
 
@@ -377,16 +377,21 @@ namespace ahocorasick {
             if (matched.size() < pattern.size())
                 matched.resize(pattern.size());
 
-            for (index_unsigned_type i = 0; i < pattern.length(); ++i) {
+            size_t token = (pattern.size() / DEFAULT_THREAD_SIZE);
+            if (!token) token = 1;
+
+            for (size_t i = 0; i < pool.size() * 2; i++) {
+                if (i * token >= pattern.size()) break;
                 tasks.emplace(pool.push(
-                    [&m = map, &c = matched[i]](const element_type* pt, const index_unsigned_type& length)
-                        -> void {
-                    for (auto it = m.begin(pt); it != State::out; it++) {
-                        if (it == State::final) {
-                            c.push(-(*it) - 1);
+                    [&m = map, &c = matched](size_t start, size_t end, const element_type* query) -> void {
+                    for (size_t i = start; i < end; ++i) {
+                        for (auto it = m.begin(query + i); it != State::out; ++it) {
+                            if (it == State::final) {
+                                c[i].push(-((*it) + 1));
+                            }
                         }
                     }
-                }, pattern.c_str() + i, i));
+                }, i * token, (i + 1) * token >= pattern.size() ? pattern.size() : (i + 1) * token, pattern.c_str()));
             }
 
             while (!tasks.empty()) {
@@ -441,11 +446,10 @@ namespace ahocorasick {
         result_type results;
         matched_type matched;
         std::queue<std::future<void>> tasks;
-        
+
         std::vector<bool> checker;
         std::vector<std::string> patterns;
         std::set<std::string> uniques;
-
     };
 }
 
