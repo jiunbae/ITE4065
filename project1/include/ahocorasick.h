@@ -38,6 +38,7 @@ namespace ahocorasick {
     using block_type = std::vector<node_type>;                  // block type
     using multi_index = std::pair<index_type, element_type>;    // multi indexer
     using result_type = std::queue<int>;                        // result type
+	using matched_type =std::vector<result_type>;
 
     inline bool operator==(const index_type& index, State state) {
         if (index == 0 || state == init)
@@ -239,7 +240,7 @@ namespace ahocorasick {
             }
         }
 
-        index_unsinged_type size(State state) const {
+        index_unsigned_type size(State state) const {
             switch (state) {
             case (State::normal):
                 return node_size;
@@ -360,7 +361,7 @@ namespace ahocorasick {
 
     class Operator {
     public:
-        Operator() {
+        Operator() : map(DEFAULT_RESERVE_SIZE), pool(DEFAULT_THREAD_SIZE) {
             patterns.reserve(DEFAULT_RESERVE_SIZE);
             checker.reserve(DEFAULT_RESERVE_SIZE);
 
@@ -432,7 +433,7 @@ namespace ahocorasick {
 
         void insert(const pattern_type& pattern) {
             if (uniques.find(pattern) == uniques.end()) {
-                index_unsinged_type state = map.insert(pattern);
+                index_unsigned_type state = map.insert(pattern);
                 while (state >= patterns.size())
                     patterns.resize(patterns.size() * 2);
                 patterns[state] = std::string(pattern);
@@ -450,6 +451,7 @@ namespace ahocorasick {
 
     private:
         Map map;
+		Thread::Pool pool;
         result_type results;
         matched_type matched;
         std::queue<std::future<void>> tasks;
