@@ -160,7 +160,7 @@ namespace ahocorasick {
                 state = at(state, pattern[i]);
             }
             
-           pop(states[length - 1], pattern[length - 1]);
+            // pop(states[length - 1], pattern[length - 1]);
 
             // for (size_t i = length - 1; i + 1; --i)
             //     if ((i < length - 1 && const_at(states[i], pattern[i]) == State::final) ||
@@ -378,7 +378,6 @@ namespace ahocorasick {
                 }
             }
 
-            std::fill(checker.begin(), checker.end(), false);
             if (checker.size() < map.size(State::final))
                 checker.resize(map.size(State::final), false);
 
@@ -390,6 +389,9 @@ namespace ahocorasick {
                             results.push(-(*it) - 1);
                         }
             }
+
+            std::fill(checker.begin(), checker.end(), false);
+            
             return results;
         }
 
