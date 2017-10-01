@@ -160,12 +160,12 @@ namespace ahocorasick {
                 state = at(state, pattern[i]);
             }
             
-//            pop(states[length - 1], pattern[length - 1]);
+           pop(states[length - 1], pattern[length - 1]);
 
-            for (size_t i = length - 1; i + 1; --i)
-                if ((i < length - 1 && const_at(states[i], pattern[i]) == State::final) ||
-                    !pop(states[i], pattern[i]))
-                    break;
+            // for (size_t i = length - 1; i + 1; --i)
+            //     if ((i < length - 1 && const_at(states[i], pattern[i]) == State::final) ||
+            //         !pop(states[i], pattern[i]))
+            //         break;
 
             // TODO: check which is faster, front -base or back -pop
             // THINK: how about insert same as erased pattern
@@ -369,15 +369,25 @@ namespace ahocorasick {
         }
 
         result_type& match(const pattern_type& pattern) {
+            if (buffer) {
+                buffer = 0;
+
+                map.clear();
+                for (const auto& pat : uniques) {
+                    patterns[map.insert(pat)] = pat;
+                }
+            }
+
             std::fill(checker.begin(), checker.end(), false);
             if (checker.size() < map.size(State::final))
                 checker.resize(map.size(State::final), false);
+
             for (index_unsigned_type i = 0; i < pattern.length(); ++i) {
                 for (auto it = map.begin(pattern.c_str() + i); it != State::out; it++)
                     if (it == State::final)
                         if (!checker[-(*it) - 1]) {
-                            results.push(-(*it) - 1);
                             checker[-(*it) - 1] = true;
+                            results.push(-(*it) - 1);
                         }
             }
             return results;
@@ -458,8 +468,9 @@ namespace ahocorasick {
 
         void erase(const pattern_type& pattern) {
             if (uniques.find(pattern) != uniques.end()) {
-                map.erase(pattern);
+                // map.erase(pattern);
                 uniques.erase(pattern);
+                ++buffer;
             }
         }
 
