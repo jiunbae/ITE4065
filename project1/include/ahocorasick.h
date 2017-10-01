@@ -17,8 +17,8 @@
 
 #define init_state (0)
 
-#define DEFAULT_RESERVE_SIZE (256)
-#define AVERAGE_PATTERN_SIZE (2048)
+#define DEFAULT_RESERVE_SIZE (1024)
+#define AVERAGE_PATTERN_SIZE (128)
 
 namespace ahocorasick {
     enum State {
@@ -365,7 +365,6 @@ namespace ahocorasick {
                         }
             }
 
-            std::fill(checker.begin(), checker.end(), false);
             return results;
         }
 
