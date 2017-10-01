@@ -170,6 +170,15 @@ namespace ahocorasick {
             // THINK: how about insert same as erased pattern
         }
 
+        void clear() {
+            nstates = std::vector<std::array<index_type, CHAR_SIZE>>(DEFAULT_RESERVE_SIZE);
+            fstates = std::vector<std::array<index_type, CHAR_SIZE>>(DEFAULT_RESERVE_SIZE);
+
+            std::fill(istates.begin(), istates.end(), init_state);
+            node_size = 0;
+            final_size = 0;
+        }
+
         void resize(size_t size) {
             _resize(fstates, size);
             _resize(nstates, size * AVERAGE_PATTERN_SIZE);
@@ -361,6 +370,14 @@ namespace ahocorasick {
         }
 
         result_type& match(const pattern_type& pattern) {
+            if (buffer) {
+                buffer = 0;
+                map.clear();
+                for (const auto& pat : uniques) {
+                    patterns[map.insert(pat)] = pat;
+                }
+            }
+
             std::fill(checker.begin(), checker.end(), false);
             if (checker.size() < map.size(State::final))
                 checker.resize(map.size(State::final), false);
@@ -426,7 +443,8 @@ namespace ahocorasick {
 
         void erase(const pattern_type& pattern) {
             if (uniques.find(pattern) != uniques.end()) {
-                map.erase(pattern);
+                // map.erase(pattern);
+                ++buffer;
                 uniques.erase(pattern);
             }
         }
@@ -441,6 +459,8 @@ namespace ahocorasick {
         std::vector<bool> checker;
         std::vector<std::string> patterns;
         std::set<std::string> uniques;
+
+        size_t buffer = 0;
     };
 }
 
