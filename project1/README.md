@@ -15,7 +15,7 @@
 - [ ] Benchmark
     - [x] IO bench
     - [x] STL bench (e.g. vector vs array)
-    - [x] pass parameter
+    - [ ] pass parameter
 
 ## Issues:
 
