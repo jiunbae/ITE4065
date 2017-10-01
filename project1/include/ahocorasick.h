@@ -11,10 +11,9 @@
 #include <queue>
 #include <string>
 
-#include "pool.h"
+#include <pool.h>
 
 #include <iostream>
-
 
 #define CHAR_START ('a')
 #define CHAR_END ('z')
@@ -70,8 +69,7 @@ namespace ahocorasick {
                 state = map.const_at(state, *pattern);
                 if (!(*pattern)) {
                     pattern = EOP;
-                }
-                else {
+                } else {
                     pattern += 1;
                 }
 
@@ -124,7 +122,7 @@ namespace ahocorasick {
         tracer begin(const element_type* pattern) const {
             return tracer(*this, pattern + 1, const_at(init_state, *pattern));
         }
-        
+
         State end() const {
             return State::terminal;
         }
@@ -193,11 +191,9 @@ namespace ahocorasick {
         const node_type& const_at(const index_type& index) const {
             if (index < 0) {
                 return fstates[-(index + 1)];
-            }
-            else if (index > 0) {
+            } else if (index > 0) {
                 return nstates[index - 1];
-            }
-            else {
+            } else {
                 return istates;
             }
         }
@@ -213,11 +209,9 @@ namespace ahocorasick {
         node_type& at(const index_type& index) {
             if (index < 0) {
                 return fstates[-(index + 1)];
-            }
-            else if (index > 0) {
+            } else if (index > 0) {
                 return nstates[index - 1];
-            }
-            else {
+            } else {
                 return istates;
             }
         }
@@ -229,11 +223,9 @@ namespace ahocorasick {
         node_type& operator[](const index_type& index) {
             if (index < 0) {
                 return fstates[-(index + 1)];
-            }
-            else if (index > 0) {
+            } else if (index > 0) {
                 return nstates[index - 1];
-            }
-            else {
+            } else {
                 return istates;
             }
         }
@@ -255,6 +247,7 @@ namespace ahocorasick {
         node_type istates;
         index_unsigned_type node_size;
         index_unsigned_type final_size;
+        
         std::queue<index_type> node_empty;
         std::queue<index_type> final_empty;
 
@@ -308,14 +301,12 @@ namespace ahocorasick {
                 }
                 at(index, element) = init_state;
                 return true;
-            }
-            else if (index_next == State::normal) {
+            } else if (index_next == State::normal) {
                 if (!_is_empty(nstates[index_next - 1]))
                     return false;
                 at(index, element) = init_state;
                 node_empty.push(index_next);
-            }
-            else {
+            } else {
                 istates[element] = init_state;
                 return false;
             }
@@ -329,8 +320,7 @@ namespace ahocorasick {
             for (const auto& element : pattern) {
                 if (const_at(state, element) == init_state) {
                     state = at(pre_state = state, pre_elem = element) = next(State::normal);
-                }
-                else {
+                } else {
                     state = at(pre_state = state, pre_elem = element);
                 }
             }
@@ -445,7 +435,6 @@ namespace ahocorasick {
         std::vector<bool> checker;
         std::vector<std::string> patterns;
         std::set<std::string> uniques;
-
     };
 }
 
