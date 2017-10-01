@@ -10,7 +10,7 @@
 
 #define newl ('\n')
 #define sep ('|')
-#define DEFAULT_RESERVE_SIZE 256
+#define DEFAULT_RESERVE_SIZE (128)
 
 int main(int argc, char * argv[]) {
     int n = 0;

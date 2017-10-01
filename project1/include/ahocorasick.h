@@ -23,8 +23,8 @@
 #define init_state (0)
 
 #define DEFAULT_THREAD_SIZE (17)
-#define DEFAULT_RESERVE_SIZE (2048)
-#define AVERAGE_PATTERN_SIZE (256)
+#define DEFAULT_RESERVE_SIZE (64)
+#define AVERAGE_PATTERN_SIZE (4)
 
 namespace ahocorasick {
     enum State {
@@ -310,6 +310,7 @@ namespace ahocorasick {
                 istates[element] = init_state;
                 return false;
             }
+            return false;
         }
 
         index_type _insert(const pattern_type& pattern) {
