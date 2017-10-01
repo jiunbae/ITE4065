@@ -17,8 +17,9 @@
 
 #define init_state (0)
 
-#define DEFAULT_RESERVE_SIZE (256)
-#define AVERAGE_PATTERN_SIZE (256)
+#define DEFAULT_THREAD_SIZE (17)
+#define DEFAULT_RESERVE_SIZE (64)
+#define AVERAGE_PATTERN_SIZE (4)
 
 namespace ahocorasick {
     enum State {
@@ -249,8 +250,9 @@ namespace ahocorasick {
         block_type fstates;
         block_type nstates;
         node_type istates;
-        index_unsinged_type node_size;
-        index_unsinged_type final_size;
+        index_unsigned_type node_size;
+        index_unsigned_type final_size;
+
         std::queue<index_type> node_empty;
         std::queue<index_type> final_empty;
 
@@ -313,6 +315,7 @@ namespace ahocorasick {
                 istates[element] = init_state;
                 return false;
             }
+            return false;
         }
 
         index_type _insert(const pattern_type& pattern) {
@@ -361,29 +364,51 @@ namespace ahocorasick {
         }
 
         result_type& match(const pattern_type& pattern) {
-            bool f = false;
-            while (!buffer.empty()) {
-                uniques.erase(buffer.front());
-                f = true;
-                buffer.pop();
-            }
-            if (f) {
+            if (buffer) {
+                buffer = 0;
                 map.clear();
-                for (const auto& pat : uniques)
+                for (const auto& pat : uniques) {
                     patterns[map.insert(pat)] = pat;
+                }
             }
 
-
+            std::fill(checker.begin(), checker.end(), false);
             if (checker.size() < map.size(State::final))
                 checker.resize(map.size(State::final), false);
 
-            for (index_unsinged_type i = 0; i < pattern.length(); ++i) {
-                for (auto it = map.begin(pattern.c_str() + i); it != State::out; it++)
-                    if (it == State::final)
-                        if (!checker[-(*it) - 1]) {
-                            results.push(-(*it) - 1);
-                            checker[-(*it) - 1] = true;
+            if (matched.size() < pattern.size())
+                matched.resize(pattern.size());
+
+            size_t token = (pattern.size() / DEFAULT_THREAD_SIZE);
+            if (!token) token = 1;
+
+            for (size_t i = 0; i < pool.size() * 2; i++) {
+                if (i * token >= pattern.size()) break;
+                tasks.emplace(pool.push(
+                    [&m = map, &c = matched](size_t start, size_t end, const element_type* query) -> void {
+                    for (size_t i = start; i < end; ++i) {
+                        for (auto it = m.begin(query + i); it != State::out; ++it) {
+                            if (it == State::final) {
+                                c[i].push(-((*it) + 1));
+                            }
                         }
+                    }
+                }, i * token, (i + 1) * token >= pattern.size() ? pattern.size() : (i + 1) * token, pattern.c_str()));
+            }
+
+            while (!tasks.empty()) {
+                tasks.front().get();
+                tasks.pop();
+            }
+
+            for (auto& result : matched) {
+                while (!result.empty()) {
+                    if (!checker[result.front()]) {
+                        results.push(result.front());
+                        checker[result.front()] = true;
+                    }
+                    result.pop();
+                }
             }
 
             std::fill(checker.begin(), checker.end(), false);
@@ -414,17 +439,22 @@ namespace ahocorasick {
         void erase(const pattern_type& pattern) {
             if (uniques.find(pattern) != uniques.end()) {
                 // map.erase(pattern);
-                buffer.push(pattern);
+                ++buffer;
+                uniques.erase(pattern);
             }
         }
 
     private:
         Map map;
         result_type results;
+        matched_type matched;
+        std::queue<std::future<void>> tasks;
+
         std::vector<bool> checker;
         std::vector<std::string> patterns;
         std::set<std::string> uniques;
-        std::queue<std::string> buffer;
+
+        size_t buffer = 0;
     };
 }
 
