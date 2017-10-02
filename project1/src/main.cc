@@ -6,6 +6,11 @@
 #include <algorithm>
 #include <iterator>
 
+<<<<<<< HEAD
+=======
+#include "ahocorasick.h"
+
+>>>>>>> parent of c8bba0c... Update thread pool cond
 #define newl ('\n')
 #define sep ('|')
 #include <aho-corasick.h>
@@ -45,9 +50,15 @@ int main(int argc, char * argv[]) {
                     flag = true;
                 } else {
                     std::cout << sep << pattern;
+<<<<<<< HEAD
                 }
             })) std::cout << -1;
 
+=======
+            })) {
+                std::cout << -1;
+            }
+>>>>>>> parent of c8bba0c... Update thread pool cond
             std::cout << newl;
         }
                   break;
