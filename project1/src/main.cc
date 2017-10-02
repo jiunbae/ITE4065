@@ -6,11 +6,6 @@
 #include <algorithm>
 #include <iterator>
 
-<<<<<<< HEAD
-=======
-#include "ahocorasick.h"
-
->>>>>>> parent of c8bba0c... Update thread pool cond
 #define newl ('\n')
 #define sep ('|')
 #include <aho-corasick.h>
@@ -41,27 +36,17 @@ int main(int argc, char * argv[]) {
         getline(std::cin, query);
 
         switch (cmd) {
-        case 'Q': {
+        case 'Q': 
             bool flag = false;
-           
             if (!table->wrapper(table->match(query), [&flag](const std::string& pattern) {
                 if (!flag) {
                     std::cout << pattern;
                     flag = true;
                 } else {
                     std::cout << sep << pattern;
-<<<<<<< HEAD
-                }
-            })) std::cout << -1;
-
-=======
-            })) {
-                std::cout << -1;
-            }
->>>>>>> parent of c8bba0c... Update thread pool cond
+            }})) std::cout << -1;
             std::cout << newl;
-        }
-                  break;
+            break;
         case 'A':
             table->add(query);
             break;
