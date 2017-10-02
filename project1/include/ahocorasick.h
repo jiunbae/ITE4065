@@ -445,7 +445,6 @@ namespace ahocorasick {
         std::vector<bool> checker;
         std::vector<std::string> patterns;
         std::set<std::string> uniques;
-
     };
 }
 
