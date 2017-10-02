@@ -11,10 +11,7 @@
 #include <queue>
 #include <string>
 
-#include "pool.h"
-
-#include <iostream>
-
+#include <pool.h> 
 
 #define CHAR_START ('a')
 #define CHAR_END ('z')
