@@ -306,14 +306,22 @@ namespace ahocorasick {
             matched.resize(DEFAULT_RESERVE_SIZE);
             patterns.resize(DEFAULT_RESERVE_SIZE);
         }
+
+        /* Operator::match
+            @params:    pattern     as const pattern_type&(std::string)
+            @process:   find matched pattern in insert query
+            @return:    `results`   as return_type&(std::queue<int>)
+        */
         result_type& match(const pattern_type& pattern) {
             std::fill(checker.begin(), checker.end(), false);
             if (checker.size() < map.size(State::final))
                 checker.resize(map.size(State::final), false);
             if (matched.size() < pattern.size())
                 matched.resize(pattern.size());
+            
             size_t token = (pattern.size() / DEFAULT_THREAD_SIZE);
             if (!token) token = 1;
+            
             for (size_t i = 0; i < pool.size() * 2; i++) {
                 if (i * token >= pattern.size()) break;
                 tasks.emplace(pool.push(
@@ -327,10 +335,14 @@ namespace ahocorasick {
                     }
                 }, i * token, (i + 1) * token >= pattern.size() ? pattern.size() : (i + 1) * token, pattern.c_str()));
             }
+
+            // thread pool join
             while (!tasks.empty()) {
                 tasks.front().get();
                 tasks.pop();
             }
+
+            // result merge, erase duplicate
             for (auto& result : matched) {
                 while (!result.empty()) {
                     if (!checker[result.front()]) {
@@ -342,6 +354,13 @@ namespace ahocorasick {
             }
             return results;
         }
+
+        /* Operater::wrapper 
+            @params:    request     as result_type(std::queue<int>),
+                        task        as std::function<void(const std::string&)>
+            @process:   process `task` using `request`
+            @return:    whether process at least once
+        */
         bool wrapper(result_type& request, std::function<void(const std::string&)> task) {
             if (request.empty())
                 return false;
@@ -351,6 +370,11 @@ namespace ahocorasick {
             }
             return true;
         }
+
+        /* Operator::insert
+            @params:    pattern     as const pattern_type&(std::string)
+            @process:   do:map.insert(`pattern`) if `pattern` not in `uniques`
+        */
         void insert(const pattern_type& pattern) {
             if (uniques.find(pattern) == uniques.end()) {
                 index_unsigned_type state = map.insert(pattern);
@@ -360,12 +384,17 @@ namespace ahocorasick {
                 uniques.emplace(patterns[state]);
             }
         }
+        /* Operator::erase
+            @params:    pattern     as const pattern_type&(std::string)
+            @process:   do:map.erase(`pattern`) if pattern in `uniques`
+        */
         void erase(const pattern_type& pattern) {
             if (uniques.find(pattern) != uniques.end()) {
                 map.erase(pattern);
                 uniques.erase(pattern);
             }
         }
+
     private:
         Map map;
         Thread::Pool pool;
