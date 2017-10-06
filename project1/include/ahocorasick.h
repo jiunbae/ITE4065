@@ -15,6 +15,10 @@ class Table {
 public:
     std::set<std::string> patterns;
 
+    /**
+    * build aho-corasick map first time.
+    * @see update_table()
+    */
     Table(const std::set<std::string>& patterns) : patterns(patterns) {
         for (const auto& pattern : patterns) {
             table_size += pattern.length() + 1;
@@ -31,6 +35,13 @@ public:
         }
     }
 
+    /**
+    * find matched patterns in input query
+    * @param: query; const string&
+    * @return: matched pattern list, it's already unique.
+    * - call sync() to synchronize aho-corasick map if patterns changed.
+    * - follow aho-corasick map and find matched patterns
+    */
     list<string> match(const string& query) {
         unsigned int start;
         unsigned int pos;
@@ -81,6 +92,13 @@ private:
     std::vector<std::vector<int>> raw;
     std::set<std::string> pre_add, pre_rem;
 
+    /**
+    * sync aho-corasick map, process lazy sync (synchronize map when needed(process find match))
+    * - Caclculate changed table_size, if larger, resize map size
+    * - rebuild aho-corasick map
+    *       It's not necessary, and slow. But delete process disarrange map.
+    *       I find O(n) deleteion, but return query mismatch randomly(also in single thread; @see also single branch).
+    */
     void sync() {
         int _table_size = table_size;
 
@@ -120,20 +138,33 @@ private:
         pre_rem.clear();
     }
 
+    /**
+    * update_table
+    * @param: pattern; const string&
+    * build aho-corasick map using pattern
+    */
     void update_table(const string& pattern) {
+        // iterate pattern, and make link between nodes (a single alphabet char)
+        // start at init_state
+        // follow next state if there already created(!= -1)
+        // create new node if first time
         for (const auto& ch : pattern) {
             if (raw[state][ch - CHAR_START] == -1) {
                 raw[state][ch - CHAR_START] = state_num;
                 pre_state = state;
                 pre_char = ch - CHAR_START;
                 state = state_num++;
-            }
-            else {
+            } else {
                 state = raw[pre_state = state][pre_char = ch - CHAR_START];
             }
         }
+
+        // denote final_state in end of pattern
+        // final_state is lower than init_state and bigger than -1
+        // so, can check -1 < state < init_state to accept query
         raw[pre_state][pre_char] = state_final;
 
+        // swap for next state exists (this make accept a substring of an already formed pattern
         swap(raw[state_final], raw[state]);
         fill(raw[state].begin(), raw[state].end(), -1);
 

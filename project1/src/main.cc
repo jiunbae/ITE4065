@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <iterator>
 
-
+// define newl, cuz std::endl is too much slow for buffer flush
 #define newl ('\n')
 #define sep ('|')
 #include <ahocorasick.h>
@@ -19,6 +19,7 @@ int main(int argc, char * argv[]) {
     string query;
     set<string> patterns;
 
+    // make stream io faster, (but do not use mixed `iostream` with `stdio.h`)
     std::ios_base::sync_with_stdio(false);
     std::cin >> n;
     for (int i = 0; i < n; i++) {
@@ -28,15 +29,16 @@ int main(int argc, char * argv[]) {
     Table* table = new Table(patterns);
     std::cout << "R" << newl;
 
-
     while (std::cin >> cmd) {
         std::cin.get();
         getline(std::cin, query);
 
         switch (cmd) {
         case 'Q': {
+            // Table::match return list of matched patterns
             list<string> matches = table->match(query);
 
+            // so, just print return of Table::match
             auto begin = matches.begin();
             if (begin != matches.end()) {
                 std::cout << *(begin++);
@@ -51,9 +53,11 @@ int main(int argc, char * argv[]) {
         }
                   break;
         case 'A':
+            // Table::add do not process immediately, it will processed if necessary(Table::match called)
             table->add(query);
             break;
         case 'D':
+            // Table::remove do not process immediately, it will processed if necessary(Table::match called)
             table->remove(query);
             break;
         }
