@@ -23,18 +23,20 @@
 #define AVERAGE_PATTERN_SIZE (256)
 
 namespace ahocorasick {
-    enum State {
-        final = -1, init, normal, out = 10, terminal
+    enum State {        // States, can be init->normal->final or out(not acceptable)
+        final = -1, init, normal, out = 10
     };
-    using index_type = int;
-    using index_unsigned_type = size_t;
-    using element_type = char;                                  // element type
-    using pattern_type = std::string;                           // pattern type
+
+    using index_type = int;                                     // index under 0 is final, 0 is init, over 0 is normal state
+    using index_unsigned_type = size_t;                         // index with State(e.g. -5 == (State::final, 4))
+    using element_type = char;                                  // element type(CHAR_SIZE)
+    using pattern_type = std::string;                           // pattern type(container<element_type>)
     using node_type = std::array<index_type, CHAR_SIZE>;        // node type
     using block_type = std::vector<node_type>;                  // block type
-    using multi_index = std::pair<index_type, element_type>;    // multi indexer
-    using result_type = std::queue<index_unsigned_type>;                 // result type
-    using matched_type = std::vector<result_type>;
+    using multi_index = std::pair<index_type, element_type>;    // multi index
+    using result_type = std::queue<index_unsigned_type>;        // result type(contain matched pattern number)
+    using matched_type = std::vector<result_type>;              // use in thread
+
     inline bool operator==(const index_type& index, State state) {
         if (index == 0 || state == init)
             return index == 0 && state == init;
@@ -45,8 +47,19 @@ namespace ahocorasick {
             return index != 0 || state != init;
         return (state > 0) ^ (index > 0);
     }
+
+    /* Map: ahocorasick automata.
+        @desgine:   has three states, init, normal, final
+        @process:   @see insert(), erase()
+    */
     class Map {
     public:
+        /* tracer: class for trace pattern in Map, like iterator.
+            @construct: Map, pattern, state
+            @process:   @see operator++(), get next step with pattern and state.
+                        @see operator*(), return now state, can be compare with State(::final or not)
+                        destroy if State::out
+        */
         class tracer {
         public:
             using value_type = multi_index;
@@ -76,8 +89,6 @@ namespace ahocorasick {
                 switch (_state) {
                 case out:
                     return pattern == EOP || state == State::init;
-                case terminal:
-                    return pattern == EOP && state == State::final;
                 default:
                     return state == _state;
                 }
@@ -86,8 +97,6 @@ namespace ahocorasick {
                 switch (_state) {
                 case out:
                     return pattern != EOP && state != State::init;
-                case terminal:
-                    return pattern != EOP || state != State::final;
                 default:
                     return state != _state;
                 }
@@ -103,15 +112,19 @@ namespace ahocorasick {
             const element_type* pattern;
             index_type state = 0;
         };
+
+
         Map() { init(DEFAULT_RESERVE_SIZE); }
         Map(size_t size) { init(size); }
         ~Map() {}
+
         tracer begin(const element_type* pattern) const {
             return tracer(*this, pattern + 1, const_at(init_state, *pattern));
         }
         State end() const {
-            return State::terminal;
+            return State::out;
         }
+
         template<template<typename T, typename All = std::allocator<T>> typename _container, typename _item>
         _container<index_type>& insert(const _container<_item>& container) {
             _container<index_type> results;
@@ -126,6 +139,7 @@ namespace ahocorasick {
                 _resize(fstates, fstates.size() * 2);
             return -(_insert(pattern) + 1);
         }
+
         template<template<typename T, typename All = std::allocator<T>> typename _container, typename _item>
         void erase(const _container<_item>& container) {
             for (const auto& pattern : container)
@@ -146,6 +160,7 @@ namespace ahocorasick {
             // TODO: check which is faster, front -base or back -pop
             // THINK: how about insert same as erased pattern
         }
+
         void resize(size_t size) {
             _resize(fstates, size);
             _resize(nstates, size * AVERAGE_PATTERN_SIZE);
@@ -154,6 +169,7 @@ namespace ahocorasick {
             _reserve(fstates, size);
             _reserve(nstates, size * AVERAGE_PATTERN_SIZE);
         }
+
         const index_type& const_at(const index_type& index, const element_type& element) const {
             return const_at(index)[element - (element >= CHAR_START ? CHAR_START : 0)];
         }
@@ -169,6 +185,7 @@ namespace ahocorasick {
                 return istates;
             }
         }
+
         index_type& at(const index_type& index, const element_type& element) {
             return at(index)[element - (element >= CHAR_START ? CHAR_START : 0)];
         }
@@ -184,6 +201,7 @@ namespace ahocorasick {
                 return istates;
             }
         }
+
         index_type& operator[](const multi_index& index) {
             return at(index.first)[index.second - (index.second >= CHAR_START ? CHAR_START : 0)];
         }
@@ -196,6 +214,7 @@ namespace ahocorasick {
                 return istates;
             }
         }
+
         index_unsigned_type size(State state) const {
             switch (state) {
             case (State::normal):
@@ -214,12 +233,14 @@ namespace ahocorasick {
         index_unsigned_type final_size;
         std::queue<index_type> node_empty;
         std::queue<index_type> final_empty;
+
         void init(size_t size) {
             istates = std::array<index_type, CHAR_SIZE>();
             node_size = final_size = 0;
             reserve(size);
             resize(size);
         }
+
         index_type next(State state) {
             switch (state) {
             case (State::normal): {
@@ -246,6 +267,7 @@ namespace ahocorasick {
                 return 0;
             }
         }
+
         index_type pop(index_type index, element_type element) {
             index_type index_next = at(index, element);
             if (index_next == State::final) {
@@ -268,6 +290,7 @@ namespace ahocorasick {
                 return false;
             }
         }
+
         index_type _insert(const pattern_type& pattern) {
             index_type state = init_state;
             index_type pre_state = init_state;
@@ -285,18 +308,25 @@ namespace ahocorasick {
             std::fill(at(state).begin(), at(state).end(), init_state);
             return ret;
         }
+
         bool _is_empty(const node_type& node, element_type flag = init_state) {
             return std::all_of(node.begin(), node.end(), [](element_type element) {
                 return element == init_state;
             });
         }
+
         void _resize(block_type& block, size_t size) {
             block.resize(size, std::array<index_type, CHAR_SIZE>());
         }
+
         void _reserve(block_type& block, size_t size) {
             block.reserve(size);
         }
     };
+
+    /* Operator: solv multi pattern matching with insert/erase of pattern.
+        @process: @see insert(), erase(), match()
+    */
     class Operator {
     public:
         Operator() : map(DEFAULT_RESERVE_SIZE), pool(DEFAULT_THREAD_SIZE) {
