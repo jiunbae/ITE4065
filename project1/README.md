@@ -1,4 +1,4 @@
-# project1: Signal
+# Project1: Signal
 
 ## Versions
 
