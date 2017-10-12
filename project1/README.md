@@ -1,28 +1,27 @@
-# project1: Signal
+# Project1: Signal
 
-## Process:
-- [x] Implement aho-corasick
-    - [x] failure link
-    - [x] prefix map
-    - [x] O(n) delete
-- [x] Build project structure
-    - [x] add reference solution
-    - [x] add marker (to check)
-    - [x] add test set (tiny, small)
-- [ ] Multi thread
-    - [ ] optimize critical section
-    - [ ] change hyperparameter (thread num, chunk size, etc...)
-- [ ] Benchmark
-    - [x] IO bench
-    - [x] STL bench (e.g. vector vs array)
-    - [ ] pass parameter
+- [Master](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/tree/master)
+- [Single Thread](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/tree/single)
+- [Multi Thread](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/tree/multi)
 
-## Issues:
+## Master Version
 
-#### IO Issue
-`std::iostream` is not much faster than **regular IO***(e.g. `scanf`, `getchar`, `getchar_unlocked` especially)*.
-but marker doesn't work well using **regular IO** like below code.
-```diff
--   std::cin >> n;
-+   scanf("%d", &n);
-```
+### Features
+
+- [x] Handle input query
+    - [x] Q as query, find matched patterns in query (see also [ahocorasick::match]())
+        - [x] print -1 if there are no matches
+    - [x] A as Add, add pattern
+    - [x] D as Delete, delete pattern
+
+- [x] Ahocorasick
+    - [x] make trie for patterns
+    - [x] make `Failure Link` and `Output Link`
+    - [x] find match
+    - [x] efficent `add` algorithm; <= O(n)
+    - [ ] efficent `delete` algorithm; <= O(n log n)
+
+- [ ] Thread pool (not in this version)
+    - [ ] minimize cond lock
+    - [ ] find optimized thread size
+    - [ ] support c++11(or above 14)
