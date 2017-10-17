@@ -1,16 +1,19 @@
 #include <iostream>
+#include <vector>
+#include <string>
+
+#include <argparser.hpp>
 
 int main(int argc, char * argv[]) {
+    arg::Parser parser;
+    
+    parser.argument("N");
+    parser.argument("R");
+    parser.argument("E");
 
-    int N, R, E;
+    parser.parse(argc, argv);
 
-    // argparser
-    if (argc == 4) {
-        
-    } else {
-        return 0;
-    }
+    int n = parser.get<int>("N");
 
-    std::cout << N << R << E;
-    return 0;
+    std::cout << n << std::endl; 
 }
