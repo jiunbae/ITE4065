@@ -9,26 +9,45 @@ namespace thread {
         template <typename T>
         class Counter {
         public:
+            Counter() {}
+            T get() const {
+                return value;
+            }
+            void add(T v) {
+                value += v;
+            }
+            void reset() {
+                value = 0;
+            }
+        private:
+            T value = 0;
+        };
+    }
+    namespace unsafe {
+        
+        template <typename T>
+        class Counter {
+        public:
             Counter() = default;
             Counter(const Counter&& origin) : mutex(0) {}
 
             T get() const {
-                std::shared_lock<std::shared_mutex> lock(mutex);
+                std::shared_lock<std::shared_timed_mutex> lock(mutex);
                 return value;
             }
 
             void add(T v) {
-                std::unique_lock<std::shared_mutex> lock(mutex);
+                std::unique_lock<std::shared_timed_mutex> lock(mutex);
                 value += v;
             }
 
             void reset() {
-                std::unique_lock<std::shared_mutex> lock(mutex);
+                std::unique_lock<std::shared_timed_mutex> lock(mutex);
                 value = 0;
             }
 
         private:
-            mutable std::shared_mutex mutex;
+            mutable std::shared_timed_mutex mutex;
             T value = 0;
         };
     }
