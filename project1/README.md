@@ -1,7 +1,5 @@
 # Project1: Signal
 
-## Versions
-
 - [Master](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/tree/master)
 - [Single Thread](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/tree/single)
 - [Multi Thread](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/tree/multi)
