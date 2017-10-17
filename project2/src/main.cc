@@ -3,17 +3,21 @@
 #include <string>
 
 #include <argparser.hpp>
+#include <transaction.hpp>
 
 int main(int argc, char * argv[]) {
     arg::Parser parser;
     
-    parser.argument("N");
-    parser.argument("R");
-    parser.argument("E");
+    parser.argument("N", "thread count");
+    parser.argument("R", "record count");
+    parser.argument("E", "global execution order");
 
     parser.parse(argc, argv);
 
-    int n = parser.get<int>("N");
+    // create operator
+    transaction::Operator op(parser.get<size_t>("N"),
+                                parser.get<size_t>("R"),
+                                parser.get<transaction::int64>("E"));
 
-    std::cout << n << std::endl; 
+    op.process();
 }

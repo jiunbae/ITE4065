@@ -1,5 +1,5 @@
-#ifndef ARG_PARSER_H
-#define ARG_PARSER_H
+#ifndef ARG_PARSER_HPP
+#define ARG_PARSER_HPP
 
 #include <vector>
 #include <unordered_map>
@@ -13,13 +13,13 @@ namespace arg {
             add("app", "caller");
         }
 
-        size_t argument(const std::string& name, const std::string& description="") {
+        size_t argument(const std::string& name, const std::string& description = "") {
             return add(name, description);
         }
 
         bool parse(int argc, char * argv[]) {
             std::vector<std::string> args = std::vector<std::string>(argv, argv + argc);
-            
+
             for (auto it = args.begin(); it != args.end(); ++it) {
                 size_t index = std::distance(args.begin(), it);
                 emplace(index, *it);
