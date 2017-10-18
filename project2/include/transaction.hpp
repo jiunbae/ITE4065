@@ -17,11 +17,14 @@ namespace transaction {
 
     class Operator {
     public:
-        Operator(size_t n, size_t r, int64 e) : n(n), r(r), e(e), pool(n), random(0, r - 1)  {
-            util::iterate([&l=this->loggers, &c=this->counters](size_t i) {
+        Operator(size_t n, size_t r, int64 e) : n(n), r(r), e(e), pool(n), order(g), random(0, r - 1), logger("test.log") {
+            util::iterate([&l=this->loggers, &g=this->g](size_t i) {
                 l.push_back(new Logger("thread" + std::to_string(i), "txt"));
-                c.push_back(new thread::safe::Counter<int64>());
             }, n);
+
+            util::repeat([&c = this->counters, &g=this->g]() {
+                c.push_back(new thread::safe::Counter<int64>(g));
+            }, r);
         }
 
         ~Operator() {
@@ -40,23 +43,25 @@ namespace transaction {
                     size_t j = random.next(i);
                     size_t k = random.next(i, j);
 
-                    int64 v = counters[i]->get();
+                    int64 x = counters[i]->get();
+                    int64 y = counters[j]->add(x + 1);
+                    int64 z = counters[k]->add(-x);
 
-                    counters[j]->add(v + 1);
-                    counters[k]->add(-v);
+                    {   // commit stage
+                        g.lock();
+                        order.add(1, false);
 
-                    order.add(1);
+                        int64 o = order.get(false);
 
-                    size_t o = order.get();
-                    if (o <= e) {
-                        std::string commit_log = std::to_string(o) + " " +
-                            std::to_string(i) + " " + std::to_string(j) + " " + std::to_string(k) + " " +
-                            std::to_string(v) + " " + std::to_string(counters[j]->get()) + " " + std::to_string(counters[k]->get()) + '\n';
+                        if (o <= e) {
+                            loggers[id]->safe_write(o, i, j, k, x, y, z);
+                        }
 
-                        (*loggers[id]) << commit_log;
+                        g.release();
                     }
+
                 }));
-            } while (order.get() < e);
+            } while (order.get(false) < e);
 
             for (auto& task : tasks) {
                 task.get();
@@ -67,9 +72,11 @@ namespace transaction {
         const size_t r;     // record count
         const int64 e;      // global execution order
 
+        Logger logger;
         std::vector<Logger *> loggers;
         std::vector<thread::safe::Counter<int64> *> counters;
         thread::safe::Counter<int64> order;
+        thread::safe::Lock g;
         thread::Pool pool;
 
         util::Random<size_t> random;

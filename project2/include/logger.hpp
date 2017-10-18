@@ -18,15 +18,26 @@ namespace transaction {
 
         template <typename T>
         void write(const T& message) {
-            stream << message;
-            stream << '\n';
+            stream << message << '\n';
         }
 
         template <typename T, typename... Args>
         void write(const T& message, const Args&... messages) {
-            stream << message;
-            stream << ' ';
+            stream << message << ' ';
             write(messages...);
+        }
+
+        template <typename T>
+        void safe_write(const T& message) {
+            safe_stream << message << '\n';
+            stream << safe_stream.rdbuf();
+            safe_stream.clear();
+        }
+
+        template <typename T, typename... Args>
+        void safe_write(const T& message, const Args&... messages) {
+            safe_stream << message << ' ';
+            safe_write(messages...);
         }
 
         template <typename T>
@@ -36,6 +47,8 @@ namespace transaction {
         }
 
     private:
+        std::string safe_string;
+        std::stringstream safe_stream;
         std::string name;
         std::ofstream stream;
     };
