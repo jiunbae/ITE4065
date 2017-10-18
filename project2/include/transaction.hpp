@@ -17,7 +17,7 @@ namespace transaction {
 
     class Operator {
     public:
-        Operator(size_t n, size_t r, int64 e) : n(n), r(r), e(e), pool(n), order(g), random(0, r - 1), logger("test.log") {
+        Operator(size_t n, size_t r, int64 e) : n(n), r(r), e(e), order(g), pool(n), random(0, r - 1) {
             util::iterate([&l=this->loggers, &g=this->g](size_t i) {
                 l.push_back(new Logger("thread" + std::to_string(i), "txt"));
             }, n);
@@ -30,8 +30,11 @@ namespace transaction {
         ~Operator() {
             util::iterate([&l=this->loggers, &c=this->counters](size_t i) {
                 delete l[i];
-                delete c[i];
             }, n);
+
+            util::iterate([&c=this->counters](size_t i) {
+                delete c[i];
+            }, r);
         }
 
         void process() {
@@ -72,7 +75,6 @@ namespace transaction {
         const size_t r;     // record count
         const int64 e;      // global execution order
 
-        Logger logger;
         std::vector<Logger *> loggers;
         std::vector<thread::safe::Counter<int64> *> counters;
         thread::safe::Counter<int64> order;
