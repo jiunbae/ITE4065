@@ -2,6 +2,8 @@
 #define COUNTER_HPP
 
 #include <vector>
+#include <list>
+
 #include <mutex>
 #include <shared_mutex>
 
@@ -42,23 +44,45 @@ namespace thread {
 
         template <typename T>
         class Container {
-            static_assert(Counter<T>::value, "T must be able to be templated by the thread::safe::Counter.");
         public:
-            Container(size_t size, std::mutex& global) : elements(size), global(global) {
-
+            Container(size_t size, std::mutex& global)
+            : global(global), read_wait(size), write_wait(size) {
+                while (size--) {
+                    elements.push_back(new Counter<T>(global));
+                }
             };
 
-            T read(size_t index, bool g=true) const {
+            ~Container() {
+                for (auto& e : elements) {
+                    delete e;
+                }
+            }
 
+            T read(size_t index, bool g=true) {
+                if (!assert_index(index)) throw std::out_of_range("index out of range");
+                read_wait.push_back(index);
+                T value = elements[index]->get(g);
+                read_wait.remove(index);
+                return value;
             }
 
             T write(size_t index, T v, bool g=true) {
-
+                if (!assert_index(index)) throw std::out_of_range("index out of range");
+                write_wait.push_back(index);
+                T value = elements[index]->add(v, g);
+                write_wait.remove(index);
+                return value;
             }
 
         private:
             std::mutex& global;
-            std::vector<Counter<T>> elements;
+            std::vector<Counter<T> *> elements;
+            std::list<size_t> read_wait;
+            std::list<size_t> write_wait;
+
+            bool assert_index(size_t index) {
+                return 0 <= index && index < elements.size();
+            }
         };
     }
 }

@@ -18,24 +18,16 @@ namespace transaction {
     class Operator {
     public:
         Operator(size_t n, size_t r, int64 e)
-        : n(n), r(r), e(e), order(g), pool(n), random(0, r - 1) {
+        : n(n), r(r), e(e), counters(r, g), order(g), pool(n), random(0, r - 1) {
             util::iterate([&l=this->loggers, &g=this->g](size_t i) {
                 l.push_back(new Logger("thread" + std::to_string(i), "txt"));
             }, n);
-
-            util::repeat([&c = this->counters, &g=this->g]() {
-                c.push_back(new thread::safe::Counter<int64>(g));
-            }, r);
         }
 
         ~Operator() {
             util::iterate([&l=this->loggers, &c=this->counters](size_t i) {
                 delete l[i];
             }, n);
-
-            util::iterate([&c=this->counters](size_t i) {
-                delete c[i];
-            }, r);
         }
 
         void process() {
@@ -47,9 +39,9 @@ namespace transaction {
                     size_t j = random.next(i);
                     size_t k = random.next(i, j);
 
-                    int64 x = counters[i]->get();
-                    int64 y = counters[j]->add(x + 1);
-                    int64 z = counters[k]->add(-x);
+                    int64 x = counters.read(i);
+                    int64 y = counters.write(j, x + 1);
+                    int64 z = counters.write(k, -x);
 
                     {   // commit stage
                         g.lock();
@@ -77,8 +69,8 @@ namespace transaction {
         const int64 e;      // global execution order
 
         std::vector<Logger *> loggers;
-        std::vector<thread::safe::Counter<int64> *> counters;
         std::mutex g;
+        thread::safe::Container<int64> counters;
         thread::safe::Counter<int64> order;
         thread::Pool pool;
 
