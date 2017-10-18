@@ -1,5 +1,5 @@
-#ifndef TRANSACTION_HPP
-#define TRANSACTION_HPP
+#ifndef TRANSACTION_H
+#define TRANSACTION_H
 
 #include <vector>
 #include <shared_mutex>
@@ -18,9 +18,9 @@ namespace transaction {
     class Operator {
     public:
         Operator(size_t n, size_t r, int64 e) : n(n), r(r), e(e), pool(n), random(0, r - 1)  {
-            util::iterate([&loggers = this->loggers, &counters = this->counters](size_t i) {
-                loggers.emplace_back(Logger("thread" + std::to_string(i), "txt"));
-                counters.push_back(new thread::safe::Counter<int64>());
+            util::iterate([&l=this->loggers, &c=this->counters](size_t i) {
+                l.push_back(new Logger("thread" + std::to_string(i), "txt"));
+                c.push_back(new thread::safe::Counter<int64>());
             }, n);
         }
 
@@ -28,17 +28,26 @@ namespace transaction {
             std::vector<std::future<void>> tasks;
 
             do {
-                tasks.emplace_back(pool.push([&o = this->order, &c = this->counters, &l = this->loggers, &r = this->r, &rand = this->random]() {
-                    size_t i = rand.next();
-                    size_t j = rand.next(i);
-                    size_t k = rand.next(i, j);
+                tasks.emplace_back(pool.push([&](size_t id) {
+                    size_t i = random.next();
+                    size_t j = random.next(i);
+                    size_t k = random.next(i, j);
 
-                    c[j]->add(c[i]->get() + 1);
-                    c[k]->add(-c[i]->get());
+                    int64 v = counters[i]->get();
 
-                    o.add(1);
+                    counters[j]->add(v + 1);
+                    counters[k]->add(-v);
 
-                    //l[id].write(o.get(), i, j, k, c[i].get(), c[j].get(), c[k].get());
+                    order.add(1);
+
+                    size_t o = order.get();
+                    if (o <= e) {
+                        std::string commit_log = std::to_string(o) + " " +
+                            std::to_string(i) + " " + std::to_string(j) + " " + std::to_string(k) + " " +
+                            std::to_string(v) + " " + std::to_string(counters[j]->get()) + " " + std::to_string(counters[k]->get()) + '\n';
+
+                        (*loggers[id]) << commit_log;
+                    }
                 }));
             } while (order.get() < e);
 
@@ -47,11 +56,11 @@ namespace transaction {
             }
         }
     private:
-        size_t n;       // thread count
-        size_t r;       // record count
-        int64 e;        // global execution order
+        const size_t n;     // thread count
+        const size_t r;     // record count
+        const int64 e;      // global execution order
 
-        std::vector<Logger> loggers;
+        std::vector<Logger *> loggers;
         std::vector<thread::safe::Counter<int64> *> counters;
         thread::safe::Counter<int64> order;
         thread::Pool pool;

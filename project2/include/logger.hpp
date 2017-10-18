@@ -1,5 +1,5 @@
-#ifndef LOGGER_HPP
-#define LOGGER_HPP
+#ifndef LOGGER
+#define LOGGER
 
 #include <string>
 #include <fstream>
@@ -9,7 +9,7 @@ namespace transaction {
     class Logger {
     public:
         Logger(const std::string&& filename, const std::string& format = "") {
-            stream.open(name = filename + (format.size() ? "." + format : ""));
+            stream.open(name = filename + (format.size() ? "." + format : ""), std::ofstream::out);
         }
 
         template <typename T>

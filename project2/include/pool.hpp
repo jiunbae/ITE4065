@@ -27,8 +27,9 @@ namespace thread {
                         std::function<void()> task;
                         {
                             std::unique_lock<std::mutex> lock(this->queue_mutex);
-                            this->condition.wait(lock,
-                                [this] { return this->stop || !this->tasks.empty(); });
+                            this->condition.wait(lock, [this] {
+                                return this->stop || !this->tasks.empty();
+                            });
                             if (this->stop && this->tasks.empty())
                                 return;
                             task = std::move(this->tasks.front());
@@ -45,18 +46,40 @@ namespace thread {
         Pool(Pool&&) = delete;
         Pool& operator=(Pool&&) = delete;
 
-        template<class F, class... Args>
+        template <typename F, typename... Args>
         std::future<typename std::result_of<F(Args...)>::type> push(F&& f, Args&&... args) {
             using packaged_task_t = std::packaged_task<typename std::result_of<F(Args...)>::type()>;
 
             std::shared_ptr<packaged_task_t> task(new packaged_task_t(
                 std::bind(std::forward<F>(f), std::forward<Args>(args)...)
             ));
+
             auto res = task->get_future();
+
             {
                 std::unique_lock<std::mutex> lock(this->queue_mutex);
                 this->tasks.emplace([task]() { (*task)(); });
             }
+
+            this->condition.notify_one();
+            return res;
+        }
+
+        template <typename F>
+        std::future<typename std::result_of<F(size_t)>::type> push(F&& f) {
+            using packaged_task_t = std::packaged_task<typename std::result_of<F(size_t)>::type()>;
+
+            std::shared_ptr<packaged_task_t> task(new packaged_task_t(
+                std::bind(std::forward<F>(f), std::forward<size_t>(tasks.size() % workers.size()))
+            ));
+
+            auto res = task->get_future();
+
+            {
+                std::unique_lock<std::mutex> lock(this->queue_mutex);
+                this->tasks.emplace([task]() { (*task)(); });
+            }
+
             this->condition.notify_one();
             return res;
         }
