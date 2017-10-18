@@ -9,7 +9,7 @@
 #include <logger.hpp>
 
 #include <pool.hpp>
-#include <counter.hpp>
+#include <threadsafe.hpp>
 
 namespace transaction {
 
@@ -17,7 +17,8 @@ namespace transaction {
 
     class Operator {
     public:
-        Operator(size_t n, size_t r, int64 e) : n(n), r(r), e(e), order(g), pool(n), random(0, r - 1) {
+        Operator(size_t n, size_t r, int64 e)
+        : n(n), r(r), e(e), order(g), pool(n), random(0, r - 1) {
             util::iterate([&l=this->loggers, &g=this->g](size_t i) {
                 l.push_back(new Logger("thread" + std::to_string(i), "txt"));
             }, n);
@@ -60,7 +61,7 @@ namespace transaction {
                             loggers[id]->safe_write(o, i, j, k, x, y, z);
                         }
 
-                        g.release();
+                        g.unlock();
                     }
 
                 }));
@@ -77,8 +78,8 @@ namespace transaction {
 
         std::vector<Logger *> loggers;
         std::vector<thread::safe::Counter<int64> *> counters;
+        std::mutex g;
         thread::safe::Counter<int64> order;
-        thread::safe::Lock g;
         thread::Pool pool;
 
         util::Random<size_t> random;
