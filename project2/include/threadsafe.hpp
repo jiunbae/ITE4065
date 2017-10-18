@@ -60,28 +60,41 @@ namespace thread {
 
             T read(size_t index, bool g=true) {
                 if (!assert_index(index)) throw std::out_of_range("index out of range");
-                read_wait.push_back(index);
+                append_wait(index, read_wait, read_mutex);
                 T value = elements[index]->get(g);
-                read_wait.remove(index);
+                release_wait(index, read_wait, read_mutex);
                 return value;
             }
 
             T write(size_t index, T v, bool g=true) {
                 if (!assert_index(index)) throw std::out_of_range("index out of range");
-                write_wait.push_back(index);
+                append_wait(index, write_wait, write_mutex);
                 T value = elements[index]->add(v, g);
-                write_wait.remove(index);
+                release_wait(index, write_wait, write_mutex);
                 return value;
             }
 
         private:
             std::mutex& global;
             std::vector<Counter<T> *> elements;
+
+            std::mutex read_mutex;
+            std::mutex write_mutex;
             std::list<size_t> read_wait;
             std::list<size_t> write_wait;
 
             bool assert_index(size_t index) {
                 return 0 <= index && index < elements.size();
+            }
+
+            void append_wait(size_t index, std::list<size_t>& waiter, std::mutex& mutex) {
+                std::unique_lock<std::mutex> lock(mutex);
+                waiter.push_back(index);
+            }
+
+            void release_wait(size_t index, std::list<size_t>& waiter, std::mutex& mutex) {
+                std::unique_lock<std::mutex> lock(mutex);
+                waiter.remove(index);
             }
         };
     }
