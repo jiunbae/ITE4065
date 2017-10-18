@@ -12,6 +12,10 @@ namespace transaction {
             stream.open(name = filename + (format.size() ? "." + format : ""), std::ofstream::out);
         }
 
+        ~Logger() {
+            stream.close();
+        }
+
         template <typename T>
         void write(const T& message) {
             stream << message;

@@ -24,6 +24,13 @@ namespace transaction {
             }, n);
         }
 
+        ~Operator() {
+            util::iterate([&l=this->loggers, &c=this->counters](size_t i) {
+                delete l[i];
+                delete c[i];
+            }, n);
+        }
+
         void process() {
             std::vector<std::future<void>> tasks;
 
