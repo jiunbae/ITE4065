@@ -1,6 +1,8 @@
 #ifndef UTILITY_HPP
 #define UTILITY_HPP
 
+#include <unordered_set>
+
 #include <functional>
 #include <random>
 #include <limits>
@@ -27,23 +29,35 @@ namespace util {
     template <typename T>
     class Random {
     public:
-        Random(T min, T max) : 
-            gen(std::random_device()()), dis(min, max) {}
+        Random(T min, T max)
+			: gen(std::random_device()()), dis(min, max) {}
 
-        T next() {
-            return dis(gen);
-        }
+        T next() { return dis(gen); }
 
-        template <typename... Args>
-        T next(Args... args) {
-            T v = next();
-            while (contain(v, args...)) v = next();
-            return v;
-        }
+		template <size_t N>
+		auto next() {
+			std::unordered_set<T> ret;
+			while (ret.size() < N)
+				// Imp: this is C++17 feature!
+				// If statement with initializer
+				// @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0305r0.html
+				if (T v = next();  ret.find(v) == ret.end())
+					ret.insert(v);
+
+			return next(ret, std::make_index_sequence<N>{});
+		}
 
     private:
         std::mt19937 gen;
         std::uniform_int_distribution<T> dis;
+
+		template <size_t... Is>
+		auto next(std::unordered_set<T>& c, std::index_sequence<Is...>) {
+			return std::make_tuple([&b = c.begin()](size_t v) -> T {
+				std::advance(b, v);
+				return *b;
+			}(Is)...);
+		}
     };
 }
 

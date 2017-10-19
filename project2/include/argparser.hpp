@@ -20,10 +20,8 @@ namespace arg {
         bool parse(int argc, char * argv[]) {
             std::vector<std::string> args = std::vector<std::string>(argv, argv + argc);
 
-            for (auto it = args.begin(); it != args.end(); ++it) {
-                size_t index = std::distance(args.begin(), it);
-                emplace(index, *it);
-            }
+            for (auto it = args.begin(); it != args.end(); ++it)
+                emplace(std::distance(args.begin(), it), *it);
 
             return true;
         }
@@ -49,11 +47,10 @@ namespace arg {
         }
 
         void emplace(size_t index, const std::string& value) {
-            if (index >= values.size()) {
+            if (index >= values.size())
                 values.emplace_back(value);
-            } else {
+            else
                 values[index] = value;
-            }
         }
 
         size_t index(const std::string& name) {
