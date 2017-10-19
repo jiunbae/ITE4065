@@ -59,6 +59,10 @@ namespace util {
 
 		template <size_t... Is>
 		auto next(const std::unordered_set<T>& c, std::index_sequence<Is...>) {
+            // Imp: C++14 feature! but not on gcc
+            // Generic lambda-capture initializers
+            // @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3610.html
+            // return std::make_tuple([&b = c.begin()](size_t v) -> T {
             auto b = c.begin();
 			return std::make_tuple([&b](size_t v) -> T {
 				std::advance(b, v);
