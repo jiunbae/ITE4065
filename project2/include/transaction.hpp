@@ -18,7 +18,7 @@ namespace transaction {
     class Operator {
     public:
         Operator(size_t n, size_t r, int64 e) 
-			: n(n), r(r), e(e), counters(r, g), order(g), pool(n), random(0, r - 1) {
+			: n(n), r(r), e(e), pool(n), counters(r, g), order(g), random(0, r - 1) {
             util::iterate([&l=this->loggers, &g=this->g](size_t i) {
                 l.push_back(new Logger("thread" + std::to_string(i), "txt"));
             }, n);

@@ -37,12 +37,18 @@ namespace util {
 		template <size_t N>
 		auto next() {
 			std::unordered_set<T> ret;
-			while (ret.size() < N)
-				// Imp: this is C++17 feature!
-				// If statement with initializer
-				// @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0305r0.html
-				if (T v = next();  ret.find(v) == ret.end())
-					ret.insert(v);
+			while (ret.size() < N) {
+                T v = next();
+                if (ret.find(v) == ret.end())
+                    ret.insert(v);
+
+                // Imp: this is C++17 feature! but not on gcc5.4
+                // If statement with initializer
+                // @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0305r0.html
+                // if (T v = next(); ret.find(v) == ret.end())
+                //     ret.insert(v)
+                   
+            }
 
 			return next(ret, std::make_index_sequence<N>{});
 		}
@@ -52,8 +58,9 @@ namespace util {
         std::uniform_int_distribution<T> dis;
 
 		template <size_t... Is>
-		auto next(std::unordered_set<T>& c, std::index_sequence<Is...>) {
-			return std::make_tuple([&b = c.begin()](size_t v) -> T {
+		auto next(const std::unordered_set<T>& c, std::index_sequence<Is...>) {
+            auto b = c.begin();
+			return std::make_tuple([&b](size_t v) -> T {
 				std::advance(b, v);
 				return *b;
 			}(Is)...);
