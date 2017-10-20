@@ -17,7 +17,7 @@ namespace transaction {
 
     class Operator {
     public:
-        Operator(size_t n, size_t r, int64 e) 
+        Operator(size_t n, size_t r, int64 e) noexcept
 			: n(n), r(r), e(e), pool(n), counters(r, g), order(g), random(0, r - 1) {
             util::iterate([&l=this->loggers, &g=this->g](size_t i) {
                 l.push_back(new Logger("thread" + std::to_string(i), "txt"));
@@ -79,7 +79,7 @@ namespace transaction {
 		thread::Pool pool;
 
         thread::safe::Container<int64> counters;
-        thread::safe::Counter<int64> order;
+        thread::safe::Record<int64> order;
 		
 		util::Random<size_t> random;
 
