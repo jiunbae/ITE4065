@@ -12,30 +12,43 @@
 
 #include <memory>
 #include <functional>
-#include <stdexcept>
 
 namespace thread {
     class Pool {
     public:
+		/*
+			Init thread::Pool, set n workers to ready for works.
+			use ::push to new task on thread::Pool
+		*/
         Pool(size_t threads_n = std::thread::hardware_concurrency()) : stop(false) {
             if (!threads_n) throw std::invalid_argument("more than zero threads expected");
 
             this->workers.reserve(threads_n);
             for (; threads_n; --threads_n) {
-                this->workers.emplace_back([this] {
+                this->workers.emplace_back([this, tid = threads_n] {
                     while (true) {
-                        std::function<void()> task;
+                        std::function<void()> task = nullptr;
+						std::function<void(size_t)> idtask = nullptr;
                         {
                             std::unique_lock<std::mutex> lock(this->queue_mutex);
                             this->condition.wait(lock, [this] {
-                                return this->stop || !this->tasks.empty();
+                                return this->stop || this->tasks.size() || this->idtasks.size();
                             });
-                            if (this->stop && this->tasks.empty())
+                            if (this->stop && this->tasks.empty() && this->idtasks.empty())
                                 return;
-                            task = std::move(this->tasks.front());
-                            this->tasks.pop();
+							
+							if (this->tasks.size()) {
+								task = std::move(this->tasks.front());
+								this->tasks.pop();
+							} else if (this->idtasks.size()) {
+								idtask = std::move(this->idtasks.front());
+								this->idtasks.pop();
+							}
                         }
-                        task();
+						if (task != nullptr)
+							task();
+						else
+							idtask(tid);
                     }
                 });
             }
@@ -46,6 +59,9 @@ namespace thread {
         Pool(Pool&&) = delete;
         Pool& operator=(Pool&&) = delete;
 
+		/*
+			push function to thread::Pool parameter with emplaced bind
+		*/
         template <typename F, typename... Args>
         std::future<typename std::result_of<F(Args...)>::type> push(F&& f, Args&&... args) {
             using packaged_task_t = std::packaged_task<typename std::result_of<F(Args...)>::type()>;
@@ -65,19 +81,24 @@ namespace thread {
             return res;
         }
 
+		/*
+			push function to thread::Pool parameter with thread_id
+		*/
         template <typename F>
         std::future<typename std::result_of<F(size_t)>::type> push(F&& f) {
-            using packaged_task_t = std::packaged_task<typename std::result_of<F(size_t)>::type()>;
+            using packaged_task_t = std::packaged_task<typename std::result_of<F(size_t)>::type(size_t)>;
 
             std::shared_ptr<packaged_task_t> task(new packaged_task_t(
-                std::bind(std::forward<F>(f), std::forward<size_t>(tasks.size() % workers.size()))
+				std::forward<F>(f)
             ));
 
             auto res = task->get_future();
 
             {
                 std::unique_lock<std::mutex> lock(this->queue_mutex);
-                this->tasks.emplace([task]() { (*task)(); });
+                this->idtasks.emplace([task](size_t tid) {
+					(*task)(tid);
+				});
             }
 
             this->condition.notify_one();
@@ -93,6 +114,7 @@ namespace thread {
     private:
         std::vector<std::thread> workers;
         std::queue<std::function<void()>> tasks;
+		std::queue<std::function<void(size_t)>> idtasks;
 
         std::mutex queue_mutex;
         std::condition_variable condition;

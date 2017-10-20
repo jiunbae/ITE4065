@@ -3,113 +3,181 @@
 
 #include <vector>
 #include <list>
+#include <queue>
 
 #include <mutex>
 #include <shared_mutex>
 
+#include <logger.hpp>
 #include <mutex.hpp>
+
+#ifdef __GNUC__
+	#if (__GNUC__ < 7)
+	#include <experimental/optional>
+	// template <typename T>
+	// using optional<T> = std::experimental::optional<T>;
+	#endif 
+#else
+	#include <optional>
+	template <typename T>
+	using optional<T> = std::optional<T>;
+#endif
 
 namespace thread {
     namespace safe {
 		template <typename T>
 		class Record {
 		public:
-			Record(std::mutex& global) noexcept
-				: global(global) { };
+			Record(T value = T(0)) noexcept
+				: value(value) {
+			}
 
-			T get(bool g = true) const {
-				if (g) global.lock();
-				std::shared_lock<Mutex> lock(mutex);
-				if (g) global.unlock();
+			T get() {
+				mutex.lock_shared();
+
 				return value;
 			}
 
-			T add(T v, bool g = true) {
-				if (g) global.lock();
-				std::unique_lock<Mutex> lock(mutex);
-				if (g) global.unlock();
+			T add(T v) {
+				mutex.lock();
+
+				T origin = value;
 				value += v;
-				return value;
+				return origin;
 			}
 
-			T reset(T v = 0, bool g = true) {
-				if (g) global.lock();
-				std::unique_lock<Mutex> lock(mutex);
-				if (g) global.unlock();
+			T reset(T v = 0) {
+				mutex.lock();
+
 				T origin = value;
 				value = v;
 				return origin;
 			}
 
+			void release() {
+			}
+
 		private:
-			//mutable std::shared_timed_mutex mutex;
-			mutable Mutex mutex;
-			std::mutex& global;
+			mutable thread::safe::Mutex mutex;
 			T value = 0;
 		};
 
         template <typename T>
         class Container {
         public:
-            Container(size_t size, std::mutex& global)
-				: global(global), read_wait(size), write_wait(size) {
-                while (size--)
-                    records.push_back(new Record<T>(global));
-            };
+			Container(size_t record_count, size_t thread_count, T init, std::mutex& global)
+				: global(global), q(record_count), visit(thread_count, false), global_count(0) {
+				while (record_count--)
+					records.push_back(new Record<T>(init));
+			};
 
             ~Container() {
                 for (auto& e : records)
                     delete e;
             }
 
-			/*
-				record refer for capsulize object
-				Record<T>& and bool as argument (bool need cuz, global lock checker) return value T
-			*/
-			T at(size_t index, const std::function<T(Record<T>&, bool)>& f, bool g=true) {
-				if (!assert_index(index)) throw std::out_of_range("index out of range");
-				return f(*records[index], g);
+			std::experimental::optional<size_t> build(size_t tid, size_t i, size_t j, size_t k) {
+				if (assert_deadlock(tid, i, j, k)) {
+					return 0;
+				} else {
+					return {};
+				}
+				
+			}
+
+			std::string&& commit(size_t build_id) {
+
 			}
 
             T read(size_t index, bool g=true) {
                 if (!assert_index(index)) throw std::out_of_range("index out of range");
-				append_wait(index, read_wait, read_mutex);
-                T value = records[index]->get(g);
-				release_wait(index, read_wait, read_mutex);
+                T value = records[index]->get();
                 return value;
             }
 
             T write(size_t index, T v, bool g=true) {
                 if (!assert_index(index)) throw std::out_of_range("index out of range");
-				append_wait(index, write_wait, write_mutex);
-                T value = records[index]->add(v, g);
-				release_wait(index, write_wait, write_mutex);
+                T value = records[index]->add(v);
                 return value;
             }
 
+			void release(size_t index) {
+				if (!assert_index(index)) throw std::out_of_range("index out of range");
+
+				records[index]->release();
+			}
+
+		protected:
+			class Operation {
+			public:
+				enum Operator { GET, ADD };
+
+				Operation(size_t tid, size_t index, Operator op, Operation* depend =nullptr) noexcept
+					: index(index), tid(tid), op(op), requested(), depend(depend) {
+				}
+
+				void set_dependency(Operation* d) {
+					depend = d;
+				}
+
+				Operation* dependency() {
+					return depend;
+				}
+
+			protected:
+				Operation* depend;
+				Timestamp requested, executed;
+				size_t index;
+				size_t tid;
+				Operator op;
+			};
+
         private:
+			size_t global_count;
             std::mutex& global;
             std::vector<Record<T> *> records;
-
-			std::mutex read_mutex;
-			std::mutex write_mutex;
-            std::list<size_t> read_wait;
-            std::list<size_t> write_wait;
-
+			std::vector<std::vector<Operation>> q;
+			std::vector<bool> visit;
+				
             bool assert_index(size_t index) {
                 return 0 <= index && index < records.size();
             }
 
-			void append_wait(size_t index, std::list<size_t>& waiter, std::mutex& mutex) {
-				//std::unique_lock<std::mutex> lock(mutex);
-				//waiter.push_back(index);
-			}
+			bool assert_deadlock(size_t tid, size_t i, size_t j, size_t k) {	
+				global.lock();
 
-			void release_wait(size_t index, std::list<size_t>& waiter, std::mutex& mutex) {
-				//std::unique_lock<std::mutex> lock(mutex);
-				//waiter.remove(index);
+				/*std::fill(visit.begin(), visit.end(), false);
+
+				q[i].emplace_back(tid, i, Operation::Operator::GET);
+				q[j].emplace_back(tid, j, Operation::Operator::ADD, &q[i].back());
+				q[k].emplace_back(tid, k, Operation::Operator::ADD, &q[i].back());
+
+				bool deadlock = [&t = this->q](size_t i) -> bool {
+					std::pair<size_t, size_t> index = { i, t[i].size() - 1 };
+					index = { 2, 1 };
+					auto selector = [&t](const std::pair<size_t, size_t>& i) -> Operation* {
+						return &t[i.first][i.second];
+					};
+					Operation* origin = selector(index);
+					Operation* operation = selector(index);
+
+					do {
+						if (index.second == 0)
+							return false;
+						while (operation->dependency() != nullptr)
+							operation = operation->dependency();
+						index.second -= 1;
+						operation = selector(index);
+						if (origin == operation)
+							return true;
+					} while (true);
+				}(i);
+
+				global.unlock();*/
+
+				return true;
 			}
-        };
+		};
     }
 }
 

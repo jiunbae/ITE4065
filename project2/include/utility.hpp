@@ -29,8 +29,13 @@ namespace util {
     template <typename T>
     class Random {
     public:
+		Random(std::mt19937::result_type seed, T min, T max) noexcept
+			: gen(seed), dis(min, max) {
+		}
+
         Random(T min, T max) noexcept
-			: gen(std::random_device()()), dis(min, max) {}
+			: gen(std::random_device()()), dis(min, max) {
+		}
 
         T next() { return dis(gen); }
 
