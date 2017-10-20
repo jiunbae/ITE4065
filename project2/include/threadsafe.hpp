@@ -11,16 +11,14 @@
 #include <logger.hpp>
 #include <mutex.hpp>
 
-#ifdef __GNUC__
-	#if (__GNUC__ < 7)
+#if defined(__GNUC__) && (__GNUC__ < 7)
 	#include <experimental/optional>
-	// template <typename T>
-	// using optional<T> = std::experimental::optional<T>;
-	#endif 
+	template <typename T>
+	using optional = std::experimental::optional<T>;
 #else
 	#include <optional>
 	template <typename T>
-	using optional<T> = std::optional<T>;
+	using optional = std::optional<T>;
 #endif
 
 namespace thread {
