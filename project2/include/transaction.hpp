@@ -59,10 +59,10 @@ namespace transaction {
 					if (!cid) return;
 					commit_id = *cid;
                 }));
-            } while (commit_id <= e);
+            } while (counters.order() <= e);
 
             for (auto& task : tasks) {
-                task.get();
+				task.get();
             }
         }
 

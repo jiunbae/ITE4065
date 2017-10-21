@@ -101,7 +101,6 @@ namespace thread {
 				}
 
 				T execute(Record<T>* operand, T value = 0) {
-					executed = Timestamp();
 					this->operand = operand;
 					switch (op) {
 						case Operator::READ:
@@ -150,7 +149,6 @@ namespace thread {
 
 			protected:
 				Operation* depend;
-				Timestamp requested, executed;
 				Record<T>* operand;
 				size_t rid;
 				size_t tid;
@@ -160,33 +158,23 @@ namespace thread {
 			};
 
 			Container(size_t record_count, size_t thread_count, T init)
-				: q(record_count), visit(thread_count, false) {
+				: waiting(record_count), visit(thread_count, false) {
 				while (record_count--)
 					records.push_back(new Record<T>(init));
 			};
 
             ~Container() {
+				for (auto& story : history) {
+					Operation * a, *b, *c;
+					std::tie(a, b, c) = story;
+					delete a;
+					delete b;
+					delete c;
+				}
+
                 for (auto& e : records)
                     delete e;
             }
-
-			/*optional<size_t> build(std::queue<Operation*> tasks) {
-				std::stack<Operation*> done;
-
-				while (!tasks.empty()) {
-					Operation* operation = tasks.front(); tasks.pop();
-
-					{
-						std::unique_lock<std::mutex> lock(global);
-						bool deadlock = assert_deadlock(operation);
-						if (deadlock) return {};
-						records[operation->record_id()]->acquire(operation->oper());
-					}
-
-
-					done.push(operation);
-				}
-			}*/
 
 			optional<size_t> transaction(size_t tid, size_t i, size_t j, size_t k) {
 				Operation* get = new Operation(tid, i, Operator::READ);
@@ -201,20 +189,32 @@ namespace thread {
 
 					bool deadlock = false;
 
-					if (deadlock |= assert_deadlock(get)) return {};
+
+					if (deadlock |= assert_deadlock(tid, i)) {
+						waiting[get->record_id()].pop_back();
+						return {};
+					}
+					waiting[get->record_id()].emplace_back(get);
 					T read = get->execute(records[i]);
 
-					if (deadlock |= assert_deadlock(add)) {
+					if (deadlock |= assert_deadlock(tid, j)) {
+						waiting[get->record_id()].pop_back();
+						waiting[add->record_id()].pop_back();
 						get->undo();
 						return {};
 					}
+					waiting[add->record_id()].emplace_back(add);
 					add->execute(records[j], read + 1);
 
-					if (deadlock |= assert_deadlock(sub)) {
+					if (deadlock |= assert_deadlock(tid, k)) {
+						waiting[get->record_id()].pop_back();
+						waiting[add->record_id()].pop_back();
+						waiting[sub->record_id()].pop_back();
 						get->undo();
 						add->undo();
 						return {};
 					}
+					waiting[sub->record_id()].emplace_back(sub);
 					sub->execute(records[k], -read);
 
 					history.emplace_back(get, add, sub);
@@ -230,11 +230,14 @@ namespace thread {
 					Operation* get, *add, *sub;
 					std::tie(get, add, sub) = history[build_id];
 
+					waiting[get->record_id()].erase(waiting[get->record_id()].begin());
+					waiting[add->record_id()].erase(waiting[add->record_id()].begin());
+					waiting[sub->record_id()].erase(waiting[sub->record_id()].begin());
 					get->release();
 					add->release();
 					sub->release();
 
-					T o = order.add(1) + 1;
+					T o = count.add(1) + 1;
 					f(o, get->record_id(), add->record_id(), sub->record_id(),
 						get->eval(), add->eval(), sub->eval());
 
@@ -242,17 +245,9 @@ namespace thread {
 				}
 			}
 
-            T read(size_t index, bool g=true) {
-                if (!assert_index(index)) throw std::out_of_range("index out of range");
-                T value = records[index]->get();
-                return value;
-            }
-
-            T write(size_t index, T v, bool g=true) {
-                if (!assert_index(index)) throw std::out_of_range("index out of range");
-                T value = records[index]->add(v);
-                return value;
-            }
+			T order() {
+				return count.get();
+			}
 
 			void release(size_t index) {
 				if (!assert_index(index)) throw std::out_of_range("index out of range");
@@ -263,9 +258,9 @@ namespace thread {
         private:
             std::mutex global;
 
-			Record<T> order;
+			Record<T> count;
             std::vector<Record<T> *> records;
-			std::vector<std::vector<Operation*>> q;
+			std::vector<std::vector<Operation*>> waiting;
 			std::vector<std::tuple<Operation*, Operation*, Operation*>> history;
 			std::vector<bool> visit;
 
@@ -277,69 +272,36 @@ namespace thread {
 				return 0 <= index && index < history.size();
 			}
 
-			bool assert_deadlock(Operation* operation) {
-				std::fill(visit.begin(), visit.end(), false);
+			bool assert_deadlock(size_t record_id, size_t thread_id) {
+				if (waiting[record_id].empty()) return false;
 
-				size_t rid = operation->record_id();
-				q[rid].emplace_back(operation);
+				auto arrange = [&t = this->waiting](const Operation* operation) -> optional<std::pair<size_t, size_t>> {
+					size_t record_id = operation->record_id();
+					
+					auto tar = std::find(t[record_id].begin(), t[record_id].end(), operation);
+					if (tar == t[record_id].end()) return {};
 
-				return [&t = this->q](size_t i) -> bool {
-					auto selector = [&t](const std::pair<size_t, size_t>& i) -> Operation* {
-						return t[i.first][i.second];
-					};
-					std::pair<size_t, size_t> index = { i, t[i].size() - 1 };
-					Operation* origin = selector(index);
-					Operation* operation = selector(index);
+					size_t index = std::distance(t[record_id].begin(), tar);
+					if (index == 0) return {};
+					return std::make_pair(record_id, index);
+				};
 
-					while (index.second) {
-						while (operation->dependency() != nullptr)
-							operation = operation->dependency();
-						index.second -= 1;
-						operation = selector(index);
-						if (origin == operation)
-							return true;
-					};
-					return false;
-				}(rid);
-			}
+				auto select = [&t = this->waiting](std::pair<size_t, size_t>& index)->Operation* {
+					return t[index.first][index.second -= 1];
+				};
 
-			optional<size_t> assert_deadlock(size_t tid, size_t i, size_t j, size_t k) {	
-				global.lock();
-
-				std::fill(visit.begin(), visit.end(), false);
-
-				q[i].emplace_back(tid, i, Operation::Operator::GET);
-				q[j].emplace_back(tid, j, Operation::Operator::ADD, &q[i].back());
-				q[k].emplace_back(tid, k, Operation::Operator::ADD, &q[i].back());
-
-				bool deadlock = [&t = this->q](size_t i) -> bool {
-					auto selector = [&t](const std::pair<size_t, size_t>& i) -> Operation* {
-						return &t[i.first][i.second];
-					};
-					std::pair<size_t, size_t> index = { i, t[i].size() - 1 };
-					Operation* origin = selector(index);
-					Operation* operation = selector(index);
-
-					while (index.second) {
-						while (operation->dependency() != nullptr)
-							operation = operation->dependency();
-						index.second -= 1;
-						operation = selector(index);
-						if (origin == operation)
-							return true;
-					};
-					return false;
-				}(i);
-
-				if (deadlock) return {};
-
-				size_t h = history.size();
-				history.emplace_back(std::make_tuple<Operation*, Operation*, Operation*>
-					(&q[i].back(), &q[j].back(), &q[k].back())
-				);
-
-				global.unlock();
-				return h;
+				std::pair<size_t, size_t> index = { record_id, waiting[record_id].size() - 1 };
+				Operation* origin = waiting[record_id].back();
+				Operation* point = waiting[record_id].back();
+				
+				while (index.second) {
+					while (point->dependency() != nullptr) point = point->dependency();
+					auto assert_arrange = arrange(point);
+					if (!assert_arrange) return false;
+					point = select(index = *assert_arrange);
+					if (point == origin) return true;
+				}
+				return false;
 			}
 		};
     }
