@@ -6,6 +6,7 @@
 #include <queue>
 #include <stack>
 #include <functional>
+#include <algorithm>
 
 #include <mutex>
 #include <shared_mutex>
@@ -275,7 +276,7 @@ namespace thread {
 			bool assert_deadlock(size_t record_id, size_t thread_id) {
 				if (waiting[record_id].empty()) return false;
 
-				auto arrange = [&t = this->waiting](const Operation* operation) -> optional<std::pair<size_t, size_t>> {
+				auto arrange = [&t = this->waiting](Operation* operation) -> optional<std::pair<size_t, size_t>> {
 					size_t record_id = operation->record_id();
 					
 					auto tar = std::find(t[record_id].begin(), t[record_id].end(), operation);
