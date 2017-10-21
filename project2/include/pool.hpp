@@ -48,7 +48,7 @@ namespace thread {
 						if (task != nullptr)
 							task();
 						else
-							idtask(tid);
+							idtask(tid - 1);
                     }
                 });
             }

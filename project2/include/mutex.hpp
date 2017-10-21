@@ -62,6 +62,16 @@ namespace thread {
 					writer.notify_all();
 			}
 
+			/*
+				release lock even if lock_shared
+			*/
+			void release() {
+				if (writing)
+					unlock();
+				else
+					unlock_shared();
+			}
+
 		private:
 			std::mutex mutex;
 			std::condition_variable reader;
