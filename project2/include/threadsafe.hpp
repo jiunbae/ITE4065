@@ -132,6 +132,10 @@ namespace thread {
 					operand->release(op);
 				}
 
+				size_t thread_id() const {
+					return tid;
+				}
+
 				T eval() const {
 					return evaluated;
 				}
@@ -182,42 +186,44 @@ namespace thread {
 				Operation* add = new Operation(tid, j, Operator::WRITE);
 				Operation* sub = new Operation(tid, k, Operator::WRITE);
 
-				add->set_dependency(sub);
-				get->set_dependency(add);
-
+				bool deadlock = false;
 				{
 					std::unique_lock<std::mutex> lock(global);
-
-					bool deadlock = false;
-
-
 					if (deadlock |= assert_deadlock(tid, i)) {
-						waiting[get->record_id()].pop_back();
 						return {};
 					}
 					waiting[get->record_id()].emplace_back(get);
-					T read = get->execute(records[i]);
+					get->set_dependency(add);
+					records[i]->acquire(get->oper());
+				}
+				T read = get->execute(records[i]);
 
+				{
+					std::unique_lock<std::mutex> lock(global);
 					if (deadlock |= assert_deadlock(tid, j)) {
-						waiting[get->record_id()].pop_back();
-						waiting[add->record_id()].pop_back();
-						get->undo();
+						waiting[i].pop_back();
 						return {};
 					}
 					waiting[add->record_id()].emplace_back(add);
-					add->execute(records[j], read + 1);
+					add->set_dependency(sub);
+					records[j]->acquire(add->oper());
+				}
+				add->execute(records[j], read + 1);
 
+				{
+					std::unique_lock<std::mutex> lock(global);
 					if (deadlock |= assert_deadlock(tid, k)) {
-						waiting[get->record_id()].pop_back();
-						waiting[add->record_id()].pop_back();
-						waiting[sub->record_id()].pop_back();
-						get->undo();
-						add->undo();
+						waiting[i].pop_back();
+						waiting[j].pop_back();
 						return {};
 					}
 					waiting[sub->record_id()].emplace_back(sub);
-					sub->execute(records[k], -read);
+					records[k]->acquire(sub->oper());
+				}
+				sub->execute(records[k], -read);
 
+				{
+					std::unique_lock<std::mutex> lock(global);
 					history.emplace_back(get, add, sub);
 					return history.size() - 1;
 				}
@@ -238,16 +244,17 @@ namespace thread {
 					add->release();
 					sub->release();
 
-					T o = count.add(1) + 1;
-					f(o, get->record_id(), add->record_id(), sub->record_id(),
+					count += 1;
+					f(count, get->record_id(), add->record_id(), sub->record_id(),
 						get->eval(), add->eval(), sub->eval());
 
-					return o;
+					return count;
 				}
 			}
 
 			T order() {
-				return count.get();
+				std::unique_lock<std::mutex> lock(global);
+				return count;
 			}
 
 			void release(size_t index) {
@@ -259,7 +266,7 @@ namespace thread {
         private:
             std::mutex global;
 
-			Record<T> count;
+			T count;
             std::vector<Record<T> *> records;
 			std::vector<std::vector<Operation*>> waiting;
 			std::vector<std::tuple<Operation*, Operation*, Operation*>> history;
@@ -273,17 +280,19 @@ namespace thread {
 				return 0 <= index && index < history.size();
 			}
 
-			bool assert_deadlock(size_t record_id, size_t thread_id) {
+			bool assert_deadlock(size_t thread_id, size_t record_id) {
 				if (waiting[record_id].empty()) return false;
 
 				auto arrange = [&t = this->waiting](Operation* operation) -> optional<std::pair<size_t, size_t>> {
 					size_t record_id = operation->record_id();
 					
 					auto tar = std::find(t[record_id].begin(), t[record_id].end(), operation);
-					if (tar == t[record_id].end()) return {};
+					if (tar == t[record_id].end()) 
+						return {};
 
 					size_t index = std::distance(t[record_id].begin(), tar);
-					if (index == 0) return {};
+					if (index == 0) 
+						return {};
 					return std::make_pair(record_id, index);
 				};
 
@@ -300,7 +309,7 @@ namespace thread {
 					auto assert_arrange = arrange(point);
 					if (!assert_arrange) return false;
 					point = select(index = *assert_arrange);
-					if (point == origin) return true;
+					if (point->thread_id() == origin->thread_id()) return true;
 				}
 				return false;
 			}
