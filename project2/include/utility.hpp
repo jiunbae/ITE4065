@@ -16,16 +16,6 @@ namespace util {
         for (size_t i = 0; i < n; ++i) f(i);
     }
 
-    template <typename T, typename U>
-    bool contain(T t, U u) {
-        return t == u;
-    }
-
-    template <typename T, typename U, typename... Args>
-    bool contain(T t, U u, Args... args) {
-        return t == u + contain(t, args...);
-    }
-
     template <typename T>
     class Random {
     public:

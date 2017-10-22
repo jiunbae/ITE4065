@@ -7,7 +7,19 @@ namespace thread {
 	namespace safe {
 		enum Operator { READ, WRITE };
 
-		template <typename T>
+		/*
+			A Record support mutex
+
+			acquire to get lock(with Operator)
+			try_acquire to try lock(with Operator)
+			release to unlock
+
+			support operation
+			-	get
+			-	add
+			-	reset
+		*/
+		template <typename T, typename M>
 		class Record {
 		public:
 			Record(T value = T(0)) noexcept
@@ -63,7 +75,7 @@ namespace thread {
 			}
 
 		private:
-			mutable thread::safe::Mutex mutex;
+			mutable M mutex;
 			T value = 0;
 		};
 	}

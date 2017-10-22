@@ -61,6 +61,12 @@ namespace thread {
 
 		/*
 			push function to thread::Pool parameter with emplaced bind
+
+			By implicitly binding the given parameters at this time and returning results to std::future
+			Utilizing a different point in time between parameter input and result it becomes a more elegant code.
+
+			function std::bind and cast to std::shared_ptr for efficiency
+			packaged_task is performed in parallel on shared memory resources.
 		*/
         template <typename F, typename... Args>
         std::future<typename std::result_of<F(Args...)>::type> push(F&& f, Args&&... args) {
@@ -83,6 +89,11 @@ namespace thread {
 
 		/*
 			push function to thread::Pool parameter with thread_id
+
+			It is difficult to bind the parameters to get the thread ID as an argument.
+
+			function packaged and cast to std::shared_ptr for efficiency
+			packaged_task is performed in parallel on shared memory resources.
 		*/
         template <typename F>
         std::future<typename std::result_of<F(size_t)>::type> push(F&& f) {
@@ -105,12 +116,14 @@ namespace thread {
             return res;
         }
 
+		// release resources
         virtual ~Pool() {
             this->stop = true;
             this->condition.notify_all();
             for (std::thread& worker : this->workers)
                 worker.join();
         }
+
     private:
         std::vector<std::thread> workers;
         std::queue<std::function<void()>> tasks;

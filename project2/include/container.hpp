@@ -39,16 +39,31 @@
 namespace thread {
     namespace safe {
 
+		/*
+			Container is collection of thread::safe::Record
+
+			support build transaction, commit
+			- transaction	build transaction if failed undo all operation
+			- commit		commit and merge
+		*/
         template <typename T>
         class Container {
+			using Record = Record<T, thread::safe::Mutex>;
         public:
+			/*
+				Implement of a single Operation on Record
+
+				support
+				- execute	do execution by a predetermined operator
+				- undo		undo execution before, throw std::bad_function_call undo before execution
+			*/
 			class Operation {
 			public:
 				Operation(size_t tid, size_t rid, Operator op) noexcept
 					: operand(nullptr), rid(rid), tid(tid), op(op){
 				}
 
-				T execute(Record<T>* operand, T value = 0) {
+				T execute(Record* operand, T value = 0) {
 					this->operand = operand;
 					switch (op) {
 						case Operator::READ:
@@ -75,7 +90,7 @@ namespace thread {
 					operand->release(op);
 				}
 
-				Record<T>* get_operand(const std::vector<Record<T>*>& records) const {
+				Record* get_operand(const std::vector<Record*>& records) const {
 					return records[rid];
 				}
 
@@ -96,7 +111,7 @@ namespace thread {
 				}
 
 			protected:
-				Record<T>* operand;
+				Record* operand;
 				size_t rid;
 				size_t tid;
 				Operator op;
@@ -107,7 +122,7 @@ namespace thread {
 			Container(size_t record_count, size_t thread_count, T init)
 				: waiting(record_count) {
 				while (record_count--)
-					records.push_back(new Record<T>(init));
+					records.push_back(new Record(init));
 			};
 
             ~Container() {
@@ -276,7 +291,7 @@ namespace thread {
             std::mutex global;
 
 			T count;
-            std::vector<Record<T> *> records;
+            std::vector<Record*> records;
 			std::deque<std::deque<Operation*>> waiting;
 			std::deque<std::tuple<Operation*, Operation*, Operation*>> history;
 

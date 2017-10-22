@@ -7,6 +7,15 @@
 #include <sstream>
 
 namespace arg {
+	/*
+		arg::Parser
+
+		add argument using `argument` function with name and [description]
+		
+		`parse` to parse arguments
+
+		finally, `get` return value of argument with cast
+	*/
     class Parser {
     public:
         Parser() {
