@@ -61,7 +61,7 @@ namespace transaction {
 						if (!build_id) return;
 
 						// counter.commit execute function with arguments (commit id, i, j, k, i_val, j_val, k_val)
-						auto commit_id = counters.commit(*build_id, [&l = loggers, tid = id, &e = this->e](size_t o, size_t i, size_t j, size_t k, int64 x, int64 y, int64 z) -> void {
+						auto commit_id = counters.commit(*build_id, [&l = loggers, tid = id, e = this->e](size_t o, size_t i, size_t j, size_t k, int64 x, int64 y, int64 z) -> void {
 							if (o > e) return;
 							l[tid]->safe_write(o, i, j, k, x, y, z);
 						});
