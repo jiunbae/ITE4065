@@ -7,6 +7,7 @@
 #include <queue>
 #include <functional>
 #include <algorithm>
+#include <limits>
 
 #include <logger.hpp>
 #include <counter.hpp>
@@ -71,6 +72,8 @@ namespace thread {
 						case Operator::WRITE:
 							origin = operand->add(value);
 							evaluated = origin + value;
+							if (assert_overflow(origin, value)) 
+								throw std::overflow_error("");
 							return origin;
 					}
 					return T(0);
@@ -117,6 +120,15 @@ namespace thread {
 				Operator op;
 				T origin;
 				T evaluated;
+
+			private:
+				static bool assert_overflow(T o, T v) {
+					if ((o > 0 && v > 0) || (o < 0 && v < 0)) return false;
+					using unsigned_T = typename std::make_unsigned<T>::type;
+					unsigned_T u_eval = std::numeric_limits<unsigned_T>::max() - (o > 0 ? o : -o);
+					if (u_eval < (v > 0 ? v : -v)) return true;
+					return false;
+				}
 			};
 
 			Container(size_t record_count, size_t thread_count, T init)
@@ -189,7 +201,18 @@ namespace thread {
 					add->get_operand(records)->acquire(add->oper(), tid);
 					try_failed = false;
 				}
-				add->execute(add->get_operand(records), val + 1);
+				try {
+					add->execute(add->get_operand(records), val + 1);
+				} catch (std::overflow_error& oe) {
+					get->undo();
+					get->get_operand(records)->release(get->oper());
+					add->undo();
+					add->get_operand(records)->release(add->oper());
+					delete get;
+					delete add;
+					delete sub;
+					return {};
+				}
 
 				{
 					std::lock_guard<std::mutex> lock(global);
@@ -224,7 +247,21 @@ namespace thread {
 					sub->get_operand(records)->acquire(sub->oper(), tid);
 					try_failed = false;
 				}
-				sub->execute(sub->get_operand(records), -val);
+				try {
+					sub->execute(sub->get_operand(records), -val);
+				}
+				catch (std::overflow_error& oe) {
+					get->undo();
+					get->get_operand(records)->release(get->oper());
+					add->undo();
+					add->get_operand(records)->release(add->oper());
+					sub->undo();
+					sub->get_operand(records)->release(sub->oper());
+					delete get;
+					delete add;
+					delete sub;
+					return {};
+				}
 
 				{
 					std::lock_guard<std::mutex> lock(global);
