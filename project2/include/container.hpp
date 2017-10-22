@@ -124,8 +124,7 @@ namespace thread {
 			private:
 				static bool assert_overflow(T o, T v) {
 					if ((o > 0 && v < 0) || (o < 0 && v > 0)) return false;
-					using unsigned_T = typename std::make_unsigned<T>::type;
-					unsigned_T u_eval = std::numeric_limits<unsigned_T>::max() - (o > 0 ? o : -o);
+					T u_eval = std::numeric_limits<T>::max() - (o > 0 ? o : -o);
 					if (u_eval < (v > 0 ? v : -v)) 
 						return true;
 					return false;
