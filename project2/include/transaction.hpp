@@ -8,10 +8,10 @@
 #include <logger.hpp>
 
 #include <pool.hpp>
-#include <threadsafe.hpp>
+#include <container.hpp>
 
 #define INIT_VALUE 100
-#define MIN_TASK_SIZE 2
+#define TASK_DIV 16
 
 namespace transaction {
 
@@ -20,10 +20,7 @@ namespace transaction {
     class Operator {
     public:
         Operator(size_t n, size_t r, int64 e) noexcept
-			: n(n), r(r), e(e), pool(n), counters(r, n, INIT_VALUE), random(0, 0, r - 1)
-			// DEBUG
-			, debuger("test", "txt")
-		{
+			: n(n), r(r), e(e), pool(n), counters(r, n, INIT_VALUE), random(0, 0, r - 1) {
             util::iterate([&l=this->loggers](size_t i) {
                 l.push_back(new Logger("thread" + std::to_string(i + 1), "txt"));
             }, n);
@@ -38,27 +35,29 @@ namespace transaction {
         void process() {
             std::queue<std::future<void>> tasks;
 
-			size_t commit_id = 0;
             do {
-				if (tasks.size() < e / 10) {
+				if (tasks.size() < (e / 16) + 1) {
 					tasks.emplace(pool.push([&](size_t id) {
-						// Imp: C++ 17 feature, but not on VS17
+						// Imp: C++ 17 feature, but not GCC
 						// Structured Binding
 						// @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2015/p0144r0.pdf
 						// auto [ i, j, k ] = random.next<3>(); 
 						size_t i, j, k;
 						std::tie(i, j, k) = random.next<3>();
 
-						if (counters.order() > e)
-							return;
+						if (counters.order() > e)  return;
 
 						auto build_id = counters.transaction(id, i, j, k);
 
+						// case build failed
 						if (!build_id) return;
 
 						auto commit_id = counters.commit(*build_id, [&l = loggers, tid = id](size_t o, size_t i, size_t j, size_t k, int64 x, int64 y, int64 z) -> void {
 							l[tid]->safe_write(o, i, j, k, x, y, z);
 						});
+
+						// case commit failed
+						if (!commit_id) return;
 
 					}));
 				} else {
@@ -78,15 +77,12 @@ namespace transaction {
     private:
         const size_t n;     // thread count
         const size_t r;     // record count
-        const size_t e;      // global execution order
+        const size_t e;     // global execution order
 
 		thread::Pool pool;
         thread::safe::Container<int64> counters;
 		util::Random<size_t> random;
 		std::vector<Logger *> loggers;
-
-		// DEBUG
-		Logger debuger;
     };
 }
 

@@ -12,7 +12,7 @@ namespace thread {
 		class Mutex {
 		public:
 			Mutex() noexcept
-				: mutex(), reader(), writer(), writing(false), reader_count(0), threads(32, 0) {
+				: mutex(), reader(), writer(), writing(false), reader_count(0) {
 			}
 
 			~Mutex() noexcept {	
@@ -21,11 +21,6 @@ namespace thread {
 			void lock(size_t tid) {
 				std::unique_lock<std::mutex> lock(mutex);
 				waiter.emplace_back(true, tid);
-				history.emplace_back(1, tid);
-
-				if (threads[tid] != 0)
-					int p = 3;
-				threads[tid] = 1;
 
 				do {
 					writer.wait(lock, [&w = this->waiter, tid](){
@@ -43,11 +38,6 @@ namespace thread {
 					return false;
 				else {
 					waiter.emplace_back(true, tid);
-					history.emplace_back(1, tid);
-
-					if (threads[tid] != 0)
-						int p = 3;
-					threads[tid] = 1;
 
 					writing = true;
 					return true;
@@ -61,16 +51,10 @@ namespace thread {
 
 					for (auto it = waiter.begin(); it != waiter.end(); ++it)
 						if (it->first == true) {
-							threads[it->second] = 0;
-							history.emplace_back(-1, it->second);
 							waiter.erase(it);
 							break;
 						}
 
-					if (history.size() > 256) {
-						while (history.size() > 32)
-							history.pop_front();
-					}
 				}
 
 				writer.notify_all();
@@ -79,11 +63,6 @@ namespace thread {
 			void lock_shared(size_t tid) {
 				std::unique_lock<std::mutex> lock(mutex);
 				waiter.emplace_back(false, tid);
-				history.emplace_back(2, tid);
-
-				if (threads[tid] == 1)
-					int p = 3;
-				threads[tid] = -1;
 
 				do {
 					writer.wait(lock, [&w = this->waiter, tid]() {
@@ -103,11 +82,6 @@ namespace thread {
 					return false;
 				else {
 					waiter.emplace_back(false, tid);
-					history.emplace_back(2, tid);
-
-					if (threads[tid] == 1)
-						int p = 3;
-					threads[tid] = -1;
 
 					reader_count += 1;
 					return true;
@@ -123,21 +97,15 @@ namespace thread {
 
 					for (auto it = waiter.begin(); it != waiter.end(); ++it)
 						if (it->first == false) {
-							threads[it->second] = 0;
-							history.emplace_back(-2, it->second);
 							waiter.erase(it);
 							break;
 						}
 					local_reader_count = --reader_count;
 					local_writing = writing;
 
-					if (history.size() > 256) {
-						while (history.size() > 32)
-							history.pop_front();
-					}
 				}
 
-				if (local_writing && reader_count == 0)
+				if (local_writing && local_reader_count == 0)
 					reader.notify_one();
 				else if (!local_writing)
 					writer.notify_all();
@@ -150,8 +118,6 @@ namespace thread {
 
 			// false when reader,
 			std::deque<std::pair<bool, size_t>> waiter;
-			std::list<std::pair<int, size_t>> history;
-			std::vector<int> threads;
 
 			bool writing;
 			size_t reader_count;

@@ -1,27 +1,20 @@
-#ifndef COUNTER_HPP
-#define COUNTER_HPP
-
-#include <iostream>
+#ifndef THREAD_SAFE_CONTAINER_HPP
+#define THREAD_SAFE_CONTAINER_HPP
 
 #include <deque>
 #include <vector>
 #include <list>
 #include <queue>
-#include <stack>
 #include <functional>
 #include <algorithm>
 
-#include <mutex>
-#include <shared_mutex>
-
 #include <logger.hpp>
-#include <mutex.hpp>
+#include <counter.hpp>
 
-/*
-	Imp: C++17 feature! but not on gcc < 7
-	gcc5 and earlier provides an experimental C++ 17 standard from "experimental/"
-*/
+
 #if defined(__GNUC__) && (__GNUC__ < 7)
+//Imp: C++17 feature! but not on gcc < 7
+//gcc5 and earlier provides an experimental C++ 17 standard from "experimental/"
 	// A proposal to add a utility class to represent optional objects
 	// @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3672.html
 	#include <experimental/optional>
@@ -32,78 +25,19 @@
 	// @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n3921.html
 	#include <experimental/string_view>
 	using string_view = std::experimental::string_view;
-#else // VS2017.3 supports a broader range of C++ 17 standards with `/std:c++latest` tag
+#elif (defined(_MSC_VER ) && (_MSC_VER  >= 1910)) || defined(__GNUC__) && (__GNUC__ >= 7)
+// VS2017.3 supports a broader range of C++ 17 standards with `/std:c++latest` tag
 	#include <optional>
 	template <typename T>
 	using optional = std::optional<T>;
 
 	#include <string_view>
 	using string_view = std::string_view;
+#else
 #endif
 
 namespace thread {
     namespace safe {
-		enum Operator { READ, WRITE };
-
-		template <typename T>
-		class Record {
-		public:
-			Record(T value = T(0)) noexcept
-				: value(value) {
-			}
-
-			bool try_acquire(Operator op, size_t tid) {
-				switch (op) {
-				case Operator::READ:
-					return mutex.try_lock_shared(tid);
-				case Operator::WRITE:
-					return mutex.try_lock(tid);
-				}
-			}
-
-			void acquire(Operator op, size_t tid) {
-				switch (op) {
-					case Operator::READ:
-						mutex.lock_shared(tid);
-						break;
-					case Operator::WRITE:
-						mutex.lock(tid);
-						break;
-				}
-			}
-
-			void release(Operator op) {
-				switch (op) {
-					case Operator::READ:
-						mutex.unlock_shared();
-						break;
-					case Operator::WRITE:
-						mutex.unlock();
-						break;
-				}
-			}
-
-			T get() {
-				return value;
-			}
-
-			T add(T v) {
-				T origin = value;
-				value += v;
-				return origin;
-			}
-
-			T reset(T v = 0) {
-				T origin = value;
-				value = v;
-				return origin;
-			}
-
-		private:
-			mutable thread::safe::Mutex mutex;
-			//mutable std::shared_timed_mutex mutex;
-			T value = 0;
-		};
 
         template <typename T>
         class Container {
@@ -136,10 +70,6 @@ namespace thread {
 					}
 				}
 
-				void set_dependency(Operation* d) {
-					depend = d;
-				}
-
 				void release() {
 					if (operand == nullptr) return;
 					operand->release(op);
@@ -165,12 +95,7 @@ namespace thread {
 					return rid;
 				}
 
-				Operation* dependency() const {
-					return depend;
-				}
-
 			protected:
-				Operation* depend;
 				Record<T>* operand;
 				size_t rid;
 				size_t tid;
@@ -209,6 +134,9 @@ namespace thread {
 					std::lock_guard<std::mutex> lock(global);
 					if (!get->get_operand(records)->try_acquire(get->oper(), tid)) {
 						if (assert_deadlock(tid, i)) {
+							delete get;
+							delete add;
+							delete sub;
 							return {};
 						}
 						try_failed = true;
@@ -223,7 +151,6 @@ namespace thread {
 
 				{
 					std::lock_guard<std::mutex> lock(global);
-					get->set_dependency(add);
 					if (!add->get_operand(records)->try_acquire(add->oper(), tid)) {
 						if (assert_deadlock(tid, j)) {
 							for (auto it = waiting[get->record_id()].begin(); it != waiting[get->record_id()].end(); ++it) {
@@ -234,6 +161,9 @@ namespace thread {
 							}
 							get->undo();
 							get->get_operand(records)->release(get->oper());
+							delete get;
+							delete add;
+							delete sub;
 							return {};
 						}
 						try_failed = true;
@@ -248,7 +178,6 @@ namespace thread {
 
 				{
 					std::lock_guard<std::mutex> lock(global);
-					add->set_dependency(sub);
 					if (!sub->get_operand(records)->try_acquire(sub->oper(), tid)) {
 						if (assert_deadlock(tid, k)) {
 							for (auto it = waiting[get->record_id()].begin(); it != waiting[get->record_id()].end(); ++it) {
@@ -267,6 +196,9 @@ namespace thread {
 							get->get_operand(records)->release(get->oper());
 							add->undo();
 							add->get_operand(records)->release(add->oper());
+							delete get;
+							delete add;
+							delete sub;
 							return {};
 						}
 						try_failed = true;
@@ -289,9 +221,14 @@ namespace thread {
 			optional<size_t> commit(size_t build_id, const std::function<void(size_t, size_t, size_t, size_t, T, T, T)>& f) {
 				{
 					std::lock_guard<std::mutex> lock(global);
+					if (!assert_history(build_id)) throw std::out_of_range("wrong build number");
+					// Imp: C++ 17 feature, but not on GCC
+					// Structured Binding
+					// @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2015/p0144r0.pdf
+					// auto[get, add, sub] = history[build_id];
 					Operation *get, *add, *sub;
 					std::tie(get, add, sub) = history[build_id];
-					last = std::make_tuple(get, add, sub);
+					
 
 					get->get_operand(records)->release(get->oper());
 					for (auto it = waiting[get->record_id()].begin(); it != waiting[get->record_id()].end(); ++it) {
@@ -342,7 +279,6 @@ namespace thread {
             std::vector<Record<T> *> records;
 			std::deque<std::deque<Operation*>> waiting;
 			std::deque<std::tuple<Operation*, Operation*, Operation*>> history;
-			std::tuple<Operation*, Operation*, Operation*> last;
 
             bool assert_index(size_t index) {
                 return 0 <= index && index < records.size();
@@ -378,7 +314,7 @@ namespace thread {
 				Operation* point = waiting[record_id].back();
 				
 				while (index.second) {
-					while (point->dependency() != nullptr) point = point->dependency();
+					//while (point->dependency() != nullptr) point = point->dependency();
 					auto assert_arrange = arrange(point);
 					if (!assert_arrange) 
 						return true;
