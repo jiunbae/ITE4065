@@ -1,6 +1,9 @@
 #ifndef COUNTER_HPP
 #define COUNTER_HPP
 
+#include <iostream>
+
+#include <deque>
 #include <vector>
 #include <list>
 #include <queue>
@@ -49,13 +52,22 @@ namespace thread {
 				: value(value) {
 			}
 
-			void acquire(Operator op) {
+			bool try_acquire(Operator op, size_t tid) {
+				switch (op) {
+				case Operator::READ:
+					return mutex.try_lock_shared(tid);
+				case Operator::WRITE:
+					return mutex.try_lock(tid);
+				}
+			}
+
+			void acquire(Operator op, size_t tid) {
 				switch (op) {
 					case Operator::READ:
-						mutex.lock_shared();
+						mutex.lock_shared(tid);
 						break;
 					case Operator::WRITE:
-						mutex.lock();
+						mutex.lock(tid);
 						break;
 				}
 			}
@@ -89,6 +101,7 @@ namespace thread {
 
 		private:
 			mutable thread::safe::Mutex mutex;
+			//mutable std::shared_timed_mutex mutex;
 			T value = 0;
 		};
 
@@ -132,6 +145,10 @@ namespace thread {
 					operand->release(op);
 				}
 
+				Record<T>* get_operand(const std::vector<Record<T>*>& records) const {
+					return records[rid];
+				}
+
 				size_t thread_id() const {
 					return tid;
 				}
@@ -163,7 +180,7 @@ namespace thread {
 			};
 
 			Container(size_t record_count, size_t thread_count, T init)
-				: waiting(record_count), visit(thread_count, false) {
+				: waiting(record_count) {
 				while (record_count--)
 					records.push_back(new Record<T>(init));
 			};
@@ -181,70 +198,125 @@ namespace thread {
                     delete e;
             }
 
+
 			optional<size_t> transaction(size_t tid, size_t i, size_t j, size_t k) {
 				Operation* get = new Operation(tid, i, Operator::READ);
 				Operation* add = new Operation(tid, j, Operator::WRITE);
 				Operation* sub = new Operation(tid, k, Operator::WRITE);
 
-				bool deadlock = false;
+				bool try_failed = false;
 				{
-					std::unique_lock<std::mutex> lock(global);
-					if (deadlock |= assert_deadlock(tid, i)) {
-						return {};
+					std::lock_guard<std::mutex> lock(global);
+					if (!get->get_operand(records)->try_acquire(get->oper(), tid)) {
+						if (assert_deadlock(tid, i)) {
+							return {};
+						}
+						try_failed = true;
 					}
 					waiting[get->record_id()].emplace_back(get);
-					get->set_dependency(add);
-					records[i]->acquire(get->oper());
 				}
-				T read = get->execute(records[i]);
+				if (try_failed) {
+					get->get_operand(records)->acquire(get->oper(), tid);
+					try_failed = false;
+				}
+				T val = get->execute(get->get_operand(records));
 
 				{
-					std::unique_lock<std::mutex> lock(global);
-					if (deadlock |= assert_deadlock(tid, j)) {
-						waiting[i].pop_back();
-						return {};
+					std::lock_guard<std::mutex> lock(global);
+					get->set_dependency(add);
+					if (!add->get_operand(records)->try_acquire(add->oper(), tid)) {
+						if (assert_deadlock(tid, j)) {
+							for (auto it = waiting[get->record_id()].begin(); it != waiting[get->record_id()].end(); ++it) {
+								if (*it == get) {
+									waiting[get->record_id()].erase(it);
+									break;
+								}
+							}
+							get->undo();
+							get->get_operand(records)->release(get->oper());
+							return {};
+						}
+						try_failed = true;
 					}
 					waiting[add->record_id()].emplace_back(add);
-					add->set_dependency(sub);
-					records[j]->acquire(add->oper());
 				}
-				add->execute(records[j], read + 1);
+				if (try_failed) {
+					add->get_operand(records)->acquire(add->oper(), tid);
+					try_failed = false;
+				}
+				add->execute(add->get_operand(records), val + 1);
 
 				{
-					std::unique_lock<std::mutex> lock(global);
-					if (deadlock |= assert_deadlock(tid, k)) {
-						waiting[i].pop_back();
-						waiting[j].pop_back();
-						return {};
+					std::lock_guard<std::mutex> lock(global);
+					add->set_dependency(sub);
+					if (!sub->get_operand(records)->try_acquire(sub->oper(), tid)) {
+						if (assert_deadlock(tid, k)) {
+							for (auto it = waiting[get->record_id()].begin(); it != waiting[get->record_id()].end(); ++it) {
+								if (*it == get) {
+									waiting[get->record_id()].erase(it);
+									break;
+								}
+							}
+							for (auto it = waiting[add->record_id()].begin(); it != waiting[add->record_id()].end(); ++it) {
+								if (*it == add) {
+									waiting[add->record_id()].erase(it);
+									break;
+								}
+							}
+							get->undo();
+							get->get_operand(records)->release(get->oper());
+							add->undo();
+							add->get_operand(records)->release(add->oper());
+							return {};
+						}
+						try_failed = true;
 					}
 					waiting[sub->record_id()].emplace_back(sub);
-					records[k]->acquire(sub->oper());
 				}
-				sub->execute(records[k], -read);
+				if (try_failed) {
+					sub->get_operand(records)->acquire(sub->oper(), tid);
+					try_failed = false;
+				}
+				sub->execute(sub->get_operand(records), -val);
 
 				{
-					std::unique_lock<std::mutex> lock(global);
+					std::lock_guard<std::mutex> lock(global);
 					history.emplace_back(get, add, sub);
 					return history.size() - 1;
 				}
 			}
 
 			optional<size_t> commit(size_t build_id, const std::function<void(size_t, size_t, size_t, size_t, T, T, T)>& f) {
-				if (!assert_history(build_id)) throw std::out_of_range("build out of range");
 				{
-					std::unique_lock<std::mutex> lock(global);
-
-					Operation* get, *add, *sub;
+					std::lock_guard<std::mutex> lock(global);
+					Operation *get, *add, *sub;
 					std::tie(get, add, sub) = history[build_id];
+					last = std::make_tuple(get, add, sub);
 
-					waiting[get->record_id()].erase(waiting[get->record_id()].begin());
-					waiting[add->record_id()].erase(waiting[add->record_id()].begin());
-					waiting[sub->record_id()].erase(waiting[sub->record_id()].begin());
-					get->release();
-					add->release();
-					sub->release();
+					get->get_operand(records)->release(get->oper());
+					for (auto it = waiting[get->record_id()].begin(); it != waiting[get->record_id()].end(); ++it) {
+						if (*it == get) {
+							waiting[get->record_id()].erase(it);
+							break;
+						}
+					}
+					add->get_operand(records)->release(add->oper());
+					for (auto it = waiting[add->record_id()].begin(); it != waiting[add->record_id()].end(); ++it) {
+						if (*it == add) {
+							waiting[add->record_id()].erase(it);
+							break;
+						}
+					}
+					sub->get_operand(records)->release(sub->oper());
+					for (auto it = waiting[sub->record_id()].begin(); it != waiting[sub->record_id()].end(); ++it) {
+						if (*it == sub) {
+							waiting[sub->record_id()].erase(it);
+							break;
+						}
+					}
 
 					count += 1;
+
 					f(count, get->record_id(), add->record_id(), sub->record_id(),
 						get->eval(), add->eval(), sub->eval());
 
@@ -252,9 +324,9 @@ namespace thread {
 				}
 			}
 
-			T order() {
-				std::unique_lock<std::mutex> lock(global);
-				return count;
+			size_t order() {
+				size_t v = count;
+				return v;
 			}
 
 			void release(size_t index) {
@@ -268,9 +340,9 @@ namespace thread {
 
 			T count;
             std::vector<Record<T> *> records;
-			std::vector<std::vector<Operation*>> waiting;
-			std::vector<std::tuple<Operation*, Operation*, Operation*>> history;
-			std::vector<bool> visit;
+			std::deque<std::deque<Operation*>> waiting;
+			std::deque<std::tuple<Operation*, Operation*, Operation*>> history;
+			std::tuple<Operation*, Operation*, Operation*> last;
 
             bool assert_index(size_t index) {
                 return 0 <= index && index < records.size();
@@ -281,8 +353,9 @@ namespace thread {
 			}
 
 			bool assert_deadlock(size_t thread_id, size_t record_id) {
-				if (waiting[record_id].empty()) return false;
-
+				if (waiting[record_id].empty()) 
+					return false;
+				return true;
 				auto arrange = [&t = this->waiting](Operation* operation) -> optional<std::pair<size_t, size_t>> {
 					size_t record_id = operation->record_id();
 					
@@ -307,11 +380,13 @@ namespace thread {
 				while (index.second) {
 					while (point->dependency() != nullptr) point = point->dependency();
 					auto assert_arrange = arrange(point);
-					if (!assert_arrange) return false;
+					if (!assert_arrange) 
+						return true;
 					point = select(index = *assert_arrange);
-					if (point->thread_id() == origin->thread_id()) return true;
+					if (point->thread_id() == origin->thread_id()) 
+						return true;
 				}
-				return false;
+				return true;
 			}
 		};
     }

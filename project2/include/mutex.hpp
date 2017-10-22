@@ -1,3 +1,10 @@
+#ifndef MUTEX_HPP
+#define MUTEX_HPP
+
+#include <queue>
+#include <list>
+#include <deque>
+
 #include <mutex>
 
 namespace thread {
@@ -5,80 +12,160 @@ namespace thread {
 		class Mutex {
 		public:
 			Mutex() noexcept
-				: mutex(), reader(), writer(), writing(false), reader_count(0) {	
+				: mutex(), reader(), writer(), writing(false), reader_count(0), threads(32, 0) {
 			}
 
 			~Mutex() noexcept {	
 			}
 
-			/*
-				mutex lock, not try just wait for writing
-			*/
-			void lock() {
+			void lock(size_t tid) {
 				std::unique_lock<std::mutex> lock(mutex);
-				while (writing) writer.wait(lock);
+				waiter.emplace_back(true, tid);
+				history.emplace_back(1, tid);
+
+				if (threads[tid] != 0)
+					int p = 3;
+				threads[tid] = 1;
+
+				do {
+					writer.wait(lock, [&w = this->waiter, tid](){
+						return w.front() == std::make_pair(true, tid);
+					});
+				} while (writing);
 				writing = true;
-				while (0 < reader_count) reader.wait(lock);
+				while (reader_count > 0)
+					reader.wait(lock);
 			}
 
-			/*
-				mutex unlock, make lock_guard to set writing false
-				and notify_all writers
-			*/
+			bool try_lock(size_t tid) {
+				std::lock_guard<std::mutex> lock(mutex);
+				if (writing || 0 < reader_count)
+					return false;
+				else {
+					waiter.emplace_back(true, tid);
+					history.emplace_back(1, tid);
+
+					if (threads[tid] != 0)
+						int p = 3;
+					threads[tid] = 1;
+
+					writing = true;
+					return true;
+				}
+			}
+
 			void unlock() {
 				{
 					std::lock_guard<std::mutex> lock(mutex);
 					writing = false;
+
+					for (auto it = waiter.begin(); it != waiter.end(); ++it)
+						if (it->first == true) {
+							threads[it->second] = 0;
+							history.emplace_back(-1, it->second);
+							waiter.erase(it);
+							break;
+						}
+
+					if (history.size() > 256) {
+						while (history.size() > 32)
+							history.pop_front();
+					}
 				}
+
 				writer.notify_all();
 			}
 
-			/*
-				mutex lock_shared for reader, wait for no writing or no reader
-			*/
-			void lock_shared() {
+			void lock_shared(size_t tid) {
 				std::unique_lock<std::mutex> lock(mutex);
-				while (writing || reader_count == max_reader) writer.wait(lock);
-				++reader_count;
+				waiter.emplace_back(false, tid);
+				history.emplace_back(2, tid);
+
+				if (threads[tid] == 1)
+					int p = 3;
+				threads[tid] = -1;
+
+				do {
+					writer.wait(lock, [&w = this->waiter, tid]() {
+						for (const auto& i : w)
+							if (i.first == true) break;
+							else if (i == std::make_pair(false, tid)) return true;
+						return false;
+					});
+				} while (writing);
+
+				reader_count += 1;
 			}
 
-			/*
-				mutex unlock_shared for reader, make lock_guard to set local writing, reader_count
-				check local writing and reader_count to notify reader or writer
-			*/
-			void unlock_shared() {	
+			bool try_lock_shared(size_t tid) {
+				std::lock_guard<std::mutex> lock(mutex);
+				if (writing || reader_count == max_reader)
+					return false;
+				else {
+					waiter.emplace_back(false, tid);
+					history.emplace_back(2, tid);
+
+					if (threads[tid] == 1)
+						int p = 3;
+					threads[tid] = -1;
+
+					reader_count += 1;
+					return true;
+				}
+			}
+
+			void unlock_shared() {
 				size_t local_reader_count;
 				bool local_writing;
 
 				{
 					std::lock_guard<std::mutex> _Lock(mutex);
+
+					for (auto it = waiter.begin(); it != waiter.end(); ++it)
+						if (it->first == false) {
+							threads[it->second] = 0;
+							history.emplace_back(-2, it->second);
+							waiter.erase(it);
+							break;
+						}
 					local_reader_count = --reader_count;
 					local_writing = writing;
+
+					if (history.size() > 256) {
+						while (history.size() > 32)
+							history.pop_front();
+					}
 				}
 
-				if (local_writing && local_reader_count == 0)
+				if (local_writing && reader_count == 0)
 					reader.notify_one();
-				else if (!local_writing && local_reader_count == max_reader - 1)
+				else if (!local_writing)
 					writer.notify_all();
-			}
-
-			/*
-				release lock even if lock_shared
-			*/
-			void release() {
-				if (writing)
-					unlock();
-				else
-					unlock_shared();
 			}
 
 		private:
 			std::mutex mutex;
 			std::condition_variable reader;
 			std::condition_variable writer;
+
+			// false when reader,
+			std::deque<std::pair<bool, size_t>> waiter;
+			std::list<std::pair<int, size_t>> history;
+			std::vector<int> threads;
+
 			bool writing;
 			size_t reader_count;
 			static const size_t max_reader = -1;
+
+			bool readable() {
+				return !writing;
+			}
+
+			bool writable() {
+				return !writing;
+			}
 		};
 	}
 }
+
+#endif

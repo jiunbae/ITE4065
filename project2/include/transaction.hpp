@@ -11,6 +11,7 @@
 #include <threadsafe.hpp>
 
 #define INIT_VALUE 100
+#define MIN_TASK_SIZE 2
 
 namespace transaction {
 
@@ -35,35 +36,43 @@ namespace transaction {
         }
 
         void process() {
-            std::vector<std::future<void>> tasks;
+            std::queue<std::future<void>> tasks;
 
 			size_t commit_id = 0;
             do {
-                tasks.emplace_back(pool.push([&, e = this->e](size_t id) {
-					// Imp: C++ 17 feature, but not on VS17
-					// Structured Binding
-					// @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2015/p0144r0.pdf
-					// auto [ i, j, k ] = random.next<3>(); 
-					size_t i, j, k;
-					std::tie(i, j, k) = random.next<3>();
+				if (tasks.size() < e / 10) {
+					tasks.emplace(pool.push([&](size_t id) {
+						// Imp: C++ 17 feature, but not on VS17
+						// Structured Binding
+						// @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2015/p0144r0.pdf
+						// auto [ i, j, k ] = random.next<3>(); 
+						size_t i, j, k;
+						std::tie(i, j, k) = random.next<3>();
 
-					auto build_id = counters.transaction(id, i, j, k);
+						if (counters.order() > e)
+							return;
 
-					if (!build_id) return;
+						auto build_id = counters.transaction(id, i, j, k);
 
-					auto cid = counters.commit(*build_id, [&l = loggers, tid=id, e](size_t o, size_t i, size_t j, size_t k, int64 x, int64 y, int64 z) -> void {
-						if (o <= e)
+						if (!build_id) return;
+
+						auto commit_id = counters.commit(*build_id, [&l = loggers, tid = id](size_t o, size_t i, size_t j, size_t k, int64 x, int64 y, int64 z) -> void {
 							l[tid]->safe_write(o, i, j, k, x, y, z);
-					});
+						});
 
-					if (!cid) return;
-					commit_id = *cid;
-                }));
-            } while (counters.order() <= e);
+					}));
+				} else {
+					while (!tasks.empty()) {
+						tasks.front().get();
+						tasks.pop();
+					}
+				}
+            } while (counters.order() < e);
 
-            for (auto& task : tasks) {
-				task.get();
-            }
+			while (!tasks.empty()) {
+				tasks.front().get(); 
+				tasks.pop();
+			}
         }
 
     private:
