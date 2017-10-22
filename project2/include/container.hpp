@@ -10,7 +10,7 @@
 #include <limits>
 
 #include <logger.hpp>
-#include <counter.hpp>
+#include <record.hpp>
 
 
 #if defined(__GNUC__) && (__GNUC__ < 7)
