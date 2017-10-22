@@ -94,7 +94,7 @@ public:
         safe_write(messages...);
     }
 
-	Logger& operator<<(const std::string_view&& message) {
+	Logger& operator<<(const string_view&& message) {
 		stream << message;
 		return *this;
 	}
