@@ -2,13 +2,12 @@
 #include <iostream>
 #include <future>
 #include <queue>
-#include <cmath>
 
 #define THREAD_NUM	4
 
 int main() {
 	Thread::Pool pool(THREAD_NUM);
-	std::queue<std::future<size_t>> works;
+	std::queue<std::future<void>> tasks;
 	int n, m;
 
 	for (;;) {
@@ -16,26 +15,25 @@ int main() {
 		if (n == -1) break;
 		std:: cin >> m;
 	
-		works.emplace(pool.push([](int s, int e) {
-			auto isPrime = [](int n) {
-				if (n < 2) return false;
-				for (int i = 0; i < std::sqrt(n); ++i) {
-					if (n % i == 0)
-						return false;
+		tasks.emplace(pool.push(
+	        [](int s, int e) {
+				int ret = 0;
+				for (int x = s; x < e; ++x) {
+					ret += [](int n) -> int {
+						if (n < 2) return 0;
+						for (int i = 2; i < (int)(n / 2); ++i) {
+							if (n % i == 0)
+								return 0;
+						}
+						return 1;
+					}(x);
 				}
-				return true;
-			};
-			int ret = 0;
-			for (int x = s; x < e; ++x) {
-				ret += isPrime(x);	
-			}	
-			std::cout << "number of primes in " + std::to_string(s) + " - " + std::to_string(e) + " is " + std::to_string(ret) + "\n";
-		}, n, m));
-	}
+				std::cout << "number of primes in " + std::to_string(s) + " - " + std::to_string(e) + " is " + std::to_string(ret) + "\n";
+    	}, n, m));
 
-	while (works.size()) {
-		int r = works.front().get(); works.pop();
+        while (!tasks.empty()) {
+            tasks.front().get();
+            tasks.pop();
+        }
 	}
-
 }
-
