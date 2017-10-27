@@ -1,4 +1,4 @@
-## Wait-Free Sanpshot 구현하기
+## Wait-Free Snapshot 구현하기
 
 - Update 와 Scan 인터페이스 C/C++ 로 구현하기
 - 각 Thread 는 자신의 로컬 변수에 대해서 Update 를 수행한다.
