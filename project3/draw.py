@@ -10,8 +10,8 @@
 from subprocess import Popen, PIPE
 from os import environ, name
 import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+if not (name == 'nt' or 'DISPLAY' in environ):
+    matplotlib.use('Agg')
 
 TARGET = "run"
 RANGE = [1, 2, 4, 8, 16, 32]
@@ -29,6 +29,7 @@ def execute(count):
         raise Exception('Error while running {} {}'.format(TARGET, count), stderr)
     return parse(stdout.decode("utf-8"))
 
+import matplotlib.pyplot as plt
 fig = plt.figure()
 for x, y in zip(RANGE, map(execute, RANGE)):
     print ("Result update count: {} in thread count: {}".format(y, x))
