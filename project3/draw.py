@@ -8,6 +8,7 @@
 '''
 
 from subprocess import Popen, PIPE
+from os import environ
 import matplotlib.pyplot as plt
 
 TARGET = "run"
@@ -33,10 +34,10 @@ for x, y in zip(RANGE, map(execute, RANGE)):
 
 # change y range if you need
 # plt.ylim((25,250))
-
 plt.xlabel("thread")
 plt.ylabel("update")
 
 plt.savefig('testplot.png')
-plt.show()
+if 'DISPLAY' in environ:
+    plt.show()
 plt.close()
