@@ -8,7 +8,7 @@
 '''
 
 from subprocess import Popen, PIPE
-from os import environ
+from os import environ, name
 import matplotlib.pyplot as plt
 
 TARGET = "run"
@@ -38,6 +38,6 @@ plt.xlabel("thread")
 plt.ylabel("update")
 
 plt.savefig('testplot.png')
-if 'DISPLAY' in environ:
+if name == 'nt' or 'DISPLAY' in environ:
     plt.show()
 plt.close()
