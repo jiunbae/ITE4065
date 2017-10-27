@@ -9,6 +9,8 @@
 
 from subprocess import Popen, PIPE
 from os import environ, name
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 TARGET = "run"
@@ -37,7 +39,7 @@ for x, y in zip(RANGE, map(execute, RANGE)):
 plt.xlabel("thread")
 plt.ylabel("update")
 
-plt.savefig('testplot.png')
+plt.savefig('result.png')
 if name == 'nt' or 'DISPLAY' in environ:
     plt.show()
 plt.close()
