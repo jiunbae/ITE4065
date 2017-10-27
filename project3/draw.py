@@ -25,7 +25,7 @@ def execute(count):
     stdout, stderr = process.communicate()
     if stderr:
         raise Exception('Error while running {} {}'.format(TARGET, count), stderr)
-    return parse(stdout)
+    return parse(stdout.decode("utf-8"))
 
 fig = plt.figure()
 for x, y in zip(RANGE, map(execute, RANGE)):
