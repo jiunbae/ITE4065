@@ -37,13 +37,13 @@ int main(int argc, char * argv[]) {
 			}));
 		}
 
+		time_guard.join();
+		std::cout << "update : " << count.get() << '\n';
+
 		while (tasks.size()) {
 			tasks.front().get();
 			tasks.pop();
 		}
-
-		time_guard.join();
-		std::cout << "update : " << count.get() << '\n';
 	}
 	return 0;
 }
