@@ -31,14 +31,15 @@ int main(int argc, char * argv[]) {
 		});
 
 		while (!pool.is_stop()) {
-			tasks.emplace(pool.push([&snapshot, &count](size_t tid) {
+			tasks.emplace(pool.push([&pool, &snapshot, &count](size_t tid) {
 				snapshot.update(tid, 0);
-				count.add(1);
+				if (!pool.is_stop())
+					count.add(1);
 			}));
 		}
 
-		time_guard.join();
 		std::cout << "update : " << count.get() << '\n';
+		time_guard.join();
 
 		while (tasks.size()) {
 			tasks.front().get();
