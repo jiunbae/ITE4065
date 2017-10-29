@@ -13,11 +13,11 @@ namespace atomic {
 			using stamp_label = long long;
 
 			StampedSnap(T value) noexcept
-				: stamp(0), value(value) {
+				: value(value), stamp(0) {
 			}
 
 			StampedSnap(stamp_label stamp, T value, const std::vector<T>& snap) noexcept
-				: stamp(stamp), value(value), snap(snap) {
+				: value(value), snap(snap), stamp(stamp) {
 			}
 
 			StampedSnap(const StampedSnap& ssnap) noexcept
@@ -54,7 +54,7 @@ namespace atomic {
 			table[tid] = new_value;
         }
 
-		std::vector<T>& scan() {
+		std::vector<T> scan() {
 			std::vector<bool> moved(n, false);
 			std::vector<StampedSnap*> old_value = collect();
 			std::vector<StampedSnap*> new_value;
