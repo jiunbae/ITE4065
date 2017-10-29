@@ -91,6 +91,7 @@ namespace thread {
 			push function to thread::Pool parameter with thread_id
 
 			It is difficult to bind the parameters to get the thread ID as an argument.
+			Better to capture variable outside thread.
 
 			function packaged and cast to std::shared_ptr for efficiency
 			packaged_task is performed in parallel on shared memory resources.
@@ -118,11 +119,20 @@ namespace thread {
 
 		// release resources
         virtual ~Pool() {
-            this->stop = true;
-            this->condition.notify_all();
-            for (std::thread& worker : this->workers)
-                worker.join();
+			if (!is_stop())
+				terminate();
         }
+
+		void terminate() {
+			this->stop = true;
+			this->condition.notify_all();
+			for (std::thread& worker : this->workers)
+				worker.join();
+		}
+
+		bool is_stop() const {
+			return stop;
+		}
 
     private:
         std::vector<std::thread> workers;
