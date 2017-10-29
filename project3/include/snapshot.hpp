@@ -47,36 +47,34 @@ namespace atomic {
             : n(capacity), table(capacity, new StampedSnap(0)) {
         }
 
-        T update(size_t tid, T value) {
+        void update(size_t tid, T value) {
 			std::vector<T> snap = scan();
-			StampedSnap old_value = table[tid];
-			StampedSnap new_value = StampedSnap(old_value.get_stamp() + 1, value, snap);
+			StampedSnap* old_value = table[tid];
+			StampedSnap* new_value = new StampedSnap(old_value->get_stamp() + 1, value, snap);
 			table[tid] = new_value;
         }
 
 		std::vector<T>& scan() {
-			StampedSnap* old_value;
-			StampedSnap* new_value;
-
 			std::vector<bool> moved(n, false);
-			old_value = collect();
+			std::vector<StampedSnap*> old_value = collect();
+			std::vector<StampedSnap*> new_value;
+
 			while (true) {
 				new_value = collect();
 				for (size_t i = 0; i < n; ++i) {
-					if (old_value[i].get_stamp() != new_value[i].get_stamp()) {
+					if (old_value[i]->get_stamp() != new_value[i]->get_stamp()) {
 						if (moved[i]) {
-							return old_value[i].get_snap();
+							return old_value[i]->get_snap();
 						} else {
 							moved[i] = true;
-							delete old_value;
 							old_value = new_value;
 							continue;
 						}
 					}
 				}
 				std::vector<T> result;
-				for (const auto& val : new_value) {
-					result.emplace_back(val.get_value());
+				for (const auto& snap : new_value) {
+					result.emplace_back(snap->get_value());
 				}
 				return result;
 			}
@@ -85,8 +83,8 @@ namespace atomic {
 		size_t n;
 		std::vector<StampedSnap*> table;
 
-		StampedSnap* collect() {
-			StampedSnap* copy = new StampedSnap(table);
+		std::vector<StampedSnap*> collect() {
+			std::vector<StampedSnap*> copy(table.begin(), table.end());
 			return copy;
 		}
     };

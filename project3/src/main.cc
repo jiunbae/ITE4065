@@ -32,6 +32,7 @@ int main(int argc, char * argv[]) {
 
 		while (!pool.is_stop()) {
 			tasks.emplace(pool.push([&snapshot, &count](size_t tid) {
+				snapshot.update(tid, 0);
 				count.add(1);
 			}));
 		}
