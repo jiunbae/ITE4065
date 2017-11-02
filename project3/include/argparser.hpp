@@ -47,7 +47,7 @@ namespace arg {
 				// @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0305r0.html
 				//if (std::string v = values[index(name)]; !v.empty()) {
 				std::string v = values[index(name)];
-				if (v.empty()) {
+				if (!v.empty()) {
 					std::stringstream ss(v);
 					ss >> value;
 				} else throw std::out_of_range("key not initialized");
