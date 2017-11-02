@@ -64,7 +64,7 @@ namespace atomic {
 		std::valarray<T> scan() {
 			std::valarray<StampedSnap*> old_value = table;
 			std::valarray<StampedSnap*> new_value;
-			moved.clear();
+			std::fill(moved.begin(), moved.end(), false);
 
 			while (true) {
 				new_value = table;
@@ -89,9 +89,8 @@ namespace atomic {
 
 		static std::valarray<T> capture_value(const std::valarray<StampedSnap*>& ary) {
 			std::vector<T> capture;
-			for (const auto& snap : ary) {
+			for (const auto& snap : ary)
 				capture.emplace_back(snap->get());
-			}
 			return std::valarray<T>(capture.data(), capture.size());
 		}
     };
