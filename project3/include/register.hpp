@@ -41,7 +41,7 @@ namespace atomic {
 
 	private:
 		mutable M mutex;
-		T value = 0;
+		T value;
 	};
 }
 #endif

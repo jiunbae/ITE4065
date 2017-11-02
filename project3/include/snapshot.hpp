@@ -1,35 +1,41 @@
-#include <vector>
+#ifndef ATOMIC_SNAPSHOT_HPP
+#define ATOMIC_SNAPSHOT_HPP
 
+#include <vector>
+#include <shared_mutex>
+#include <valarray>
+#include <initializer_list>
+
+#include <register.hpp>
 #include <pool.hpp>
+
+// valarray
+// http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3639.html
 
 namespace atomic {
     template <typename T>
     class Snapshot {
     public:
 
-		class StampedSnap {
+		/*
+			StampedSnap: Extends from Atomic MRSW Register
+			containe stamp and snap to store snapshot with stamp
+		*/
+		class StampedSnap : public Register<T, std::shared_timed_mutex> {
 		public:
 
 			using stamp_label = long long;
 
-			StampedSnap(T value) noexcept
-				: value(value), stamp(0) {
-			}
-
-			StampedSnap(stamp_label stamp, T value, const std::vector<T>& snap) noexcept
-				: value(value), snap(snap), stamp(stamp) {
+			StampedSnap(T value, stamp_label stamp = stamp_label(0), const std::valarray<T>& snap = std::valarray<T>()) noexcept
+				: Register<T, std::shared_timed_mutex>(value), snap(snap), stamp(stamp) {
 			}
 
 			StampedSnap(const StampedSnap& ssnap) noexcept
-				: stamp(0) {
-				snap = std::vector<T>(ssnap.snap.begin(), ssnap.snap.end());
+				: Register<T, std::shared_timed_mutex>(ssnap.value), stamp(0) {
+				snap = ssnap.snap;
 			}
 
-			T get_value() const {
-				return value;
-			}
-
-			std::vector<T> get_snap() const {
+			std::valarray<T> get_snap() const {
 				return snap;
 			}
 
@@ -38,30 +44,31 @@ namespace atomic {
 			}
 
 		private:
-			T value;
-			std::vector<T> snap;
+			std::valarray<T> snap;
 			stamp_label stamp;
 		};
 
-		Snapshot(size_t capacity)
-            : n(capacity), table(capacity, new StampedSnap(0)) {
+		Snapshot(size_t n)
+            : table(new StampedSnap(0), n), moved(n, false) {
         }
 
+		// update value called from tid-thread and increase stamp
         void update(size_t tid, T value) {
-			std::vector<T> snap = scan();
+			std::valarray<T> snap = scan();
 			StampedSnap* old_value = table[tid];
-			StampedSnap* new_value = new StampedSnap(old_value->get_stamp() + 1, value, snap);
+			StampedSnap* new_value = new StampedSnap(value, old_value->get_stamp() + 1, snap);
 			table[tid] = new_value;
         }
 
-		std::vector<T> scan() {
-			std::vector<bool> moved(n, false);
-			std::vector<StampedSnap*> old_value = collect();
-			std::vector<StampedSnap*> new_value;
+		// take snapshot and check thread move
+		std::valarray<T> scan() {
+			std::valarray<StampedSnap*> old_value = table;
+			std::valarray<StampedSnap*> new_value;
+			moved.clear();
 
 			while (true) {
-				new_value = collect();
-				for (size_t i = 0; i < n; ++i) {
+				new_value = table;
+				for (size_t i = 0; i < table.size(); ++i) {
 					if (old_value[i]->get_stamp() != new_value[i]->get_stamp()) {
 						if (moved[i]) {
 							return old_value[i]->get_snap();
@@ -72,20 +79,21 @@ namespace atomic {
 						}
 					}
 				}
-				std::vector<T> result;
-				for (const auto& snap : new_value) {
-					result.emplace_back(snap->get_value());
-				}
-				return result;
+
+				return capture_value(new_value);
 			}
 		}
     private:
-		size_t n;
-		std::vector<StampedSnap*> table;
+		std::valarray<StampedSnap*> table;
+		std::vector<bool> moved;
 
-		std::vector<StampedSnap*> collect() {
-			std::vector<StampedSnap*> copy(table.begin(), table.end());
-			return copy;
+		static std::valarray<T> capture_value(const std::valarray<StampedSnap*>& ary) {
+			std::vector<T> capture;
+			for (const auto& snap : ary) {
+				capture.emplace_back(snap->get());
+			}
+			return std::valarray<T>(capture.data(), capture.size());
 		}
     };
 }
+#endif
