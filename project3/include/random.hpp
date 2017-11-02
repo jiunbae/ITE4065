@@ -1,5 +1,5 @@
-#ifndef UTILITY_HPP
-#define UTILITY_HPP
+#ifndef UTIL_RANDOM_HPP
+#define UTIL_RANDOM_HPP
 
 #include <unordered_set>
 

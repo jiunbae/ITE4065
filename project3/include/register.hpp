@@ -20,7 +20,7 @@ namespace atomic {
 			: value(value) {
 		}
 
-		T get() {
+		T get() const {
 			std::shared_lock<M> lock(mutex);
 			return value;
 		}
