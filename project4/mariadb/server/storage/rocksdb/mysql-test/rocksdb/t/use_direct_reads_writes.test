@@ -1,0 +1,47 @@
+--source include/have_rocksdb.inc
+
+call mtr.add_suppression("rocksdb");
+call mtr.add_suppression("Aborting");
+
+--echo # This shows that RocksDB plugin is loaded:
+select plugin_name, plugin_type from information_schema.plugins where plugin_name='RocksDB';
+
+# Issue221
+# Turning on both --rocksdb-allow-mmap-reads and --rocksdb-use-direct-reads
+# caused an assertion in RocksDB. Now it should not be allowed and ROCKSDB
+# plugin will not load in such configuration.
+#
+# We want the server to still start, so we specify default-storage-engine=myisam
+
+--let $_mysqld_option=--rocksdb_use_direct_reads=1 --rocksdb_allow_mmap_reads=1 --default-storage-engine=myisam
+--source include/restart_mysqld_with_option.inc
+
+--echo # Check that ROCKSDB plugin is not loaded:
+select plugin_name, plugin_type from information_schema.plugins where plugin_name='RocksDB';
+
+--echo # Check that MyRocks has printed an error message into server error log:
+let SEARCH_FILE=$MYSQLTEST_VARDIR/log/mysqld.1.err;
+let SEARCH_PATTERN=enable both use_direct_reads;
+source include/search_pattern_in_file.inc;
+
+--echo # Now, restart the server back with regular settings
+--source include/restart_mysqld.inc
+select plugin_name, plugin_type from information_schema.plugins where plugin_name='RocksDB';
+
+--echo #
+--echo # Now, repeat the same with another set of invalid arguments
+--echo #
+--let $_mysqld_option=--rocksdb_use_direct_io_for_flush_and_compaction=1 --rocksdb_allow_mmap_writes=1 --default-storage-engine=myisam
+--source include/restart_mysqld_with_option.inc
+
+--echo # Check that ROCKSDB plugin is not loaded:
+select plugin_name, plugin_type from information_schema.plugins where plugin_name='RocksDB';
+
+let SEARCH_FILE=$MYSQLTEST_VARDIR/log/mysqld.1.err;
+let SEARCH_PATTERN=enable both use_direct_io_for_flush_and_compaction;
+source include/search_pattern_in_file.inc;
+
+--echo # Now, restart the server back with regular settings
+--source include/restart_mysqld.inc
+select plugin_name, plugin_type from information_schema.plugins where plugin_name='RocksDB';
+
