@@ -8,31 +8,37 @@
 #include <snapshot.hpp>
 #include <register.hpp>
 #include <pool.hpp>
+#include <random.hpp>
 
 int main(int argc, char * argv[]) {
 	std::ios::sync_with_stdio(false);
     arg::Parser parser;
-    
-    parser.argument("N", "thread count");
+
+	parser.argument("N", "thread count");
+	parser.argument("T", "set time");
 
     parser.parse(argc, argv);
 
 	size_t n = parser.get<size_t>("N");
+	size_t t = parser.get<size_t>("T", 10);
 
 	{
-		atomic::Register<size_t> count(0);
-		atomic::Snapshot<int> snapshot(n);
-		thread::Pool pool(n);
-		std::queue<std::future<void>> tasks;
+		util::Random<int> random;				// util::Random generator
+		atomic::Register<size_t> count(0);		// MRSW Register for update count
+		atomic::Snapshot<int> snapshot(n);		// snapshot instance
+		thread::Pool pool(n);					// thread::Pool for multi thread
+		std::queue<std::future<void>> tasks;	// thread::Pool tasks
 		
-		std::thread time_guard([&pool]() {
-			std::this_thread::sleep_for(std::chrono::seconds(1));
+		// time guard to run only the set time
+		std::thread time_guard([&pool, &t]() {
+			std::this_thread::sleep_for(std::chrono::seconds(t));
 			pool.terminate();
 		});
 
+		// push tasks to thread::Pool until set time
 		while (!pool.is_stop()) {
-			tasks.emplace(pool.push([&pool, &snapshot, &count](size_t tid) {
-				snapshot.update(tid, 0);
+			tasks.emplace(pool.push([&pool, &snapshot, &count, &random](size_t tid) {
+				snapshot.update(tid, random.next());
 				if (!pool.is_stop())
 					count.add(1);
 			}));
