@@ -1,0 +1,8 @@
+result_mac
+	mac book pro retina: i5-5257U 2.7GHz 4C4T
+
+result_windows
+	Windows PC: i7-6700k 4.0GHz 4C8T
+
+result_server
+	Linux Server: i7-5930K 3.5GHz 6C12T
