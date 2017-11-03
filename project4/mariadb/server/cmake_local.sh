@@ -1,5 +1,5 @@
 #!/bin/bash
-export MY_DB_PATH=$HOME/ITE4065/project4/mariadb # change this path
+export MY_DB_PATH=$PWD/..
 cmake \
 -DCMAKE_INSTALL_PREFIX=$MY_DB_PATH/run \
 -DSYSCONFDIR=$MY_DB_PATH/run \
