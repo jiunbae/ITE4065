@@ -20,14 +20,14 @@ int main(int argc, char * argv[]) {
     parser.parse(argc, argv);
 
 	size_t n = parser.get<size_t>("N");
-	size_t t = parser.get<size_t>("T", 10);
+	size_t t = parser.get<size_t>("T", 60);
 
 	// main thread scope
 	{
 		atomic::Snapshot<int> snapshot(n);		// snapshot instance
-		thread::Pool pool(n);					// thread::Pool for multi thread
+		size_t count = size_t(0);				// global update count
 		util::Random<int> random;				// util::Random generator
-		size_t count = size_t(0);
+		thread::Pool pool(n);					// thread::Pool for multi thread
 		std::queue<std::future<void>> tasks;	// thread::Pool tasks
 		
 		// time guard to run only the set time
@@ -41,12 +41,14 @@ int main(int argc, char * argv[]) {
 			tasks.emplace(pool.push([&pool, &snapshot, &count, &random](size_t tid) {
 				snapshot.update(tid, random.next());
 			}));
+			// do not raise race, cuz only update in main thread
 			count += 1;
 		}
 		
 		std::cout << "update : " << count << '\n';
 		time_guard.join();
 
+		// release pandding tasks
 		while (tasks.size()) {
 			tasks.front().get();
 			tasks.pop();

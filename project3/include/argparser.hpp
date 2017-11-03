@@ -52,6 +52,7 @@ namespace arg {
 					ss >> value;
 				} else throw std::out_of_range("key not initialized");
 			} catch (std::out_of_range& e) {
+				e.what();
 				return option;
 			}
             return value;

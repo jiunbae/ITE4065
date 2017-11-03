@@ -20,7 +20,7 @@ namespace atomic {
 			: value(value) {
 		}
 
-		T get() const {
+		T read() const {
 			std::shared_lock<M> lock(mutex);
 			return value;
 		}
@@ -32,7 +32,7 @@ namespace atomic {
 			return origin;
 		}
 
-		T reset(T v = 0) {
+		T write(T v = 0) {
 			std::unique_lock<M> lock(mutex);
 			T origin = value;
 			value = v;
