@@ -22,11 +22,12 @@ int main(int argc, char * argv[]) {
 	size_t n = parser.get<size_t>("N");
 	size_t t = parser.get<size_t>("T", 10);
 
+	// main thread scope
 	{
-		util::Random<int> random;				// util::Random generator
-		atomic::Register<size_t> count(0);		// MRSW Register for update count
 		atomic::Snapshot<int> snapshot(n);		// snapshot instance
 		thread::Pool pool(n);					// thread::Pool for multi thread
+		util::Random<int> random;				// util::Random generator
+		size_t count = size_t(0);
 		std::queue<std::future<void>> tasks;	// thread::Pool tasks
 		
 		// time guard to run only the set time
@@ -39,12 +40,11 @@ int main(int argc, char * argv[]) {
 		while (!pool.is_stop()) {
 			tasks.emplace(pool.push([&pool, &snapshot, &count, &random](size_t tid) {
 				snapshot.update(tid, random.next());
-				if (!pool.is_stop())
-					count.add(1);
 			}));
+			count += 1;
 		}
-
-		std::cout << "update : " << count.get() << '\n';
+		
+		std::cout << "update : " << count << '\n';
 		time_guard.join();
 
 		while (tasks.size()) {
