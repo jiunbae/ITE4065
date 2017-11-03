@@ -1,5 +1,5 @@
 result_mac
-	mac book pro retina: i5-5257U 2.7GHz 4C4T
+	mac book pro retina: i5-5257U 2.7GHz 2C4T
 
 result_windows
 	Windows PC: i7-6700k 4.0GHz 4C8T
