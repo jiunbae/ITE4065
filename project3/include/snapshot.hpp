@@ -49,9 +49,9 @@ namespace atomic {
 			}
 
 		private:
+			T value;
 			std::valarray<T> snap;
 			stamp_label stamp;
-			T value;
 		};
 
 		Snapshot(size_t n)
@@ -113,8 +113,8 @@ namespace atomic {
 
     private:
 		std::valarray<StampedSnap*> table;
-		std::valarray<bool> moved;
 		std::valarray<std::queue<StampedSnap*>> gc;
+		std::valarray<bool> moved;
 
 		// util function, maybe in util.hpp next time
 		static void repeat(const std::function<void(size_t)>& f, size_t count) {
@@ -123,8 +123,8 @@ namespace atomic {
 		}
 
 		// util function, maybe in util.hpp next time
-		template <typename T>
-		static void release(std::queue<T>& trash, const std::function<void(T)>& f, size_t size = size_t(0)) {
+		template <typename F>
+		static void release(std::queue<F>& trash, const std::function<void(F)>& f, size_t size = size_t(0)) {
 			while (trash.size() > size) {
 				auto front = trash.front(); trash.pop();
 				f(front);
