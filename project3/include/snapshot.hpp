@@ -95,19 +95,25 @@ namespace atomic {
 			while (true) {
 				new_value = table;
 
+				bool flag = false;
 				for (size_t i = 0; i < table.size(); ++i) {
 					if (old_value[i]->get_stamp() != new_value[i]->get_stamp()) {
 						if (moved[i]) {
 							return old_value[i]->get_snap();
 						} else {
-							moved[i] = true;
+							flag = moved[i] = true;
 							old_value = new_value;
-							continue;
+							break;
 						}
 					}
 				}
 
-				return capture_value(new_value);
+				if (flag) continue;
+
+				std::valarray<T> ret(new_value.size());
+				for (size_t i = 0; i < ret.size(); ++i)
+					ret[i] = new_value[i]->read();
+				return ret;
 			}
 		}
 
@@ -117,28 +123,12 @@ namespace atomic {
 		std::valarray<bool> moved;
 
 		// util function, maybe in util.hpp next time
-		static void repeat(const std::function<void(size_t)>& f, size_t count) {
-			for (size_t i = 0; i < count; ++i)
-				f(i);
-		}
-
-		// util function, maybe in util.hpp next time
 		template <typename F>
 		static void release(std::queue<F>& trash, const std::function<void(F)>& f, size_t size = size_t(0)) {
 			while (trash.size() > size) {
 				auto front = trash.front(); trash.pop();
 				f(front);
 			}
-		}
-
-		static std::valarray<T> capture_value(const std::valarray<StampedSnap*>& ary) {
-			std::valarray<T> ret(ary.size());
-
-			repeat([&ret, &ary](size_t i) -> void {
-				ret[i] = ary[i]->read();
-			}, ary.size());
-
-			return ret;
 		}
     };
 }
