@@ -20,7 +20,7 @@ int main(int argc, char * argv[]) {
     parser.parse(argc, argv);
 
 	size_t n = parser.get<size_t>("N");
-	size_t t = parser.get<size_t>("T", 10);
+	size_t t = parser.get<size_t>("T", 60);
 
 	// main thread scope
 	{
