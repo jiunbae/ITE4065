@@ -37,7 +37,7 @@ int main(int argc, char * argv[]) {
 
 		// push tasks to thread::Pool until set time
 		while (!pool.is_stop()) {
-			tasks.emplace(pool.push([&pool, &snapshot, &count, &random](size_t tid) {
+			tasks.emplace(pool.push([&pool, &snapshot, &random](size_t tid) {
 				snapshot.update(tid, random.next());
 			}));
 		}
