@@ -20,7 +20,7 @@ int main(int argc, char * argv[]) {
     parser.parse(argc, argv);
 
 	size_t n = parser.get<size_t>("N");
-	size_t t = parser.get<size_t>("T", 60);
+	size_t t = parser.get<size_t>("T", 10);
 
 	// main thread scope
 	{
@@ -41,18 +41,17 @@ int main(int argc, char * argv[]) {
 			tasks.emplace(pool.push([&pool, &snapshot, &count, &random](size_t tid) {
 				snapshot.update(tid, random.next());
 			}));
-			// do not raise race, cuz only update in main thread
-			count += 1;
 		}
 		
-		std::cout << "update : " << count << '\n';
+		std::cout << "update : " << tasks.size() << '\n';
 		time_guard.join();
 
 		// release pandding tasks
-		while (tasks.size()) {
-			tasks.front().get();
-			tasks.pop();
-		}
+		// I thnk this not need cuz, auto release when local scope ended
+		//while (tasks.size()) {
+		//	tasks.front().get();
+		//	tasks.pop();
+		//}
 	}
 	return 0;
 }
