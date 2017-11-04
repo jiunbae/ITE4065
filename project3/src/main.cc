@@ -25,7 +25,6 @@ int main(int argc, char * argv[]) {
 	// main thread scope
 	{
 		atomic::Snapshot<int> snapshot(n);		// snapshot instance
-		size_t count = size_t(0);				// global update count
 		util::Random<int> random;				// util::Random generator
 		thread::Pool pool(n);					// thread::Pool for multi thread
 		std::queue<std::future<void>> tasks;	// thread::Pool tasks
