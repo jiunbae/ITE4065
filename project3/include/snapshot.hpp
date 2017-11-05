@@ -1,7 +1,7 @@
 #ifndef ATOMIC_SNAPSHOT_HPP
 #define ATOMIC_SNAPSHOT_HPP
 
-// Imp: C++14 feature!
+// Imp: C++17 feature!
 // valarray is std::array with dynamic size in runtime
 // @see also: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3639.html
 #include <valarray>
@@ -9,6 +9,7 @@
 
 #include <functional>
 
+#include <utility.hpp>
 #include <register.hpp>
 #include <pool.hpp>
 
@@ -63,19 +64,18 @@ namespace atomic {
 		~Snapshot() {
 			// relase unused memory
 			for (auto& e : gc)
-				release<StampedSnap*>(e, [](StampedSnap * snap) {
-					delete snap;
-				}, 0);
+				util::queue_apply<StampedSnap*>(e, [](StampedSnap * snap) { delete snap; }, 0);
+			for (auto it = std::begin(table); it != std::end(table); ++it)
+				delete *it;
 		}
 
 		// update value called from tid-thread and increase stamp
         void update(size_t tid, T value) {
 			// relase unused memory
 			// This syntax is very exceptional for prevents the queue overflow
+			// (I think do not need, queue is enough big to ensure)
 			if (gc[tid].size() > 1000)
-				release<StampedSnap*>(gc[tid], [](StampedSnap * snap) {
-				delete snap;
-			}, 100);
+				util::queue_apply<StampedSnap*>(gc[tid], [](StampedSnap * snap) { delete snap; }, 100);
 
 			std::valarray<T> snap = scan();
 			StampedSnap* old_value = table[tid];
@@ -121,15 +121,6 @@ namespace atomic {
 		std::valarray<StampedSnap*> table;
 		std::valarray<std::queue<StampedSnap*>> gc;
 		std::valarray<bool> moved;
-
-		// util function, maybe in util.hpp next time
-		template <typename F>
-		static void release(std::queue<F>& trash, const std::function<void(F)>& f, size_t size = size_t(0)) {
-			while (trash.size() > size) {
-				auto front = trash.front(); trash.pop();
-				f(front);
-			}
-		}
     };
 }
 #endif
