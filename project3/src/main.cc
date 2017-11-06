@@ -42,8 +42,15 @@ int main(int argc, char * argv[]) {
 			}));
 		}
 		
+		// print update count and release time_guard
 		std::cout << "update : " << tasks.size() << '\n';
 		time_guard.join();
+
+		// release pending tasks
+		while (!tasks.empty()) {
+			tasks.front().get();
+			tasks.pop();
+		}
 	}
 	return 0;
 }
