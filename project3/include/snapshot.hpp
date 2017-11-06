@@ -48,7 +48,6 @@ namespace atomic {
 			stamp_label get_stamp() const {
 				return stamp;
 			}
-
 		private:
 			T value;
 			std::valarray<T> snap;
@@ -56,14 +55,13 @@ namespace atomic {
 		};
 
 		Snapshot(size_t n)
-            : table(n), gc(n), moved(false, n) {
+            : table(n), moved(false, n), trash(n) {
 			for (auto& e : table) e = new StampedSnap();
-			for (auto& e : gc) e = std::queue<StampedSnap*>();
+			for (auto& e : trash) e = std::queue<StampedSnap*>();
         }
 
 		~Snapshot() {
-			// relase unused memory
-			for (auto& e : gc)
+			for (auto& e : trash)
 				util::queue_apply<StampedSnap*>(e, [](StampedSnap * snap) { delete snap; }, 0);
 			for (auto it = std::begin(table); it != std::end(table); ++it)
 				delete *it;
@@ -73,9 +71,8 @@ namespace atomic {
         void update(size_t tid, T value) {
 			// relase unused memory
 			// This syntax is very exceptional for prevents the queue overflow
-			// (I think do not need, queue is enough big to ensure)
-			if (gc[tid].size() > 1000)
-				util::queue_apply<StampedSnap*>(gc[tid], [](StampedSnap * snap) { delete snap; }, 100);
+			// (I think do not need, queue is enouih big to ensure)
+			util::queue_apply<StampedSnap*>(trash[tid], [](StampedSnap * snap) { delete snap; }, 100);
 
 			std::valarray<T> snap = scan();
 			StampedSnap* old_value = table[tid];
@@ -83,7 +80,7 @@ namespace atomic {
 			table[tid] = new_value;
 
 			// relase unused memory
-			gc[tid].push(old_value);
+			trash[tid].push(old_value);
         }
 
 		// take snapshot and check thread move
@@ -107,7 +104,6 @@ namespace atomic {
 						}
 					}
 				}
-
 				if (flag) continue;
 
 				std::valarray<T> ret(new_value.size());
@@ -119,8 +115,10 @@ namespace atomic {
 
     private:
 		std::valarray<StampedSnap*> table;
-		std::valarray<std::queue<StampedSnap*>> gc;
 		std::valarray<bool> moved;
+
+		// resolv memeory issue
+		std::valarray<std::queue<StampedSnap*>> trash;
     };
 }
 #endif

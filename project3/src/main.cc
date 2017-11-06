@@ -37,20 +37,13 @@ int main(int argc, char * argv[]) {
 
 		// push tasks to thread::Pool until set time
 		while (!pool.is_stop()) {
-			tasks.emplace(pool.push([&pool, &snapshot, &random](size_t tid) {
-				snapshot.update(tid, random.next());
+			tasks.emplace(pool.push([&snapshot, v=random.next()](size_t tid) {
+				snapshot.update(tid, v);
 			}));
 		}
 		
 		std::cout << "update : " << tasks.size() << '\n';
 		time_guard.join();
-
-		// release pandding tasks
-		// I thnk this not need cuz, auto release when local scope ended
-		//while (tasks.size()) {
-		//	tasks.front().get();
-		//	tasks.pop();
-		//}
 	}
 	return 0;
 }
