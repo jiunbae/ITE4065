@@ -9,8 +9,11 @@ Parallel programming @ cs.hanyang
 - [x] Lab04: make simple thread pool
 - [x] Lab05: try `vargrind`
 - [x] Lab06: `boost::asio`
+- [x] Lab07: thread pool using `boost::thread_group`
 
 ## Project
 
 - [x] Project1: Signal
 - [x] Project2: Simple Two-phase locking with Readers-writer Lock
+- [x] Project3: Wait-Free Snapshot 
+- [ ] Project4:
