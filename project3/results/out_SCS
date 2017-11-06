@@ -1,0 +1,8 @@
+('Execute target file:', 'run')
+('Execute range:', [1, 2, 4, 8, 16, 32])
+Result update count: 56085056 in thread count: 1
+Result update count: 26523891 in thread count: 2
+Result update count: 14834224 in thread count: 4
+Result update count: 12355803 in thread count: 8
+Result update count: 11181847 in thread count: 16
+Result update count: 10293050 in thread count: 32
