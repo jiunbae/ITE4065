@@ -1,2 +1,0 @@
-let $engine=MyISAM;
---source extra/rpl_tests/rpl_truncate.test

@@ -1,3 +1,0 @@
---source include/have_tokudb.inc
-let $engine=TokuDB;
---source extra/rpl_tests/rpl_truncate.test
