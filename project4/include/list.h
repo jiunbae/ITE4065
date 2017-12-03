@@ -80,14 +80,13 @@ namespace lockfree {
 	public:
 		Node(const Type& elem, hash_type key)
 			: key(key), elem(elem) {
-			std::atomic_init(&next, nullptr);
 		}
 
 	public:
 		hash_type key;
 		const Type& elem;
 		// @see also http://en.cppreference.com/w/cpp/atomic/atomic
-		std::atomic<node_ptr> next;
+		std::atomic<node_ptr> next{ nullptr };
 	};
 
 	/**
