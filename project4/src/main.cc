@@ -1,29 +1,41 @@
-#define UNIV_INNOCHECKSUM
+#include <iostream>
+#include <future>
+#include <queue>
+#include <chrono>
 
-#include <lf0lst.h>
+#include <pool.hpp>
+#include <random.hpp>
 
-class block_t;
+#include <list.h>
 
-typedef UT_LIST_NODE_T(block_t) block_node_t;
-typedef UT_LIST_BASE_NODE_T(block_t) block_list_t;
+int main(int argc, char * argv[]) {
+	std::ios::sync_with_stdio(false);
 
-class block_t {
-    int value;
-public:
-    block_node_t m_node;
-    block_list_t m_list;
+	lockfree::List<int, lockfree::Node<int>*> list;
+	thread::Pool pool(1);
+	util::Random<int> random;
+	size_t test_size = 400000;
 
-    block_t(int value)
-        : value(value) {
-    }
-};
+	std::queue<std::future<void>> tasks;
 
-int main() {
-    block_list_t    m_list;
-    UT_LIST_INIT(m_list, &block_t::m_node);
+	std::chrono::high_resolution_clock::time_point begin = std::chrono::high_resolution_clock::now();
 
-    // add
-    block_t*        block = new block_t(23);
+	for (size_t i = 0; i < test_size; ++i) {
+		tasks.push(pool.push([&list, q=i%3, v=random.next()](int tid) -> void {
+			if		(q == 0)	list.insert(&v);
+			else if (q == 1)	list.remove(&v);
+			else				list.contains(&v);
+		}));
+	}
 
-    UT_LIST_ADD_LAST(m_list, block);
+	while (!tasks.empty()) {
+		tasks.front().get();
+		tasks.pop();
+	}
+
+	std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count();
+
+	std::cout << duration << std::endl;
+	return 0;
 }
