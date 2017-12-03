@@ -18,14 +18,13 @@
 [client]
 #password	= your_password
 port		= 3306
-socket		= /home/jkjh/2017_ITE4065_2015004257/project4/mariadb/server/../run/mariadb.sock
-
+socket		= $SERVER_PATH/../run/mariadb.sock
 # Here follows entries for some specific programs
 
 # The MySQL server
 [mysqld]
 port		= 3306
-socket		= /home/jkjh/2017_ITE4065_2015004257/project4/mariadb/server/../run/mariadb.sock
+socket		= $SERVER_PATH/../run/mariadb.sock
 skip-external-locking
 key_buffer_size = 16K
 max_allowed_packet = 1M
