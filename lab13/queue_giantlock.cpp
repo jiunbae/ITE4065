@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <pthread.h>
+#include <atomic>
+#include <iostream>
 
 #define NUM_PRODUCER                4
 #define NUM_CONSUMER                NUM_PRODUCER
 #define NUM_THREADS                 (NUM_PRODUCER + NUM_CONSUMER)
-#define NUM_ENQUEUE_PER_PRODUCER    10000000
+#define NUM_ENQUEUE_PER_PRODUCER    100000
 #define NUM_DEQUEUE_PER_CONSUMER    NUM_ENQUEUE_PER_PRODUCER
 
 bool flag_verification[NUM_PRODUCER * NUM_ENQUEUE_PER_PRODUCER];
@@ -18,53 +20,65 @@ int dequeue();
 
 struct QueueNode {
     int key;
+    std::atomic<int> flag;
 };
 
 QueueNode queue[QUEUE_SIZE];
-uint64_t front;
-uint64_t rear;
+std::atomic<uint64_t> front;
+std::atomic<uint64_t> rear;
 
 pthread_mutex_t mutex_for_queue = PTHREAD_MUTEX_INITIALIZER;
 
 void init_queue(void) {
-    front = 0;
-    rear = 0;
+    front.store(0);
+    rear.store(0);
 }
 
 void enqueue(int key) {
     while (1) {
-        pthread_mutex_lock(&mutex_for_queue);
+        //pthread_mutex_lock(&mutex_for_queue);
 
-        if (rear >= front + QUEUE_SIZE) {
+        if (rear.load() >= front.load() + QUEUE_SIZE) {
             // queue full!
-            pthread_mutex_unlock(&mutex_for_queue);
-            pthread_yield();
+            // pthread_mutex_unlock(&mutex_for_queue);
+            pthread_yield_np();
         } else {
             break;
         }
     }
-    queue[rear % QUEUE_SIZE].key = key;
-    rear++;
+    uint64_t old = rear.fetch_add(1);
+    int oldFlag;
+    do {
+        oldFlag = queue[old % QUEUE_SIZE].flag.load();
+    } while (old / QUEUE_SIZE != oldFlag / 2 && rear.load() < front.load() + QUEUE_SIZE);
 
-    pthread_mutex_unlock(&mutex_for_queue);
+    queue[old % QUEUE_SIZE].key = key;
+    queue[old % QUEUE_SIZE].flag.fetch_add(1);
+
+    // pthread_mutex_unlock(&mutex_for_queue);
 }
 
 int dequeue(void) {
     while (1) {
-        pthread_mutex_lock(&mutex_for_queue);
+        // pthread_mutex_lock(&mutex_for_queue);
         
-        if (rear == front) {
+        if (rear.load() == front.load()) {
             // queue empty!
-            pthread_mutex_unlock(&mutex_for_queue);
-            pthread_yield();
+            // pthread_mutex_unlock(&mutex_for_queue);
+            pthread_yield_np();
         } else {
             break;
         }
     }
-    int ret_key = queue[front % QUEUE_SIZE].key;
-    front++;
-    pthread_mutex_unlock(&mutex_for_queue);
+    uint64_t old = front.fetch_add(1);
+    int oldFlag;
+    do {
+        oldFlag = queue[old % QUEUE_SIZE].flag.load();
+    } while (old / QUEUE_SIZE != oldFlag / 2 && rear.load() != front.load());
 
+    int ret_key = queue[old % QUEUE_SIZE].key;   
+    queue[old % QUEUE_SIZE].flag.fetch_add(1);
+    // pthread_mutex_unlock(&mutex_for_queue);
     return ret_key;
 }
 // ------------------------------------------------
@@ -108,13 +122,21 @@ int main(void) {
     }
 
     // verify
+    bool flag = false;
     for (int i = 0; i < NUM_PRODUCER * NUM_ENQUEUE_PER_PRODUCER; i++) {
         if (flag_verification[i] == false) {
-            printf("INCORRECT!\n");
-            return 0;
+            flag = true;
+        } else {
+
+            std::cout << i << std::endl;
         }
     }
-    printf("CORRECT!\n");
+
+    if (flag) {
+        printf("INCORRECT!\n");
+    } else {
+        printf("CORRECT!\n");   
+    }
 
     return 0;
 }
