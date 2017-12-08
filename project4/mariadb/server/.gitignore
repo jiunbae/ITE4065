@@ -69,7 +69,6 @@ include/sql_state.h
 include/probes_mysql.d
 include/probes_mysql_dtrace.h
 include/probes_mysql_nodtrace.h
-include/source_revision.h
 info_macros.cmake
 libmysql*/libmysql*_exports_file.cc
 libmysql*/merge_archives_mysql*.cmake
@@ -167,8 +166,6 @@ sql/mysqld
 sql/sql_builtin.cc
 sql/sql_yacc.cc
 sql/sql_yacc.h
-sql/sql_yacc_ora.cc
-sql/sql_yacc_ora.h
 storage/heap/hp_test1
 storage/heap/hp_test2
 storage/maria/aria_chk
@@ -495,6 +492,8 @@ UpgradeLog*.htm
 # Microsoft Fakes
 FakesAssemblies/
 
+# Do not ignore these files to make successfully
 !storage/mroonga/build
 !storage/innobase/data
 !dbug/user.r
+

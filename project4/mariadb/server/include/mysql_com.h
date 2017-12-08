@@ -485,10 +485,7 @@ enum enum_field_types { MYSQL_TYPE_DECIMAL, MYSQL_TYPE_TINY,
                         MYSQL_TYPE_TIMESTAMP2,
                         MYSQL_TYPE_DATETIME2,
                         MYSQL_TYPE_TIME2,
-                        /* Compressed types are only used internally for RBR. */
-                        MYSQL_TYPE_BLOB_COMPRESSED= 140,
-                        MYSQL_TYPE_VARCHAR_COMPRESSED= 141,
-
+                        
                         MYSQL_TYPE_NEWDECIMAL=246,
 			MYSQL_TYPE_ENUM=247,
 			MYSQL_TYPE_SET=248,
@@ -648,7 +645,7 @@ typedef struct st_udf_args
   char **args;				/* Pointer to argument */
   unsigned long *lengths;		/* Length of string arguments */
   char *maybe_null;			/* Set to 1 for all maybe_null args */
-  const char **attributes;              /* Pointer to attribute name */
+  char **attributes;                    /* Pointer to attribute name */
   unsigned long *attribute_lengths;     /* Length of attribute arguments */
   void *extension;
 } UDF_ARGS;

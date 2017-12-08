@@ -1,5 +1,5 @@
 #!/bin/bash
-export MY_DB_PATH=$PWD/..
+export MY_DB_PATH=$PWD/.. 
 cmake \
 -DCMAKE_INSTALL_PREFIX=$MY_DB_PATH/run \
 -DSYSCONFDIR=$MY_DB_PATH/run \

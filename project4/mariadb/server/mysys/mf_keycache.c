@@ -421,12 +421,11 @@ static int keycache_pthread_cond_signal(mysql_cond_t *cond);
 #undef inline
 #endif
 #define inline  /* disabled inline for easier debugging */
+static int fail_block(BLOCK_LINK *block);
 static int fail_hlink(HASH_LINK *hlink);
 static int cache_empty(SIMPLE_KEY_CACHE_CB *keycache);
 #endif
-#ifdef DBUG_ASSERT_EXISTS
-static int fail_block(BLOCK_LINK *block);
-#endif
+
 
 static inline uint next_power(uint value)
 {
@@ -714,7 +713,7 @@ int prepare_resize_simple_key_cache(SIMPLE_KEY_CACHE_CB *keycache,
       res= 1;
       goto finish;
     }
-    DBUG_SLOW_ASSERT(cache_empty(keycache));
+    DBUG_ASSERT(cache_empty(keycache));
 
     /* End the flush phase. */
     keycache->resize_in_flush= 0;
@@ -749,6 +748,7 @@ finish:
   SYNOPSIS
     finish_resize_simple_key_cache()
     keycache                pointer to the control block of a simple key cache		
+    acquire_lock            <=> acquire the key cache lock at start
 
   DESCRIPTION
     This function performs finalizing actions for the operation of 
@@ -756,6 +756,8 @@ finish:
     keycache as a pointer to the control block structure of the type
     SIMPLE_KEY_CACHE_CB for this key cache. The function sets the flag
     in_resize in this structure to FALSE.
+    The parameter acquire_lock says whether the key cache lock must be
+    acquired at the start of the function.
 
   RETURN VALUE
     none
@@ -767,10 +769,14 @@ finish:
 */
 
 static 
-void finish_resize_simple_key_cache(SIMPLE_KEY_CACHE_CB *keycache)
+void finish_resize_simple_key_cache(SIMPLE_KEY_CACHE_CB *keycache,
+                                    my_bool acquire_lock)
 {
   DBUG_ENTER("finish_resize_simple_key_cache");
 
+  if (acquire_lock)
+    keycache_pthread_mutex_lock(&keycache->cache_lock); 
+  
   mysql_mutex_assert_owner(&keycache->cache_lock);
 			   
   /*
@@ -842,7 +848,8 @@ int resize_simple_key_cache(SIMPLE_KEY_CACHE_CB *keycache,
   int blocks= 0;
   DBUG_ENTER("resize_simple_key_cache");
 
-  DBUG_ASSERT(keycache->key_cache_inited);
+  if (!keycache->key_cache_inited)
+    DBUG_RETURN(blocks);
 
   /*
     Note that the cache_lock mutex and the resize_queue are left untouched.
@@ -858,7 +865,7 @@ int resize_simple_key_cache(SIMPLE_KEY_CACHE_CB *keycache,
                                 changed_blocks_hash_size);
 
 finish:
-  finish_resize_simple_key_cache(keycache);
+  finish_resize_simple_key_cache(keycache, 0);
 
   DBUG_RETURN(blocks);
 }
@@ -1081,7 +1088,7 @@ static void unlink_from_queue(KEYCACHE_WQUEUE *wqueue,
                                       thread->prev);
   }
   thread->next= NULL;
-#ifdef DBUG_ASSERT_EXISTS
+#if !defined(DBUG_OFF)
   /*
     This makes it easier to see it's not in a chain during debugging.
     And some DBUG_ASSERT() rely on it.
@@ -1204,7 +1211,7 @@ static inline void unlink_changed(BLOCK_LINK *block)
     block->next_changed->prev_changed= block->prev_changed;
   *block->prev_changed= block->next_changed;
 
-#ifdef DBUG_ASSERT_EXISTS
+#if !defined(DBUG_OFF)
   /*
     This makes it easier to see it's not in a chain during debugging.
     And some DBUG_ASSERT() rely on it.
@@ -1490,7 +1497,7 @@ static void unlink_block(SIMPLE_KEY_CACHE_CB *keycache, BLOCK_LINK *block)
       keycache->used_ins=STRUCT_PTR(BLOCK_LINK, next_used, block->prev_used);
   }
   block->next_used= NULL;
-#ifdef DBUG_ASSERT_EXISTS
+#if !defined(DBUG_OFF)
   /*
     This makes it easier to see it's not in a chain during debugging.
     And some DBUG_ASSERT() rely on it.
@@ -2603,11 +2610,12 @@ restart:
 
   SYNOPSIS
 
-    read_block_{primary|secondary}()
+    read_block()
       keycache            pointer to a key cache data structure
       block               block to which buffer the data is to be read
       read_length         size of data to be read
       min_length          at least so much data must be read
+      primary             <-> the current thread will read the data
 
   RETURN VALUE
     None
@@ -2621,100 +2629,90 @@ restart:
     portion is less than read_length, but not less than min_length.
 */
 
-static void read_block_primary(SIMPLE_KEY_CACHE_CB *keycache,
-                               BLOCK_LINK *block, uint read_length,
-                               uint min_length)
+static void read_block(SIMPLE_KEY_CACHE_CB *keycache,
+                       BLOCK_LINK *block, uint read_length,
+                       uint min_length, my_bool primary)
 {
   size_t got_length;
 
   /* On entry cache_lock is locked */
 
-  KEYCACHE_THREAD_TRACE("read_block_primary");
+  KEYCACHE_THREAD_TRACE("read_block");
+  if (primary)
+  {
+    /*
+      This code is executed only by threads that submitted primary
+      requests. Until block->status contains BLOCK_READ, all other
+      request for the block become secondary requests. For a primary
+      request the block must be properly initialized.
+    */
+    DBUG_ASSERT(((block->status & ~BLOCK_FOR_UPDATE) == BLOCK_IN_USE) ||
+                fail_block(block));
+    DBUG_ASSERT((block->length == 0) || fail_block(block));
+    DBUG_ASSERT((block->offset == keycache->key_cache_block_size) ||
+                fail_block(block));
+    DBUG_ASSERT((block->requests > 0) || fail_block(block));
 
-  /*
-    This code is executed only by threads that submitted primary
-    requests. Until block->status contains BLOCK_READ, all other
-    request for the block become secondary requests. For a primary
-    request the block must be properly initialized.
-  */
-  DBUG_ASSERT(((block->status & ~BLOCK_FOR_UPDATE) == BLOCK_IN_USE) ||
-              fail_block(block));
-  DBUG_ASSERT((block->length == 0) || fail_block(block));
-  DBUG_ASSERT((block->offset == keycache->key_cache_block_size) ||
-              fail_block(block));
-  DBUG_ASSERT((block->requests > 0) || fail_block(block));
+    KEYCACHE_DBUG_PRINT("read_block",
+                        ("page to be read by primary request"));
 
-  KEYCACHE_DBUG_PRINT("read_block_primary",
-                      ("page to be read by primary request"));
+    keycache->global_cache_read++;
+    /* Page is not in buffer yet, is to be read from disk */
+    keycache_pthread_mutex_unlock(&keycache->cache_lock);
+    /*
+      Here other threads may step in and register as secondary readers.
+      They will register in block->wqueue[COND_FOR_REQUESTED].
+    */
+    got_length= my_pread(block->hash_link->file, block->buffer,
+                         read_length, block->hash_link->diskpos, MYF(0));
+    keycache_pthread_mutex_lock(&keycache->cache_lock);
+    /*
+      The block can now have been marked for free (in case of
+      FLUSH_RELEASE). Otherwise the state must be unchanged.
+    */
+    DBUG_ASSERT(((block->status & ~(BLOCK_REASSIGNED |
+                                    BLOCK_FOR_UPDATE)) == BLOCK_IN_USE) ||
+                fail_block(block));
+    DBUG_ASSERT((block->length == 0) || fail_block(block));
+    DBUG_ASSERT((block->offset == keycache->key_cache_block_size) ||
+                fail_block(block));
+    DBUG_ASSERT((block->requests > 0) || fail_block(block));
 
-  keycache->global_cache_read++;
-  /* Page is not in buffer yet, is to be read from disk */
-  keycache_pthread_mutex_unlock(&keycache->cache_lock);
-  /*
-    Here other threads may step in and register as secondary readers.
-    They will register in block->wqueue[COND_FOR_REQUESTED].
-  */
-  got_length= my_pread(block->hash_link->file, block->buffer,
-                       read_length, block->hash_link->diskpos, MYF(0));
-  keycache_pthread_mutex_lock(&keycache->cache_lock);
-  /*
-    The block can now have been marked for free (in case of
-    FLUSH_RELEASE). Otherwise the state must be unchanged.
-  */
-  DBUG_ASSERT(((block->status & ~(BLOCK_REASSIGNED |
-                                  BLOCK_FOR_UPDATE)) == BLOCK_IN_USE) ||
-              fail_block(block));
-  DBUG_ASSERT((block->length == 0) || fail_block(block));
-  DBUG_ASSERT((block->offset == keycache->key_cache_block_size) ||
-              fail_block(block));
-  DBUG_ASSERT((block->requests > 0) || fail_block(block));
-
-  if (got_length < min_length)
-    block->status|= BLOCK_ERROR;
+    if (got_length < min_length)
+      block->status|= BLOCK_ERROR;
+    else
+    {
+      block->status|= BLOCK_READ;
+      block->length= got_length;
+      /*
+        Do not set block->offset here. If this block is marked
+        BLOCK_CHANGED later, we want to flush only the modified part. So
+        only a writer may set block->offset down from
+        keycache->key_cache_block_size.
+      */
+    }
+    KEYCACHE_DBUG_PRINT("read_block",
+                        ("primary request: new page in cache"));
+    /* Signal that all pending requests for this page now can be processed */
+    release_whole_queue(&block->wqueue[COND_FOR_REQUESTED]);
+  }
   else
   {
-    block->status|= BLOCK_READ;
-    block->length= got_length;
     /*
-      Do not set block->offset here. If this block is marked
-      BLOCK_CHANGED later, we want to flush only the modified part. So
-      only a writer may set block->offset down from
-      keycache->key_cache_block_size.
+      This code is executed only by threads that submitted secondary
+      requests. At this point it could happen that the cache block is
+      not yet assigned to the hash_link for the requested file block.
+      But at awake from the wait this should be the case. Unfortunately
+      we cannot assert this here because we do not know the hash_link
+      for the requested file block nor the file and position. So we have
+      to assert this in the caller.
     */
-  }
-  KEYCACHE_DBUG_PRINT("read_block_primary",
-                      ("primary request: new page in cache"));
-  /* Signal that all pending requests for this page now can be processed */
-  release_whole_queue(&block->wqueue[COND_FOR_REQUESTED]);
-
-  DBUG_ASSERT(keycache->can_be_used);
-}
-
-
-static void read_block_secondary(SIMPLE_KEY_CACHE_CB *keycache,
-                                 BLOCK_LINK *block)
-{
-  KEYCACHE_THREAD_TRACE("read_block_secondary");
-
-  /*
-    This code is executed only by threads that submitted secondary
-    requests. At this point it could happen that the cache block is
-    not yet assigned to the hash_link for the requested file block.
-    But at awake from the wait this should be the case. Unfortunately
-    we cannot assert this here because we do not know the hash_link
-    for the requested file block nor the file and position. So we have
-    to assert this in the caller.
-  */
-  KEYCACHE_DBUG_PRINT("read_block_secondary",
+    KEYCACHE_DBUG_PRINT("read_block",
                       ("secondary request waiting for new page to be read"));
-
-  wait_on_queue(&block->wqueue[COND_FOR_REQUESTED], &keycache->cache_lock);
-
-  KEYCACHE_DBUG_PRINT("read_block_secondary",
-                      ("secondary request: new page in cache"));
-
-  DBUG_ASSERT(keycache->can_be_used);
-  DBUG_ASSERT(block->status & (BLOCK_READ | BLOCK_IN_USE));
+    wait_on_queue(&block->wqueue[COND_FOR_REQUESTED], &keycache->cache_lock);
+    KEYCACHE_DBUG_PRINT("read_block",
+                        ("secondary request: new page in cache"));
+  }
 }
 
 
@@ -2859,24 +2857,22 @@ uchar *simple_key_cache_read(SIMPLE_KEY_CACHE_CB *keycache,
       }
       if (!(block->status & BLOCK_ERROR))
       {
-        if (page_st == PAGE_TO_BE_READ)
-        {
-          MYSQL_KEYCACHE_READ_MISS();
-          read_block_primary(keycache, block,
-                     keycache->key_cache_block_size, read_length+offset);
-        }
-        else if (page_st == PAGE_WAIT_TO_BE_READ)
+        if (page_st != PAGE_READ)
         {
           MYSQL_KEYCACHE_READ_MISS();
           /* The requested page is to be read into the block buffer */
-          read_block_secondary(keycache, block);
-
+          read_block(keycache, block,
+                     keycache->key_cache_block_size, read_length+offset,
+                     (my_bool)(page_st == PAGE_TO_BE_READ));
           /*
             A secondary request must now have the block assigned to the
-            requested file block.
+            requested file block. It does not hurt to check it for
+            primary requests too.
           */
+          DBUG_ASSERT(keycache->can_be_used);
           DBUG_ASSERT(block->hash_link->file == file);
           DBUG_ASSERT(block->hash_link->diskpos == filepos);
+          DBUG_ASSERT(block->status & (BLOCK_READ | BLOCK_IN_USE));
         }
         else if (block->length < read_length + offset)
         {
@@ -3080,30 +3076,23 @@ int simple_key_cache_insert(SIMPLE_KEY_CACHE_CB *keycache,
       }
       if (!(block->status & BLOCK_ERROR))
       {
-        if (page_st == PAGE_WAIT_TO_BE_READ)
+        if ((page_st == PAGE_WAIT_TO_BE_READ) ||
+            ((page_st == PAGE_TO_BE_READ) &&
+             (offset || (read_length < keycache->key_cache_block_size))))
         {
           /*
+            Either
+
             this is a secondary request for a block to be read into the
             cache. The block is in eviction. It is not yet assigned to
             the requested file block (It does not point to the right
             hash_link). So we cannot call remove_reader() on the block.
             And we cannot access the hash_link directly here. We need to
-            wait until the assignment is complete. read_block_secondary()
-            executes the correct wait.
-          */
-          read_block_secondary(keycache, block);
+            wait until the assignment is complete. read_block() executes
+            the correct wait when called with primary == FALSE.
 
-          /*
-            A secondary request must now have the block assigned to the
-            requested file block.
-          */
-          DBUG_ASSERT(block->hash_link->file == file);
-          DBUG_ASSERT(block->hash_link->diskpos == filepos);
-        }
-        else if (page_st == PAGE_TO_BE_READ &&
-                 (offset || (read_length < keycache->key_cache_block_size)))
-        {
-          /*
+            Or
+
             this is a primary request for a block to be read into the
             cache and the supplied data does not fill the whole block.
 
@@ -3118,8 +3107,17 @@ int simple_key_cache_insert(SIMPLE_KEY_CACHE_CB *keycache,
             Though reading again what the caller did read already is an
             expensive operation, we need to do this for correctness.
           */
-          read_block_primary(keycache, block, keycache->key_cache_block_size,
-                             read_length + offset);
+          read_block(keycache, block, keycache->key_cache_block_size,
+                     read_length + offset, (page_st == PAGE_TO_BE_READ));
+          /*
+            A secondary request must now have the block assigned to the
+            requested file block. It does not hurt to check it for
+            primary requests too.
+          */
+          DBUG_ASSERT(keycache->can_be_used);
+          DBUG_ASSERT(block->hash_link->file == file);
+          DBUG_ASSERT(block->hash_link->diskpos == filepos);
+          DBUG_ASSERT(block->status & (BLOCK_READ | BLOCK_IN_USE));
         }
         else if (page_st == PAGE_TO_BE_READ)
         {
@@ -3414,29 +3412,25 @@ int simple_key_cache_write(SIMPLE_KEY_CACHE_CB *keycache,
         reading the file block. If the read completes after us, it
         overwrites our new contents with the old contents. So we have to
         wait for the other thread to complete the read of this block.
-        read_block_primary|secondary() takes care for the wait.
+        read_block() takes care for the wait.
       */
-      if (!(block->status & BLOCK_ERROR))
+      if (!(block->status & BLOCK_ERROR) &&
+          ((page_st == PAGE_TO_BE_READ &&
+            (offset || read_length < keycache->key_cache_block_size)) ||
+           (page_st == PAGE_WAIT_TO_BE_READ)))
       {
-        if (page_st == PAGE_TO_BE_READ &&
-            (offset || read_length < keycache->key_cache_block_size))
-        {
-          read_block_primary(keycache, block,
-                             offset + read_length >= keycache->key_cache_block_size?
-                             offset : keycache->key_cache_block_size,
-                             offset);
-          /*
-            Prevent block from flushing and from being selected for to be
-            freed. This must be set when we release the cache_lock.
-            Here we set it in case we could not set it above.
-          */
-          block->status|= BLOCK_FOR_UPDATE;
-        }
-        else if (page_st == PAGE_WAIT_TO_BE_READ)
-        {
-          read_block_secondary(keycache, block);
-          block->status|= BLOCK_FOR_UPDATE;
-        }
+        read_block(keycache, block,
+                   offset + read_length >= keycache->key_cache_block_size?
+                   offset : keycache->key_cache_block_size,
+                   offset, (page_st == PAGE_TO_BE_READ));
+        DBUG_ASSERT(keycache->can_be_used);
+        DBUG_ASSERT(block->status & (BLOCK_READ | BLOCK_IN_USE));
+        /*
+          Prevent block from flushing and from being selected for to be
+          freed. This must be set when we release the cache_lock.
+          Here we set it in case we could not set it above.
+        */
+        block->status|= BLOCK_FOR_UPDATE;
       }
       /*
         The block should always be assigned to the requested file block
@@ -4315,8 +4309,10 @@ restart:
 
   } /* if (keycache->disk_blocks > 0 */
 
+#ifndef DBUG_OFF
   DBUG_EXECUTE("check_keycache",
                test_key_cache(keycache, "end of flush_key_blocks", 0););
+#endif
 err:
   if (cache != cache_buff)
     my_free(cache);
@@ -4794,12 +4790,11 @@ void keycache_debug_log_close(void)
 
 #endif /* defined(KEYCACHE_DEBUG) */
 
-#ifdef DBUG_ASSERT_EXISTS 
+#if !defined(DBUG_OFF)
 #define F_B_PRT(_f_, _v_) DBUG_PRINT("assert_fail", (_f_, _v_))
 
-static int fail_block(BLOCK_LINK *block  __attribute__((unused)))
+static int fail_block(BLOCK_LINK *block)
 {
-#ifndef DBUG_OFF
   F_B_PRT("block->next_used:    %p\n", block->next_used);
   F_B_PRT("block->prev_used:    %p\n", block->prev_used);
   F_B_PRT("block->next_changed: %p\n", block->next_changed);
@@ -4810,13 +4805,10 @@ static int fail_block(BLOCK_LINK *block  __attribute__((unused)))
   F_B_PRT("block->offset:       %u\n", block->offset);
   F_B_PRT("block->requests:     %u\n", block->requests);
   F_B_PRT("block->temperature:  %u\n", block->temperature);
-#endif
   return 0; /* Let the assert fail. */
 }
-#endif
 
-#ifndef DBUG_OFF
-static int fail_hlink(HASH_LINK *hlink  __attribute__((unused)))
+static int fail_hlink(HASH_LINK *hlink)
 {
   F_B_PRT("hlink->next:    %p\n", hlink->next);
   F_B_PRT("hlink->prev:    %p\n", hlink->prev);
@@ -5284,8 +5276,7 @@ int resize_partitioned_key_cache(PARTITIONED_KEY_CACHE_CB *keycache,
   {
     for (i= 0; i < partitions; i++)
     {
-      keycache_pthread_mutex_lock(&keycache->partition_array[i]->cache_lock);
-      finish_resize_simple_key_cache(keycache->partition_array[i]);
+      finish_resize_simple_key_cache(keycache->partition_array[i], 1);
     }
   }
   DBUG_RETURN(blocks);

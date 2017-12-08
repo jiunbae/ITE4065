@@ -423,7 +423,7 @@ create table t1 (
 SHOW CREATE TABLE t1;
 DROP TABLE t1;
 
-# Test for Bug#93 4.1 protocol crash on corrupted frm and SHOW TABLE STATUS
+# Test for Bug#93 4.1 protocl crash on corupted frm and SHOW TABLE STATUS
 
 flush tables;
 
@@ -437,7 +437,7 @@ show create table t1;
 --disable_warnings
 drop table if exists t1;
 --enable_warnings
---error 0,1
+--error 1,0
 --remove_file $MYSQLD_DATADIR/test/t1.frm
 
 #
@@ -954,11 +954,11 @@ flush status;
 show variables like "log_queries_not_using_indexes";
 select 1 from information_schema.tables limit 1;
 show status like 'slow_queries';
-set session log_queries_not_using_indexes=OFF;
+set global log_queries_not_using_indexes=OFF;
 show variables like "log_queries_not_using_indexes";
 select 1 from information_schema.tables limit 1;
 show status like 'slow_queries';
-set session log_queries_not_using_indexes=ON;
+set global log_queries_not_using_indexes=ON;
 show variables like "log_queries_not_using_indexes";
 select 1 from information_schema.tables limit 1;
 show status like 'slow_queries';

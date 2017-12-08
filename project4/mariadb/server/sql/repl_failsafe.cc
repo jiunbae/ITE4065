@@ -24,7 +24,7 @@
   functions like register_slave()) are working.
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "sql_parse.h"                          // check_access
 #ifdef HAVE_REPLICATION

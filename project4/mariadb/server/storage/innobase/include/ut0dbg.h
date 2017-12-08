@@ -61,8 +61,8 @@ ut_dbg_assertion_failed(
 	ut_dbg_assertion_failed(0, __FILE__, __LINE__)
 
 /** Debug assertion */
-#define ut_ad	DBUG_SLOW_ASSERT
-#if defined(UNIV_DEBUG) || !defined(DBUG_OFF)
+#define ut_ad	DBUG_ASSERT
+#ifdef UNIV_DEBUG
 /** Debug statement. Does nothing unless UNIV_DEBUG is defined. */
 #define ut_d(EXPR)	EXPR
 #else

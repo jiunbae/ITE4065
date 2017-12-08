@@ -26,7 +26,7 @@ namespace mrn {
   class DebugColumnAccess {
     TABLE *table_;
     MY_BITMAP *bitmap_;
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
     my_bitmap_map *map_;
 #endif
   public:

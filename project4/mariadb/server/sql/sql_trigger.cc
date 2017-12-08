@@ -16,7 +16,7 @@
 
 
 #define MYSQL_LEX 1
-#include "mariadb.h"                          /* NO_EMBEDDED_ACCESS_CHECKS */
+#include <my_global.h>                          /* NO_EMBEDDED_ACCESS_CHECKS */
 #include "sql_priv.h"
 #include "unireg.h"
 #include "sp_head.h"
@@ -34,9 +34,8 @@
 #include "sp_cache.h"                     // sp_invalidate_cache
 #include <mysys_err.h>
 
-LEX_CSTRING *make_lex_string(LEX_CSTRING *lex_str,
-                             const char* str, uint length,
-                             MEM_ROOT *mem_root)
+LEX_STRING *make_lex_string(LEX_STRING *lex_str, const char* str, uint length,
+                            MEM_ROOT *mem_root)
 {
   if (!(lex_str->str= strmake_root(mem_root, str, length)))
     return 0;
@@ -57,9 +56,9 @@ public:
   static Trigger_creation_ctx *create(THD *thd,
                                       const char *db_name,
                                       const char *table_name,
-                                      const LEX_CSTRING *client_cs_name,
-                                      const LEX_CSTRING *connection_cl_name,
-                                      const LEX_CSTRING *db_cl_name);
+                                      const LEX_STRING *client_cs_name,
+                                      const LEX_STRING *connection_cl_name,
+                                      const LEX_STRING *db_cl_name);
 
   Trigger_creation_ctx(CHARSET_INFO *client_cs,
                        CHARSET_INFO *connection_cl,
@@ -93,9 +92,9 @@ Trigger_creation_ctx *
 Trigger_creation_ctx::create(THD *thd,
                              const char *db_name,
                              const char *table_name,
-                             const LEX_CSTRING *client_cs_name,
-                             const LEX_CSTRING *connection_cl_name,
-                             const LEX_CSTRING *db_cl_name)
+                             const LEX_STRING *client_cs_name,
+                             const LEX_STRING *connection_cl_name,
+                             const LEX_STRING *db_cl_name)
 {
   CHARSET_INFO *client_cs;
   CHARSET_INFO *connection_cl;
@@ -163,7 +162,7 @@ Trigger_creation_ctx::create(THD *thd,
 
 /*************************************************************************/
 
-static const LEX_CSTRING triggers_file_type=
+static const LEX_STRING triggers_file_type=
   { C_STRING_WITH_LEN("TRIGGERS") };
 
 const char * const TRG_EXT= ".TRG";
@@ -177,37 +176,37 @@ const char * const TRG_EXT= ".TRG";
 static File_option triggers_file_parameters[]=
 {
   {
-    { STRING_WITH_LEN("triggers") },
+    { C_STRING_WITH_LEN("triggers") },
     my_offsetof(class Table_triggers_list, definitions_list),
     FILE_OPTIONS_STRLIST
   },
   {
-    { STRING_WITH_LEN("sql_modes") },
+    { C_STRING_WITH_LEN("sql_modes") },
     my_offsetof(class Table_triggers_list, definition_modes_list),
     FILE_OPTIONS_ULLLIST
   },
   {
-    { STRING_WITH_LEN("definers") },
+    { C_STRING_WITH_LEN("definers") },
     my_offsetof(class Table_triggers_list, definers_list),
     FILE_OPTIONS_STRLIST
   },
   {
-    { STRING_WITH_LEN("client_cs_names") },
+    { C_STRING_WITH_LEN("client_cs_names") },
     my_offsetof(class Table_triggers_list, client_cs_names),
     FILE_OPTIONS_STRLIST
   },
   {
-    { STRING_WITH_LEN("connection_cl_names") },
+    { C_STRING_WITH_LEN("connection_cl_names") },
     my_offsetof(class Table_triggers_list, connection_cl_names),
     FILE_OPTIONS_STRLIST
   },
   {
-    { STRING_WITH_LEN("db_cl_names") },
+    { C_STRING_WITH_LEN("db_cl_names") },
     my_offsetof(class Table_triggers_list, db_cl_names),
     FILE_OPTIONS_STRLIST
   },
   {
-    { STRING_WITH_LEN("created") },
+    { C_STRING_WITH_LEN("created") },
     my_offsetof(class Table_triggers_list, create_times),
     FILE_OPTIONS_ULLLIST
   },
@@ -216,7 +215,7 @@ static File_option triggers_file_parameters[]=
 
 File_option sql_modes_parameters=
 {
-  { STRING_WITH_LEN("sql_modes") },
+  { C_STRING_WITH_LEN("sql_modes") },
   my_offsetof(class Table_triggers_list, definition_modes_list),
   FILE_OPTIONS_ULLLIST
 };
@@ -239,18 +238,18 @@ static const int TRG_NUM_REQUIRED_PARAMETERS= 7;
 
 struct st_trigname
 {
-  LEX_CSTRING trigger_table;
+  LEX_STRING trigger_table;
 };
 
-static const LEX_CSTRING trigname_file_type=
-  { STRING_WITH_LEN("TRIGGERNAME") };
+static const LEX_STRING trigname_file_type=
+  { C_STRING_WITH_LEN("TRIGGERNAME") };
 
 const char * const TRN_EXT= ".TRN";
 
 static File_option trigname_file_parameters[]=
 {
   {
-    { STRING_WITH_LEN("trigger_table")},
+    { C_STRING_WITH_LEN("trigger_table")},
     offsetof(struct st_trigname, trigger_table),
     FILE_OPTIONS_ESTRING
   },
@@ -261,9 +260,9 @@ static File_option trigname_file_parameters[]=
 class Handle_old_incorrect_sql_modes_hook: public Unknown_key_hook
 {
 private:
-  const char *path;
+  char *path;
 public:
-  Handle_old_incorrect_sql_modes_hook(const char *file_path)
+  Handle_old_incorrect_sql_modes_hook(char *file_path)
     :path(file_path)
   {};
   virtual bool process_unknown_string(const char *&unknown_key, uchar* base,
@@ -274,15 +273,15 @@ public:
 class Handle_old_incorrect_trigger_table_hook: public Unknown_key_hook
 {
 public:
-  Handle_old_incorrect_trigger_table_hook(const char *file_path,
-                                          LEX_CSTRING *trigger_table_arg)
+  Handle_old_incorrect_trigger_table_hook(char *file_path,
+                                          LEX_STRING *trigger_table_arg)
     :path(file_path), trigger_table_value(trigger_table_arg)
   {};
   virtual bool process_unknown_string(const char *&unknown_key, uchar* base,
                                       MEM_ROOT *mem_root, const char *end);
 private:
-  const char *path;
-  LEX_CSTRING *trigger_table_value;
+  char *path;
+  LEX_STRING *trigger_table_value;
 };
 
 
@@ -300,7 +299,7 @@ class Deprecated_trigger_syntax_handler : public Internal_error_handler
 private:
 
   char m_message[MYSQL_ERRMSG_SIZE];
-  LEX_CSTRING *m_trigger_name;
+  LEX_STRING *m_trigger_name;
 
 public:
 
@@ -330,7 +329,7 @@ public:
     return false;
   }
 
-  LEX_CSTRING *get_trigger_name() { return m_trigger_name; }
+  LEX_STRING *get_trigger_name() { return m_trigger_name; }
   char *get_error_message() { return m_message; }
 };
 
@@ -527,7 +526,7 @@ bool mysql_create_or_drop_trigger(THD *thd, TABLE_LIST *tables, bool create)
   }
 
   /* We also don't allow creation of triggers on views. */
-  tables->required_type= TABLE_TYPE_NORMAL;
+  tables->required_type= FRMTYPE_TABLE;
   /*
     Also prevent DROP TRIGGER from opening temporary table which might
     shadow the subject table on which trigger to be dropped is defined.
@@ -649,10 +648,10 @@ end:
 
 static void build_trig_stmt_query(THD *thd, TABLE_LIST *tables,
                                   String *stmt_query, String *trigger_def,
-                                  LEX_CSTRING *trg_definer,
+                                  LEX_STRING *trg_definer,
                                   char trg_definer_holder[])
 {
-  LEX_CSTRING stmt_definition;
+  LEX_STRING stmt_definition;
   LEX *lex= thd->lex;
   uint prefix_trimmed, suffix_trimmed;
   size_t original_length;
@@ -668,7 +667,7 @@ static void build_trig_stmt_query(THD *thd, TABLE_LIST *tables,
   if (lex->create_info.or_replace())
     stmt_query->append(STRING_WITH_LEN("OR REPLACE "));
 
-  if (lex->sphead->suid() != SP_IS_NOT_SUID)
+  if (lex->sphead->m_chistics->suid != SP_IS_NOT_SUID)
   {
     /* SUID trigger */
     lex->definer->set_lex_string(trg_definer, trg_definer_holder);
@@ -677,7 +676,7 @@ static void build_trig_stmt_query(THD *thd, TABLE_LIST *tables,
   }
   else
   {
-    *trg_definer= empty_clex_str;
+    *trg_definer= empty_lex_str;
   }
 
 
@@ -693,7 +692,7 @@ static void build_trig_stmt_query(THD *thd, TABLE_LIST *tables,
 
   /* Create statement for storing trigger (without trigger order) */
   if (lex->trg_chistics.ordering_clause == TRG_ORDER_NONE)
-    trigger_def->append(&stmt_definition);
+    trigger_def->append(stmt_definition.str, stmt_definition.length);
   else
   {
     /* Copy data before FOLLOWS/PRECEDES trigger_name */
@@ -742,7 +741,7 @@ bool Table_triggers_list::create_trigger(THD *thd, TABLE_LIST *tables,
   LEX *lex= thd->lex;
   TABLE *table= tables->table;
   char file_buff[FN_REFLEN], trigname_buff[FN_REFLEN];
-  LEX_CSTRING file, trigname_file;
+  LEX_STRING file, trigname_file;
   char trg_definer_holder[USER_HOST_BUFF_SIZE];
   Item_trigger_field *trg_field;
   struct st_trigname trigname;
@@ -755,8 +754,8 @@ bool Table_triggers_list::create_trigger(THD *thd, TABLE_LIST *tables,
     DBUG_RETURN(true);
 
   /* Trigger must be in the same schema as target table. */
-  if (lex_string_cmp(table_alias_charset, &table->s->db,
-                     &lex->spname->m_db))
+  if (my_strcasecmp(table_alias_charset, table->s->db.str,
+                    lex->spname->m_db.str))
   {
     my_error(ER_TRG_IN_WRONG_SCHEMA, MYF(0));
     DBUG_RETURN(true);
@@ -839,13 +838,11 @@ bool Table_triggers_list::create_trigger(THD *thd, TABLE_LIST *tables,
     }
     else if (lex->create_info.if_not_exists())
     {
-      strxnmov(trigname_buff, sizeof(trigname_buff) - 1, tables->db, ".",
-               lex->spname->m_name.str, NullS);
       push_warning_printf(thd, Sql_condition::WARN_LEVEL_NOTE,
                           ER_TRG_ALREADY_EXISTS,
                           ER_THD(thd, ER_TRG_ALREADY_EXISTS),
                           trigname_buff);
-      LEX_CSTRING trg_definer_tmp;
+      LEX_STRING trg_definer_tmp;
       String trigger_def;
 
       /*
@@ -858,9 +855,7 @@ bool Table_triggers_list::create_trigger(THD *thd, TABLE_LIST *tables,
     }
     else
     {
-      strxnmov(trigname_buff, sizeof(trigname_buff) - 1, tables->db, ".",
-               lex->spname->m_name.str, NullS);
-      my_error(ER_TRG_ALREADY_EXISTS, MYF(0), trigname_buff);
+      my_error(ER_TRG_ALREADY_EXISTS, MYF(0));
       DBUG_RETURN(true);
     }
   }
@@ -928,8 +923,8 @@ err_without_cleanup:
   if (trigger_dropped)
   {
     String drop_trg_query;
-    drop_trg_query.append(STRING_WITH_LEN("DROP TRIGGER /* generated by failed CREATE TRIGGER */ "));
-    drop_trg_query.append(&lex->spname->m_name);
+    drop_trg_query.append("DROP TRIGGER /* generated by failed CREATE TRIGGER */ ");
+    drop_trg_query.append(lex->spname->m_name.str);
     /*
       We dropped an existing trigger and was not able to recreate it because
       of an internal error. Ensure it's also dropped on the slave.
@@ -1056,7 +1051,7 @@ bool Table_triggers_list::save_trigger_file(THD *thd, const char *db,
                                             const char *table_name)
 {
   char file_buff[FN_REFLEN];
-  LEX_CSTRING file;
+  LEX_STRING file;
 
   if (create_lists_needed_for_files(thd->mem_root))
     return true;
@@ -1076,7 +1071,7 @@ bool Table_triggers_list::save_trigger_file(THD *thd, const char *db,
   @param remove_from_list	If set, remove trigger if found
 */
 
-Trigger *Table_triggers_list::find_trigger(const LEX_CSTRING *name,
+Trigger *Table_triggers_list::find_trigger(const LEX_STRING *name,
                                            bool remove_from_list)
 {
   for (uint i= 0; i < (uint)TRG_EVENT_MAX; i++)
@@ -1089,8 +1084,8 @@ Trigger *Table_triggers_list::find_trigger(const LEX_CSTRING *name,
            (trigger= *parent);
            parent= &trigger->next)
       {
-        if (lex_string_cmp(table_alias_charset,
-                           &trigger->name, name) == 0)
+        if (my_strcasecmp(table_alias_charset,
+                          trigger->name.str, name->str) == 0)
         {
           if (remove_from_list)
           {
@@ -1131,7 +1126,7 @@ Trigger *Table_triggers_list::find_trigger(const LEX_CSTRING *name,
 bool Table_triggers_list::drop_trigger(THD *thd, TABLE_LIST *tables,
                                        String *stmt_query)
 {
-  const LEX_CSTRING *sp_name= &thd->lex->spname->m_name; // alias
+  const LEX_STRING *sp_name= &thd->lex->spname->m_name; // alias
   char path[FN_REFLEN];
   Trigger *trigger;
 
@@ -1304,7 +1299,7 @@ bool Table_triggers_list::check_n_load(THD *thd, const char *db,
                                        bool names_only)
 {
   char path_buff[FN_REFLEN];
-  LEX_CSTRING path;
+  LEX_STRING path;
   File_parser *parser;
   LEX_STRING save_db;
   DBUG_ENTER("Table_triggers_list::check_n_load");
@@ -1324,7 +1319,7 @@ bool Table_triggers_list::check_n_load(THD *thd, const char *db,
     if (is_equal(&triggers_file_type, parser->type()))
     {
       Handle_old_incorrect_sql_modes_hook sql_modes_hook(path.str);
-      LEX_CSTRING *trg_create_str;
+      LEX_STRING *trg_create_str;
       ulonglong *trg_sql_mode, *trg_create_time;
       Trigger *trigger;
       Table_triggers_list *trigger_list=
@@ -1338,7 +1333,7 @@ bool Table_triggers_list::check_n_load(THD *thd, const char *db,
                         &sql_modes_hook))
         goto error;
 
-      List_iterator_fast<LEX_CSTRING> it(trigger_list->definitions_list);
+      List_iterator_fast<LEX_STRING> it(trigger_list->definitions_list);
 
       if (!trigger_list->definitions_list.is_empty() &&
           (trigger_list->client_cs_names.is_empty() ||
@@ -1357,10 +1352,10 @@ bool Table_triggers_list::check_n_load(THD *thd, const char *db,
       status_var_increment(thd->status_var.feature_trigger);
 
       List_iterator_fast<ulonglong> itm(trigger_list->definition_modes_list);
-      List_iterator_fast<LEX_CSTRING> it_definer(trigger_list->definers_list);
-      List_iterator_fast<LEX_CSTRING> it_client_cs_name(trigger_list->client_cs_names);
-      List_iterator_fast<LEX_CSTRING> it_connection_cl_name(trigger_list->connection_cl_names);
-      List_iterator_fast<LEX_CSTRING> it_db_cl_name(trigger_list->db_cl_names);
+      List_iterator_fast<LEX_STRING> it_definer(trigger_list->definers_list);
+      List_iterator_fast<LEX_STRING> it_client_cs_name(trigger_list->client_cs_names);
+      List_iterator_fast<LEX_STRING> it_connection_cl_name(trigger_list->connection_cl_names);
+      List_iterator_fast<LEX_STRING> it_db_cl_name(trigger_list->db_cl_names);
       List_iterator_fast<ulonglong> it_create_times(trigger_list->create_times);
       LEX *old_lex= thd->lex, lex;
       sp_rcontext *save_spcont= thd->spcont;
@@ -1375,7 +1370,7 @@ bool Table_triggers_list::check_n_load(THD *thd, const char *db,
       {
         sp_head *sp;
         sql_mode_t sql_mode;
-        LEX_CSTRING *trg_definer;
+        LEX_STRING *trg_definer;
         Trigger_creation_ctx *creation_ctx;
 
         /*
@@ -1392,8 +1387,7 @@ bool Table_triggers_list::check_n_load(THD *thd, const char *db,
         thd->variables.sql_mode= sql_mode;
 
         Parser_state parser_state;
-        if (parser_state.init(thd, (char*) trg_create_str->str,
-                              trg_create_str->length))
+        if (parser_state.init(thd, trg_create_str->str, trg_create_str->length))
           goto err_with_lex_cleanup;
 
         if (!trigger_list->client_cs_names.is_empty())
@@ -1436,7 +1430,7 @@ bool Table_triggers_list::check_n_load(THD *thd, const char *db,
         lex.set_trg_event_type_for_tables();
 
         if (lex.sphead)
-          lex.sphead->m_sql_mode= sql_mode;
+          lex.sphead->set_info(0, 0, &lex.sp_chistics, sql_mode);
 
         if (unlikely(!(trigger= (new (&table->mem_root)
                                  Trigger(trigger_list, lex.sphead)))))
@@ -1448,7 +1442,7 @@ bool Table_triggers_list::check_n_load(THD *thd, const char *db,
         trigger->sql_mode= sql_mode;
         trigger->definition= *trg_create_str;
         trigger->create_time= trg_create_time ? *trg_create_time : 0;
-        trigger->name= sp ? sp->m_name : empty_clex_str;
+        trigger->name= sp ? sp->m_name : empty_lex_str;
         trigger->on_table_name.str= (char*) lex.raw_trg_on_table_name_begin;
         trigger->on_table_name.length= (lex.raw_trg_on_table_name_end -
                                         lex.raw_trg_on_table_name_begin);
@@ -1471,7 +1465,7 @@ bool Table_triggers_list::check_n_load(THD *thd, const char *db,
 
         if (parse_error)
         {
-          LEX_CSTRING *name;
+          LEX_STRING *name;
 
           /*
             In case of errors, disable all triggers for the table, but keep
@@ -1490,11 +1484,11 @@ bool Table_triggers_list::check_n_load(THD *thd, const char *db,
               goto err_with_lex_cleanup;
           }
           trigger->definer= ((!trg_definer || !trg_definer->length) ?
-                             empty_clex_str : *trg_definer);
+                             empty_lex_str : *trg_definer);
           continue;
         }
 
-        sp->m_sql_mode= sql_mode;
+        sp->set_info(0, 0, &lex.sp_chistics, sql_mode);
         sp->set_creation_ctx(creation_ctx);
 
         if (!trg_definer || !trg_definer->length)
@@ -1516,15 +1510,15 @@ bool Table_triggers_list::check_n_load(THD *thd, const char *db,
             schema.
           */
 
-          sp->set_definer("", 0);
-          trigger->definer= empty_clex_str;
+          sp->set_definer((char*) "", 0);
+          trigger->definer= empty_lex_str;
 
           /*
             trigger_list without definer information are executed under the
             authorization of the invoker.
           */
 
-          sp->set_suid(SP_IS_NOT_SUID);
+          sp->m_chistics->suid= SP_IS_NOT_SUID;
         }
         else
         {
@@ -1629,7 +1623,7 @@ error:
 void Table_triggers_list::add_trigger(trg_event_type event,
                                       trg_action_time_type action_time,
                                       trigger_order_type ordering_clause,
-                                      LEX_CSTRING *anchor_trigger_name,
+                                      LEX_STRING *anchor_trigger_name,
                                       Trigger *trigger)
 {
   Trigger **parent= &triggers[event][action_time];
@@ -1638,8 +1632,8 @@ void Table_triggers_list::add_trigger(trg_event_type event,
   for ( ; *parent ; parent= &(*parent)->next, position++)
   {
     if (ordering_clause != TRG_ORDER_NONE &&
-        !lex_string_cmp(table_alias_charset, anchor_trigger_name,
-                        &(*parent)->name))
+        !my_strcasecmp(table_alias_charset, anchor_trigger_name->str,
+                       (*parent)->name.str))
     {
       if (ordering_clause == TRG_ORDER_FOLLOWS)
       {
@@ -1680,9 +1674,8 @@ void Table_triggers_list::add_trigger(trg_event_type event,
     True    error
 */
 
-void Trigger::get_trigger_info(LEX_CSTRING *trigger_stmt,
-                               LEX_CSTRING *trigger_body,
-                               LEX_STRING *definer)
+void Trigger::get_trigger_info(LEX_STRING *trigger_stmt,
+                               LEX_STRING *trigger_body, LEX_STRING *definer)
 {
   DBUG_ENTER("get_trigger_info");
 
@@ -1696,14 +1689,14 @@ void Trigger::get_trigger_info(LEX_CSTRING *trigger_stmt,
   }
   *trigger_body= body->m_body_utf8;
 
-  if (body->suid() == SP_IS_NOT_SUID)
+  if (body->m_chistics->suid == SP_IS_NOT_SUID)
   {
     *definer= empty_lex_str;
   }
   else
   {
-    definer->length= strxmov(definer->str, body->m_definer.user.str, "@",
-                             body->m_definer.host.str, NullS) - definer->str;
+    definer->length= strxmov(definer->str, body->m_definer_user.str, "@",
+                             body->m_definer_host.str, NullS) - definer->str;
   }
   DBUG_VOID_RETURN;
 }
@@ -1734,7 +1727,7 @@ bool add_table_for_trigger(THD *thd,
   LEX *lex= thd->lex;
   char trn_path_buff[FN_REFLEN];
   LEX_STRING trn_path= { trn_path_buff, 0 };
-  LEX_CSTRING tbl_name= null_clex_str;
+  LEX_STRING tbl_name= null_lex_str;
 
   DBUG_ENTER("add_table_for_trigger");
 
@@ -1758,8 +1751,7 @@ bool add_table_for_trigger(THD *thd,
     DBUG_RETURN(TRUE);
   }
 
-  if (load_table_name_for_trigger(thd, trg_name, (LEX_CSTRING*) &trn_path,
-                                  &tbl_name))
+  if (load_table_name_for_trigger(thd, trg_name, &trn_path, &tbl_name))
     DBUG_RETURN(TRUE);
 
   *table= sp_add_to_query_tables(thd, lex, trg_name->m_db.str,
@@ -1783,8 +1775,7 @@ bool add_table_for_trigger(THD *thd,
     True    error
 */
 
-bool Table_triggers_list::drop_all_triggers(THD *thd, const char *db,
-                                            const char *name)
+bool Table_triggers_list::drop_all_triggers(THD *thd, char *db, char *name)
 {
   TABLE table;
   char path[FN_REFLEN];
@@ -1858,7 +1849,7 @@ struct change_table_name_param
   THD *thd;
   const char *old_db_name;
   const char *new_db_name;
-  LEX_CSTRING *new_table_name;
+  LEX_STRING *new_table_name;
   Trigger *stopper;
 };
 
@@ -1867,8 +1858,8 @@ bool
 Table_triggers_list::change_table_name_in_triggers(THD *thd,
                                                    const char *old_db_name,
                                                    const char *new_db_name,
-                                                   LEX_CSTRING *old_table_name,
-                                                   LEX_CSTRING *new_table_name)
+                                                   LEX_STRING *old_table_name,
+                                                   LEX_STRING *new_table_name)
 {
   struct change_table_name_param param;
   sql_mode_t save_sql_mode= thd->variables.sql_mode;
@@ -1900,8 +1891,9 @@ bool Trigger::change_table_name(void* param_arg)
 {
   change_table_name_param *param= (change_table_name_param*) param_arg;
   THD *thd= param->thd;
-  LEX_CSTRING *new_table_name= param->new_table_name;
-  LEX_CSTRING *def= &definition, new_def;
+  LEX_STRING *new_table_name= param->new_table_name;
+
+  LEX_STRING *def= &definition, new_def;
   size_t on_q_table_name_len, before_on_len;
   String buff;
 
@@ -1956,7 +1948,7 @@ bool Trigger::change_table_name(void* param_arg)
 Trigger *
 Table_triggers_list::change_table_name_in_trignames(const char *old_db_name,
                                                     const char *new_db_name,
-                                                    LEX_CSTRING *new_table_name,
+                                                    LEX_STRING *new_table_name,
                                                     Trigger *trigger)
 {
   struct change_table_name_param param;
@@ -1975,7 +1967,7 @@ bool Trigger::change_on_table_name(void* param_arg)
 
   char trigname_buff[FN_REFLEN];
   struct st_trigname trigname;
-  LEX_CSTRING trigname_file;
+  LEX_STRING trigname_file;
 
   if (param->stopper == this)
     return 0;                                   // Stop processing
@@ -2065,8 +2057,8 @@ bool Table_triggers_list::change_table_name(THD *thd, const char *db,
       result= 1;
       goto end;
     }
-    LEX_CSTRING old_table_name= { (char *) old_alias, strlen(old_alias) };
-    LEX_CSTRING new_table_name= { (char *) new_table, strlen(new_table) };
+    LEX_STRING old_table_name= { (char *) old_alias, strlen(old_alias) };
+    LEX_STRING new_table_name= { (char *) new_table, strlen(new_table) };
     /*
       Since triggers should be in the same schema as their subject tables
       moving table with them between two schemas raises too many questions.
@@ -2477,14 +2469,16 @@ bool check_trn_exists(const LEX_STRING *trn_path)
 
 bool load_table_name_for_trigger(THD *thd,
                                  const sp_name *trg_name,
-                                 const LEX_CSTRING *trn_path,
-                                 LEX_CSTRING *tbl_name)
+                                 const LEX_STRING *trn_path,
+                                 LEX_STRING *tbl_name)
 {
   File_parser *parser;
   struct st_trigname trn_data;
+
   Handle_old_incorrect_trigger_table_hook trigger_table_hook(
                                           trn_path->str,
                                           &trn_data.trigger_table);
+
   DBUG_ENTER("load_table_name_for_trigger");
 
   /* Parse the TRN-file. */

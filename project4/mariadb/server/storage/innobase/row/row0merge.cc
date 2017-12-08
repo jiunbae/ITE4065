@@ -24,7 +24,7 @@ New index creation routines using a merge sort
 Created 12/4/2005 Jan Lindstrom
 Completed by Sunny Bains and Marko Makela
 *******************************************************/
-#include <my_global.h>
+#include <my_config.h>
 #include <log.h>
 #include <sql_class.h>
 
@@ -62,12 +62,6 @@ float my_log2f(float n)
 #if defined _WIN32
 # define posix_fadvise(fd, offset, len, advice) /* nothing */
 #endif /* _WIN32 */
-
-/** The DB_TRX_ID,DB_ROLL_PTR values for "no history is available" */
-const byte reset_trx_id[DATA_TRX_ID_LEN + DATA_ROLL_PTR_LEN] = {
-	0, 0, 0, 0, 0, 0,
-	0x80, 0, 0, 0, 0, 0, 0
-};
 
 /* Whether to disable file system cache */
 char	srv_disable_sort_file_cache;
@@ -278,6 +272,7 @@ private:
 #define FTS_PENDING_DOC_MEMORY_LIMIT	1000000
 
 /** Insert sorted data tuples to the index.
+@param[in]	trx_id		transaction identifier
 @param[in]	index		index to be inserted
 @param[in]	old_table	old table
 @param[in]	fd		file descriptor
@@ -292,6 +287,7 @@ and then stage->inc() will be called for each record that is processed.
 static	MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_merge_insert_index_tuples(
+	trx_id_t		trx_id,
 	dict_index_t*		index,
 	const dict_table_t*	old_table,
 	int			fd,
@@ -1367,7 +1363,7 @@ row_merge_write_rec_low(
 	}
 
 	memcpy(b, mrec - rec_offs_extra_size(offsets), rec_offs_size(offsets));
-	DBUG_SLOW_ASSERT(b + rec_offs_size(offsets) == end);
+	DBUG_ASSERT(b + rec_offs_size(offsets) == end);
 	DBUG_VOID_RETURN;
 }
 
@@ -1746,8 +1742,6 @@ row_merge_read_clustered_index(
 
 	ut_ad((old_table == new_table) == !col_map);
 	ut_ad(!add_cols || col_map);
-	ut_ad(trx_state_eq(trx, TRX_STATE_ACTIVE));
-	ut_ad(trx->id);
 
 	table_total_rows = dict_table_get_n_rows(old_table);
 	if(table_total_rows == 0) {
@@ -1843,27 +1837,9 @@ row_merge_read_clustered_index(
 	based on that. */
 
 	clust_index = dict_table_get_first_index(old_table);
-	const ulint old_trx_id_col = DATA_TRX_ID - DATA_N_SYS_COLS
-		+ old_table->n_cols;
-	ut_ad(old_table->cols[old_trx_id_col].mtype == DATA_SYS);
-	ut_ad(old_table->cols[old_trx_id_col].prtype
-	      == (DATA_TRX_ID | DATA_NOT_NULL));
-	ut_ad(old_table->cols[old_trx_id_col + 1].mtype == DATA_SYS);
-	ut_ad(old_table->cols[old_trx_id_col + 1].prtype
-	      == (DATA_ROLL_PTR | DATA_NOT_NULL));
-	const ulint new_trx_id_col = col_map
-		? col_map[old_trx_id_col] : old_trx_id_col;
 
 	btr_pcur_open_at_index_side(
 		true, clust_index, BTR_SEARCH_LEAF, &pcur, true, 0, &mtr);
-	btr_pcur_move_to_next_user_rec(&pcur, &mtr);
-	if (rec_is_default_row(btr_pcur_get_rec(&pcur), clust_index)) {
-		ut_ad(btr_pcur_is_on_user_rec(&pcur));
-		/* Skip the 'default row' pseudo-record. */
-	} else {
-		ut_ad(!clust_index->is_instant());
-		btr_pcur_move_to_prev_on_page(&pcur);
-	}
 
 	if (old_table != new_table) {
 		/* The table is being rebuilt.  Identify the columns
@@ -1918,7 +1894,6 @@ row_merge_read_clustered_index(
 	/* Scan the clustered index. */
 	for (;;) {
 		const rec_t*	rec;
-		trx_id_t	rec_trx_id;
 		ulint*		offsets;
 		const dtuple_t*	row;
 		row_ext_t*	ext;
@@ -2070,8 +2045,6 @@ end_of_index:
 		if (online) {
 			offsets = rec_get_offsets(rec, clust_index, NULL, true,
 						  ULINT_UNDEFINED, &row_heap);
-			rec_trx_id = row_get_rec_trx_id(rec, clust_index,
-							offsets);
 
 			/* Perform a REPEATABLE READ.
 
@@ -2093,10 +2066,11 @@ end_of_index:
 			the DML thread has updated the clustered index
 			but has not yet accessed secondary index. */
 			ut_ad(MVCC::is_view_active(trx->read_view));
-			ut_ad(rec_trx_id != trx->id);
 
 			if (!trx->read_view->changes_visible(
-				    rec_trx_id, old_table->name)) {
+				    row_get_rec_trx_id(
+					    rec, clust_index, offsets),
+				    old_table->name)) {
 				rec_t*	old_vers;
 
 				row_vers_build_for_consistent_read(
@@ -2104,33 +2078,20 @@ end_of_index:
 					trx->read_view, &row_heap,
 					row_heap, &old_vers, NULL);
 
-				if (!old_vers) {
+				rec = old_vers;
+
+				if (!rec) {
 					continue;
 				}
-
-				/* The old version must necessarily be
-				in the "prehistory", because the
-				exclusive lock in
-				ha_innobase::prepare_inplace_alter_table()
-				forced the completion of any transactions
-				that accessed this table. */
-				ut_ad(row_get_rec_trx_id(old_vers, clust_index,
-							 offsets) < trx->id);
-
-				rec = old_vers;
-				rec_trx_id = 0;
 			}
 
 			if (rec_get_deleted_flag(
 				    rec,
 				    dict_table_is_comp(old_table))) {
 				/* In delete-marked records, DB_TRX_ID must
-				always refer to an existing undo log record.
-				Above, we did reset rec_trx_id = 0
-				for rec = old_vers.*/
-				ut_ad(rec == page_cur_get_rec(cur)
-				      ? rec_trx_id
-				      : !rec_trx_id);
+				always refer to an existing undo log record. */
+				ut_ad(row_get_rec_trx_id(rec, clust_index,
+							 offsets));
 				/* This record was deleted in the latest
 				committed version, or it was deleted and
 				then reinserted-by-update before purge
@@ -2143,37 +2104,19 @@ end_of_index:
 				   rec, dict_table_is_comp(old_table))) {
 			/* In delete-marked records, DB_TRX_ID must
 			always refer to an existing undo log record. */
-			ut_d(rec_trx_id = rec_get_trx_id(rec, clust_index));
-			ut_ad(rec_trx_id);
-			/* This must be a purgeable delete-marked record,
-			and the transaction that delete-marked the record
-			must have been committed before this
-			!online ALTER TABLE transaction. */
-			ut_ad(rec_trx_id < trx->id);
+			ut_ad(rec_get_trx_id(rec, clust_index));
 			/* Skip delete-marked records.
 
 			Skipping delete-marked records will make the
 			created indexes unuseable for transactions
 			whose read views were created before the index
-			creation completed, but an attempt to preserve
-			the history would make it tricky to detect
-			duplicate keys. */
+			creation completed, but preserving the history
+			would make it tricky to detect duplicate
+			keys. */
 			continue;
 		} else {
 			offsets = rec_get_offsets(rec, clust_index, NULL, true,
 						  ULINT_UNDEFINED, &row_heap);
-			/* This is a locking ALTER TABLE.
-
-			If we are not rebuilding the table, the
-			DB_TRX_ID does not matter, as it is not being
-			written to any secondary indexes; see
-			if (old_table == new_table) below.
-
-			If we are rebuilding the table, the
-			DB_TRX_ID,DB_ROLL_PTR should be reset, because
-			there will be no history available. */
-			ut_ad(rec_get_trx_id(rec, clust_index) < trx->id);
-			rec_trx_id = 0;
 		}
 
 		/* When !online, we are holding a lock on old_table, preventing
@@ -2206,31 +2149,6 @@ end_of_index:
 			doc_id++;
 		} else {
 			doc_id = 0;
-		}
-
-		ut_ad(row->fields[new_trx_id_col].type.mtype == DATA_SYS);
-		ut_ad(row->fields[new_trx_id_col].type.prtype
-		      == (DATA_TRX_ID | DATA_NOT_NULL));
-		ut_ad(row->fields[new_trx_id_col].len == DATA_TRX_ID_LEN);
-		ut_ad(row->fields[new_trx_id_col + 1].type.mtype == DATA_SYS);
-		ut_ad(row->fields[new_trx_id_col + 1].type.prtype
-		      == (DATA_ROLL_PTR | DATA_NOT_NULL));
-		ut_ad(row->fields[new_trx_id_col + 1].len == DATA_ROLL_PTR_LEN);
-
-		if (old_table == new_table) {
-			/* Do not bother touching DB_TRX_ID,DB_ROLL_PTR
-			because they are not going to be written into
-			secondary indexes. */
-		} else if (rec_trx_id < trx->id) {
-			/* Reset the DB_TRX_ID,DB_ROLL_PTR of old rows
-			for which history is not going to be
-			available after the rebuild operation.
-			This essentially mimics row_purge_reset_trx_id(). */
-			row->fields[new_trx_id_col].data
-				= const_cast<byte*>(reset_trx_id);
-			row->fields[new_trx_id_col + 1].data
-				= const_cast<byte*>(reset_trx_id
-						    + DATA_TRX_ID_LEN);
 		}
 
 		if (add_autoinc != ULINT_UNDEFINED) {
@@ -2319,11 +2237,6 @@ write_buffers:
 
 				continue;
 			}
-
-			ut_ad(!row
-			      || !dict_index_is_clust(buf->index)
-			      || trx_id_check(row->fields[new_trx_id_col].data,
-					      trx->id));
 
 			if (UNIV_LIKELY
 			    (row && (rows_added = row_merge_buf_add(
@@ -2482,7 +2395,7 @@ write_buffers:
 					}
 
 					err = row_merge_insert_index_tuples(
-						index[i], old_table,
+						trx->id, index[i], old_table,
 						-1, NULL, buf, clust_btr_bulk,
 						table_total_rows,
 						curr_progress,
@@ -2593,7 +2506,7 @@ write_buffers:
 					btr_bulk.init();
 
 					err = row_merge_insert_index_tuples(
-						index[i], old_table,
+						trx->id, index[i], old_table,
 						-1, NULL, buf, &btr_bulk,
 						table_total_rows,
 						curr_progress,
@@ -3449,6 +3362,7 @@ row_merge_mtuple_to_dtuple(
 }
 
 /** Insert sorted data tuples to the index.
+@param[in]	trx_id		transaction identifier
 @param[in]	index		index to be inserted
 @param[in]	old_table	old table
 @param[in]	fd		file descriptor
@@ -3463,6 +3377,7 @@ and then stage->inc() will be called for each record that is processed.
 static	MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_merge_insert_index_tuples(
+	trx_id_t		trx_id,
 	dict_index_t*		index,
 	const dict_table_t*	old_table,
 	int			fd,
@@ -3500,6 +3415,7 @@ row_merge_insert_index_tuples(
 	ut_ad(!srv_read_only_mode);
 	ut_ad(!(index->type & DICT_FTS));
 	ut_ad(!dict_index_is_spatial(index));
+	ut_ad(trx_id);
 
 	if (stage != NULL) {
 		stage->begin_phase_insert();
@@ -4396,7 +4312,52 @@ row_merge_rename_tables_dict(
 	return(err);
 }
 
+/** Create and execute a query graph for creating an index.
+@param[in,out]	trx	trx
+@param[in,out]	table	table
+@param[in,out]	index	index
+@param[in]	add_v	new virtual columns added along with add index call
+@return DB_SUCCESS or error code */
+MY_ATTRIBUTE((nonnull(1,2,3), warn_unused_result))
+static
+dberr_t
+row_merge_create_index_graph(
+	trx_t*			trx,
+	dict_table_t*		table,
+	dict_index_t*		index,
+	const dict_add_v_col_t* add_v)
+{
+	ind_node_t*	node;		/*!< Index creation node */
+	mem_heap_t*	heap;		/*!< Memory heap */
+	que_thr_t*	thr;		/*!< Query thread */
+	dberr_t		err;
+
+	DBUG_ENTER("row_merge_create_index_graph");
+
+	ut_ad(trx);
+	ut_ad(table);
+	ut_ad(index);
+
+	heap = mem_heap_create(512);
+
+	index->table = table;
+	node = ind_create_graph_create(index, heap, add_v);
+	thr = pars_complete_graph_for_exec(node, trx, heap, NULL);
+
+	ut_a(thr == que_fork_start_command(
+			static_cast<que_fork_t*>(que_node_get_parent(thr))));
+
+	que_run_threads(thr);
+
+	err = trx->error_state;
+
+	que_graph_free((que_t*) que_node_get_parent(thr));
+
+	DBUG_RETURN(err);
+}
+
 /** Create the index and load in to the dictionary.
+@param[in,out]	trx		trx (sets error_state)
 @param[in,out]	table		the index is on this table
 @param[in]	index_def	the index definition
 @param[in]	add_v		new virtual columns added along with add
@@ -4404,13 +4365,16 @@ row_merge_rename_tables_dict(
 @return index, or NULL on error */
 dict_index_t*
 row_merge_create_index(
+	trx_t*			trx,
 	dict_table_t*		table,
 	const index_def_t*	index_def,
 	const dict_add_v_col_t*	add_v)
 {
 	dict_index_t*	index;
+	dberr_t		err;
 	ulint		n_fields = index_def->n_fields;
 	ulint		i;
+	bool		has_new_v_col = false;
 
 	DBUG_ENTER("row_merge_create_index");
 
@@ -4423,7 +4387,8 @@ row_merge_create_index(
 	index = dict_mem_index_create(table->name.m_name, index_def->name,
 				      0, index_def->ind_type, n_fields);
 
-	index->table = table;
+	ut_a(index);
+
 	index->set_committed(index_def->rebuild);
 
 	for (i = 0; i < n_fields; i++) {
@@ -4437,7 +4402,7 @@ row_merge_create_index(
 				ut_ad(ifield->col_no >= table->n_v_def);
 				name = add_v->v_col_name[
 					ifield->col_no - table->n_v_def];
-				index->has_new_v_col = true;
+				has_new_v_col = true;
 			} else {
 				name = dict_table_get_v_col_name(
 					table, ifield->col_no);
@@ -4447,6 +4412,27 @@ row_merge_create_index(
 		}
 
 		dict_mem_index_add_field(index, name, ifield->prefix_len);
+	}
+
+	/* Add the index to SYS_INDEXES, using the index prototype. */
+	err = row_merge_create_index_graph(trx, table, index, add_v);
+
+	if (err == DB_SUCCESS) {
+
+		index = dict_table_get_index_on_name(table, index_def->name,
+						     index_def->rebuild);
+
+		ut_a(index);
+
+		index->parser = index_def->parser;
+		index->has_new_v_col = has_new_v_col;
+
+		/* Note the id of the transaction that created this
+		index, we use it to restrict readers from accessing
+		this index, to ensure read consistency. */
+		ut_ad(index->trx_id == trx->id);
+	} else {
+		index = NULL;
 	}
 
 	DBUG_RETURN(index);
@@ -4696,6 +4682,10 @@ row_merge_build_indexes(
 		}
 	}
 
+	/* Reset the MySQL row buffer that is used when reporting
+	duplicate keys. */
+	innobase_rec_reset(table);
+
 	if (global_system_variables.log_warnings > 2) {
 		sql_print_information("InnoDB: Online DDL : Start reading"
 				      " clustered index of the table"
@@ -4900,7 +4890,7 @@ wait_again:
 				}
 
 				error = row_merge_insert_index_tuples(
-					sort_idx, old_table,
+					trx->id, sort_idx, old_table,
 					merge_files[i].fd, block, NULL,
 					&btr_bulk,
 					merge_files[i].n_rec, pct_progress, pct_cost,

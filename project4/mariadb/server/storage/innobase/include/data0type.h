@@ -29,12 +29,6 @@ Created 1/16/1996 Heikki Tuuri
 
 #include "univ.i"
 
-/** Special length indicating a missing instantly added column */
-#define UNIV_SQL_DEFAULT (UNIV_SQL_NULL - 1)
-
-/** @return whether a length is actually stored in a field */
-#define len_is_stored(len) (len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT)
-
 extern ulint	data_mysql_default_charset_coll;
 #define DATA_MYSQL_BINARY_CHARSET_COLL 63
 
@@ -189,6 +183,8 @@ be less than 256 */
 				for shorter VARCHARs MySQL uses only 1 byte */
 #define	DATA_VIRTUAL	8192U	/* Virtual column */
 
+/** Get the number of system columns in a table. */
+#define dict_table_get_n_sys_cols(table) DATA_N_SYS_COLS
 /** Check whether locking is disabled (never). */
 #define dict_table_is_locking_disabled(table) false
 

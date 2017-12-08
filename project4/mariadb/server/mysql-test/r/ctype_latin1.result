@@ -1088,7 +1088,7 @@ create table t1 as select concat(sign(0.5)) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(2) DEFAULT NULL
+  `c1` varchar(21) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 create table t1 as select concat(rand()) as c1;
@@ -1125,7 +1125,7 @@ create table t1 as select concat(bit_length('a')) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(11) DEFAULT NULL
+  `c1` varchar(10) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 select hex(concat(coercibility('a')));
@@ -1175,7 +1175,7 @@ create table t1 as select concat(ord(61)) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(7) DEFAULT NULL
+  `c1` varchar(21) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 select hex(concat(find_in_set('b','a,b,c,d')));
@@ -1314,7 +1314,7 @@ create table t1 as select concat(least(1,2)) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(1) DEFAULT NULL
+  `c1` varchar(2) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 select hex(concat(greatest(1,2)));
@@ -1324,7 +1324,7 @@ create table t1 as select concat(greatest(1,2)) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(1) DEFAULT NULL
+  `c1` varchar(2) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 select hex(concat(case when 11 then 22 else 33 end));
@@ -1402,7 +1402,7 @@ create table t1 as select concat(sleep(0)) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(1) DEFAULT NULL
+  `c1` varchar(21) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 select hex(concat(is_free_lock('xxxx')));
@@ -2153,7 +2153,7 @@ create table t1 as select concat(microsecond('12:00:00.123456')) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(6) DEFAULT NULL
+  `c1` varchar(21) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 select hex(concat(month(20090224)));
@@ -7817,7 +7817,7 @@ EXPLAIN EXTENDED SELECT a, LENGTH(a) FROM t1 WHERE a NOT LIKE 'a ' AND a='a';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
 Warnings:
-Note	1003	select `test`.`t1`.`a` AS `a`,octet_length(`test`.`t1`.`a`) AS `LENGTH(a)` from `test`.`t1` where `test`.`t1`.`a` = 'a' and `test`.`t1`.`a`  not like 'a '
+Note	1003	select `test`.`t1`.`a` AS `a`,length(`test`.`t1`.`a`) AS `LENGTH(a)` from `test`.`t1` where `test`.`t1`.`a` = 'a' and `test`.`t1`.`a`  not like 'a '
 DROP TABLE t1;
 #
 # End of MDEV-8694
@@ -7938,7 +7938,7 @@ EXPLAIN EXTENDED SELECT a, LENGTH(a) FROM t1 WHERE a NOT LIKE 'a ' AND a='a';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
 Warnings:
-Note	1003	select `test`.`t1`.`a` AS `a`,octet_length(`test`.`t1`.`a`) AS `LENGTH(a)` from `test`.`t1` where `test`.`t1`.`a` = 'a' and `test`.`t1`.`a`  not like 'a '
+Note	1003	select `test`.`t1`.`a` AS `a`,length(`test`.`t1`.`a`) AS `LENGTH(a)` from `test`.`t1` where `test`.`t1`.`a` = 'a' and `test`.`t1`.`a`  not like 'a '
 DROP TABLE t1;
 #
 # End of MDEV-8694
@@ -8178,7 +8178,7 @@ EXPLAIN EXTENDED SELECT a, LENGTH(a), CRC32(a) FROM t1 WHERE a='a' AND CRC32(a)=
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
 Warnings:
-Note	1003	select `test`.`t1`.`a` AS `a`,octet_length(`test`.`t1`.`a`) AS `LENGTH(a)`,crc32(`test`.`t1`.`a`) AS `CRC32(a)` from `test`.`t1` where `test`.`t1`.`a` = 'a' and crc32(`test`.`t1`.`a`) = 3904355907
+Note	1003	select `test`.`t1`.`a` AS `a`,length(`test`.`t1`.`a`) AS `LENGTH(a)`,crc32(`test`.`t1`.`a`) AS `CRC32(a)` from `test`.`t1` where `test`.`t1`.`a` = 'a' and crc32(`test`.`t1`.`a`) = 3904355907
 SELECT a, HEX(a) FROM t1 WHERE HEX(a)='61';
 a	HEX(a)
 a	61
@@ -8206,7 +8206,7 @@ EXPLAIN EXTENDED SELECT * FROM t1 WHERE a='a' AND LENGTH(a)=2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
 Warnings:
-Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where `test`.`t1`.`a` = 'a' and octet_length(`test`.`t1`.`a`) = 2
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where `test`.`t1`.`a` = 'a' and length(`test`.`t1`.`a`) = 2
 DROP TABLE t1;
 #
 # MDEV-8712 Wrong result for SELECT..WHERE latin1_bin_column=_latin1'a' AND latin1_bin_column='A'

@@ -21,7 +21,7 @@
   Multi-table deletes were introduced by Monty and Sinisa
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "unireg.h"
 #include "sql_delete.h"
@@ -45,8 +45,6 @@
                                                 // end_read_record
 #include "sql_partition.h"       // make_used_partitions_str
 
-#define MEM_STRIP_BUF_SIZE ((size_t) thd->variables.sortbuff_size)
-
 /*
   @brief
     Print query plan of a single-table DELETE command
@@ -61,8 +59,6 @@ Explain_delete* Delete_plan::save_explain_delete_data(MEM_ROOT *mem_root, THD *t
   Explain_query *query= thd->lex->explain;
   Explain_delete *explain= 
      new (mem_root) Explain_delete(mem_root, thd->lex->analyze_stmt);
-  if (!explain)
-    return 0;
 
   if (deleting_all_rows)
   {
@@ -73,9 +69,8 @@ Explain_delete* Delete_plan::save_explain_delete_data(MEM_ROOT *mem_root, THD *t
   else
   {
     explain->deleting_all_rows= false;
-    if (Update_plan::save_explain_data_intern(mem_root, explain,
-                                              thd->lex->analyze_stmt))
-      return 0;
+    Update_plan::save_explain_data_intern(mem_root, explain, 
+                                          thd->lex->analyze_stmt);
   }
  
   query->add_upd_del_plan(explain);
@@ -89,16 +84,13 @@ Update_plan::save_explain_update_data(MEM_ROOT *mem_root, THD *thd)
   Explain_query *query= thd->lex->explain;
   Explain_update* explain= 
     new (mem_root) Explain_update(mem_root, thd->lex->analyze_stmt);
-  if (!explain)
-    return 0;
-  if (save_explain_data_intern(mem_root, explain, thd->lex->analyze_stmt))
-    return 0;
+  save_explain_data_intern(mem_root, explain, thd->lex->analyze_stmt);
   query->add_upd_del_plan(explain);
   return explain;
 }
 
 
-bool Update_plan::save_explain_data_intern(MEM_ROOT *mem_root,
+void Update_plan::save_explain_data_intern(MEM_ROOT *mem_root,
                                            Explain_update *explain,
                                            bool is_analyze)
 {
@@ -111,13 +103,13 @@ bool Update_plan::save_explain_data_intern(MEM_ROOT *mem_root,
   if (impossible_where)
   {
     explain->impossible_where= true;
-    return 0;
+    return;
   }
 
   if (no_partitions)
   {
     explain->no_partitions= true;
-    return 0;
+    return;
   }
   
   if (is_analyze)
@@ -168,8 +160,7 @@ bool Update_plan::save_explain_data_intern(MEM_ROOT *mem_root,
   explain->where_cond= select? select->cond: NULL;
 
   if (using_filesort)
-    if (!(explain->filesort_tracker= new (mem_root) Filesort_tracker(is_analyze)))
-      return 1;
+    explain->filesort_tracker= new (mem_root) Filesort_tracker(is_analyze);
   explain->using_io_buffer= using_io_buffer;
 
   append_possible_keys(mem_root, explain->possible_keys, table, 
@@ -218,23 +209,6 @@ bool Update_plan::save_explain_data_intern(MEM_ROOT *mem_root,
     if (!(unit->item && unit->item->eliminated))
       explain->add_child(unit->first_select()->select_number);
   }
-  return 0;
-}
-
-
-static bool record_should_be_deleted(THD *thd, TABLE *table, SQL_SELECT *sel,
-                                     Explain_delete *explain)
-{
-  explain->tracker.on_record_read();
-  thd->inc_examined_row_count(1);
-  if (table->vfield)
-    (void) table->update_virtual_fields(table->file, VCOL_UPDATE_FOR_DELETE);
-  if (!sel || sel->skip_record(thd) > 0)
-  {
-    explain->tracker.on_record_after_where();
-    return true;
-  }
-  return false;
 }
 
 
@@ -270,18 +244,14 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
   bool with_select= !select_lex->item_list.is_empty();
   Explain_delete *explain;
   Delete_plan query_plan(thd->mem_root);
-  Unique * deltempfile= NULL;
-  bool delete_record, delete_while_scanning;
-  DBUG_ENTER("mysql_delete");
-
   query_plan.index= MAX_KEY;
   query_plan.using_filesort= FALSE;
+  DBUG_ENTER("mysql_delete");
 
   create_explain_query(thd->lex, thd->mem_root);
   if (open_and_lock_tables(thd, table_list, TRUE, 0))
     DBUG_RETURN(TRUE);
 
-  THD_STAGE_INFO(thd, stage_init_update);
   if (mysql_handle_list_of_derived(thd->lex, table_list, DT_MERGE_FOR_INSERT))
     DBUG_RETURN(TRUE);
   if (mysql_handle_list_of_derived(thd->lex, table_list, DT_PREPARE))
@@ -298,14 +268,14 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
 	       table_list->view_db.str, table_list->view_name.str);
     DBUG_RETURN(TRUE);
   }
+  THD_STAGE_INFO(thd, stage_init);
   table->map=1;
   query_plan.select_lex= &thd->lex->select_lex;
   query_plan.table= table;
   query_plan.updating_a_view= MY_TEST(table_list->view);
 
   if (mysql_prepare_delete(thd, table_list, select_lex->with_wild,
-                           select_lex->item_list, &conds,
-                           &delete_while_scanning))
+                                            select_lex->item_list, &conds))
     DBUG_RETURN(TRUE);
   
   if (with_select)
@@ -393,8 +363,7 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
       query_type= THD::STMT_QUERY_TYPE;
       error= -1;
       deleted= maybe_deleted;
-      if (!query_plan.save_explain_delete_data(thd->mem_root, thd))
-        error= 1;
+      query_plan.save_explain_delete_data(thd->mem_root, thd);
       goto cleanup;
     }
     if (error != HA_ERR_WRONG_COMMAND)
@@ -512,8 +481,7 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
   if (thd->lex->describe)
     goto produce_explain_and_leave;
   
-  if (!(explain= query_plan.save_explain_delete_data(thd->mem_root, thd)))
-    goto got_error;
+  explain= query_plan.save_explain_delete_data(thd->mem_root, thd);
   ANALYZE_START_TRACKING(&explain->command_tracker);
 
   DBUG_EXECUTE_IF("show_explain_probe_delete_exec_start", 
@@ -565,8 +533,8 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
   if (error)
     goto got_error;
   
-  if (init_ftfuncs(thd, select_lex, 1))
-    goto got_error;
+  init_ftfuncs(thd, select_lex, 1);
+  THD_STAGE_INFO(thd, stage_updating);
 
   if (table->prepare_triggers_for_delete_stmt_or_event())
   {
@@ -588,51 +556,16 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
   explain= (Explain_delete*)thd->lex->explain->get_upd_del_plan();
   explain->tracker.on_scan_init();
 
-  if (!delete_while_scanning)
+  while (!(error=info.read_record(&info)) && !thd->killed &&
+	 ! thd->is_error())
   {
-    /*
-      The table we are going to delete appears in subqueries in the where
-      clause.  Instead of deleting the rows, first mark them deleted.
-    */
-    ha_rows tmplimit=limit;
-    deltempfile= new (thd->mem_root) Unique (refpos_order_cmp, table->file,
-                                             table->file->ref_length,
-                                             MEM_STRIP_BUF_SIZE);
-
-    THD_STAGE_INFO(thd, stage_searching_rows_for_update);
-    while (!(error=info.read_record()) && !thd->killed &&
-          ! thd->is_error())
+    explain->tracker.on_record_read();
+    thd->inc_examined_row_count(1);
+    if (table->vfield)
+      (void) table->update_virtual_fields(table->file, VCOL_UPDATE_FOR_DELETE);
+    if (!select || select->skip_record(thd) > 0)
     {
-      if (record_should_be_deleted(thd, table, select, explain))
-      {
-        table->file->position(table->record[0]);
-        if ((error= deltempfile->unique_add((char*) table->file->ref)))
-        {
-          error= 1;
-          goto terminate_delete;
-        }
-        if (!--tmplimit && using_limit)
-          break;
-      }
-    }
-    end_read_record(&info);
-    if (deltempfile->get(table) || table->file->ha_index_or_rnd_end() ||
-        init_read_record(&info, thd, table, 0, &deltempfile->sort, 0, 1, false))
-    {
-      error= 1;
-      goto terminate_delete;
-    }
-    delete_record= true;
-  }
-
-  THD_STAGE_INFO(thd, stage_updating);
-  while (!(error=info.read_record()) && !thd->killed &&
-        ! thd->is_error())
-  {
-    if (delete_while_scanning)
-      delete_record= record_should_be_deleted(thd, table, select, explain);
-    if (delete_record)
-    {
+      explain->tracker.on_record_after_where();
       if (table->triggers &&
           table->triggers->process_triggers(thd, TRG_EVENT_DELETE,
                                             TRG_ACTION_BEFORE, FALSE))
@@ -683,7 +616,6 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
     else
       break;
   }
-terminate_delete:
   killed_status= thd->killed;
   if (killed_status != NOT_KILLED || thd->is_error())
     error= 1;					// Aborted
@@ -715,8 +647,6 @@ cleanup:
     thd->lex->current_select->first_cond_optimization= 0;
   }
 
-  delete deltempfile;
-  deltempfile=NULL;
   delete select;
   select= NULL;
   transactional_table= table->file->has_transactions();
@@ -777,8 +707,7 @@ produce_explain_and_leave:
     We come here for various "degenerate" query plans: impossible WHERE,
     no-partitions-used, impossible-range, etc.
   */
-  if (!(query_plan.save_explain_delete_data(thd->mem_root, thd)))
-    goto got_error;
+  query_plan.save_explain_delete_data(thd->mem_root, thd);
 
 send_nothing_and_leave:
   /* 
@@ -817,15 +746,13 @@ l
     TRUE  error
 */
   int mysql_prepare_delete(THD *thd, TABLE_LIST *table_list,
-                           uint wild_num, List<Item> &field_list, Item **conds,
-                           bool *delete_while_scanning)
+                           uint wild_num, List<Item> &field_list, Item **conds)
 {
   Item *fake_conds= 0;
   SELECT_LEX *select_lex= &thd->lex->select_lex;
   DBUG_ENTER("mysql_prepare_delete");
   List<Item> all_fields;
 
-  *delete_while_scanning= true;
   thd->lex->allow_sum_func= 0;
   if (setup_tables_and_check_access(thd, &thd->lex->select_lex.context,
                                     &thd->lex->select_lex.top_join_list,
@@ -845,9 +772,14 @@ l
     my_error(ER_NON_UPDATABLE_TABLE, MYF(0), table_list->alias, "DELETE");
     DBUG_RETURN(TRUE);
   }
-
-  if (unique_table(thd, table_list, table_list->next_global, 0))
-    *delete_while_scanning= false;
+  {
+    TABLE_LIST *duplicate;
+    if ((duplicate= unique_table(thd, table_list, table_list->next_global, 0)))
+    {
+      update_non_unique_table_error(table_list, "DELETE", duplicate);
+      DBUG_RETURN(TRUE);
+    }
+  }
 
   if (select_lex->inner_refs_list.elements &&
     fix_inner_refs(thd, all_fields, select_lex, select_lex->ref_pointer_array))
@@ -862,6 +794,7 @@ l
   Delete multiple tables from join 
 ***************************************************************************/
 
+#define MEM_STRIP_BUF_SIZE (size_t)(current_thd->variables.sortbuff_size)
 
 extern "C" int refpos_order_cmp(void* arg, const void *a,const void *b)
 {
@@ -1011,7 +944,7 @@ multi_delete::initialize_tables(JOIN *join)
     DBUG_RETURN(1);
 
   table_map tables_to_delete_from=0;
-  delete_while_scanning= true;
+  delete_while_scanning= 1;
   for (walk= delete_tables; walk; walk= walk->next_local)
   {
     TABLE_LIST *tbl= walk->correspondent_table->find_table_for_update();
@@ -1024,7 +957,7 @@ multi_delete::initialize_tables(JOIN *join)
         in join, we need to defer delete. So the delete
         doesn't interfers with the scaning of results.
       */
-      delete_while_scanning= false;
+      delete_while_scanning= 0;
     }
   }
 
@@ -1060,7 +993,7 @@ multi_delete::initialize_tables(JOIN *join)
         case send_data() shouldn't delete any rows a we may touch
         the rows in the deleted table many times
       */
-      delete_while_scanning= false;
+      delete_while_scanning= 0;
     }
   }
   walk= delete_tables;
@@ -1073,12 +1006,13 @@ multi_delete::initialize_tables(JOIN *join)
   for (;walk ;walk= walk->next_local)
   {
     TABLE *table=walk->table;
-    *tempfiles_ptr++= new (thd->mem_root) Unique (refpos_order_cmp, table->file,
-                                                  table->file->ref_length,
-                                                  MEM_STRIP_BUF_SIZE);
+    *tempfiles_ptr++= new Unique (refpos_order_cmp,
+				  (void *) table->file,
+				  table->file->ref_length,
+				  MEM_STRIP_BUF_SIZE);
   }
   init_ftfuncs(thd, thd->lex->current_select, 1);
-  DBUG_RETURN(thd->is_fatal_error);
+  DBUG_RETURN(thd->is_fatal_error != 0);
 }
 
 
@@ -1300,7 +1234,7 @@ int multi_delete::do_table_deletes(TABLE *table, SORT_INFO *sort_info,
   */
   info.ignore_not_found_rows= 1;
   bool will_batch= !table->file->start_bulk_delete();
-  while (!(local_error= info.read_record()) && !thd->killed)
+  while (!(local_error= info.read_record(&info)) && !thd->killed)
   {
     if (table->triggers &&
         table->triggers->process_triggers(thd, TRG_EVENT_DELETE,

@@ -610,7 +610,7 @@ SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS mbrwithin    FROM t1 a1 JOIN t1
 SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS MBRcontains     FROM t1 a1 JOIN t1 a2 ON MBRContains(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
 SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS MBRdisjoint     FROM t1 a1 JOIN t1 a2 ON MBRDisjoint(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
 SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS MBRequals       FROM t1 a1 JOIN t1 a2 ON MBREquals(        a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
-SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS intersects    FROM t1 a1 JOIN t1 a2 ON MBRIntersects(    a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS intersect    FROM t1 a1 JOIN t1 a2 ON MBRIntersects(    a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
 SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS MBRoverlaps     FROM t1 a1 JOIN t1 a2 ON MBROverlaps(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
 SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS ST_touches      FROM t1 a1 JOIN t1 a2 ON ST_Touches(       a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
 SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS MBRwithin       FROM t1 a1 JOIN t1 a2 ON MBRWithin(        a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
@@ -695,7 +695,6 @@ INSERT INTO t1 VALUES
     'multipolygon(((1 2,3 4,5 6,7 8,9 8,1 2,1 2),(7 6,5 4,3 2,1 2,3 4,7 6)))'));
 
 --echo # must not crash
---error ER_ILLEGAL_PARAMETER_DATA_TYPES2_FOR_OPERATION
 SELECT 1 FROM t1 WHERE a <> (SELECT ST_GEOMETRYCOLLECTIONFROMWKB(b) FROM t1);
 
 DROP TABLE t1;
@@ -732,7 +731,7 @@ drop table t1;
 # Bug#44684: valgrind reports invalid reads in
 # Item_func_spatial_collection::val_str
 #
---error ER_ILLEGAL_PARAMETER_DATA_TYPE_FOR_OPERATION
+--error ER_ILLEGAL_VALUE_FOR_TYPE
 SELECT MultiPoint(12345,'');
 #SELECT MultiPoint(123451,'');
 #SELECT MultiPoint(1234512,'');
@@ -759,7 +758,7 @@ SELECT MultiPoint(12345,'');
 #
 # Bug55531 crash with conversions of geometry types / strings
 #
---error ER_ILLEGAL_PARAMETER_DATA_TYPE_FOR_OPERATION
+--error ER_ILLEGAL_VALUE_FOR_TYPE
 SELECT 1 FROM (SELECT GREATEST(1,GEOMETRYCOLLECTION('00000','00000')) b FROM DUAL) AS d WHERE (LINESTRING(d.b));
 
 
@@ -870,7 +869,7 @@ SELECT ST_ISCLOSED(CONVERT(CONCAT('     ', 0x2), BINARY(20)));
 --echo # GEOMETRY FUNCTION ARGUMENTS
 --echo #
 --replace_regex /non geometric .* value/non geometric '' value/
---error ER_ILLEGAL_PARAMETER_DATA_TYPE_FOR_OPERATION
+--error ER_ILLEGAL_VALUE_FOR_TYPE
 SELECT GEOMETRYCOLLECTION((SELECT @@OLD));
 
 
@@ -889,7 +888,6 @@ INSERT INTO g1 VALUES (ST_geomfromtext('point(1 2)'));
 
 FLUSH TABLES;
 
---error ER_ILLEGAL_PARAMETER_DATA_TYPES2_FOR_OPERATION
 SELECT 1 FROM g1
 FORCE INDEX(i) WHERE a = date_sub(now(), interval 2808.4 year_month)
 ;
@@ -1443,5 +1441,4 @@ DROP DATABASE gis_ogs;
 --echo #
 
 # --error ER_GIS_INVALID_DATA
---error ER_ILLEGAL_PARAMETER_DATA_TYPE_FOR_OPERATION
 SELECT ST_Union('', ''), md5(1);

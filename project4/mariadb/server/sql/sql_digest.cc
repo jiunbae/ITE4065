@@ -18,7 +18,7 @@
   This code needs extra visibility in the lexer structures
 */
 
-#include "mariadb.h"
+#include "my_global.h"
 #include "my_md5.h"
 #include "mysqld_error.h"
 
@@ -30,6 +30,11 @@
 #include "sql_digest_stream.h"
 
 #include "sql_get_diagnostics.h"
+
+#ifdef NEVER
+#include "my_sys.h"
+#include "sql_signal.h"
+#endif
 
 /* Generated code */
 #include "sql_yacc.h"
@@ -567,7 +572,7 @@ sql_digest_state* digest_add_token(sql_digest_state *state,
     case IDENT_QUOTED:
     {
       YYSTYPE *lex_token= yylval;
-      const char *yytext= lex_token->lex_str.str;
+      char *yytext= lex_token->lex_str.str;
       size_t yylen= lex_token->lex_str.length;
 
       /*

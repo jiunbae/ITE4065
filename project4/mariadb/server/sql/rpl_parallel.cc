@@ -1,4 +1,4 @@
-#include "mariadb.h"
+#include "my_global.h"
 #include "rpl_parallel.h"
 #include "slave.h"
 #include "rpl_mi.h"
@@ -256,9 +256,7 @@ signal_error_to_sql_driver_thread(THD *thd, rpl_group_info *rgi, int err)
   rgi->rli->stop_for_until= false;
   mysql_mutex_lock(rgi->rli->relay_log.get_log_lock());
   mysql_mutex_unlock(rgi->rli->relay_log.get_log_lock());
-  rgi->rli->relay_log.lock_binlog_end_pos();
   rgi->rli->relay_log.signal_update();
-  rgi->rli->relay_log.unlock_binlog_end_pos();
 }
 
 
@@ -1004,7 +1002,8 @@ handle_rpl_parallel_thread(void *arg)
   thd->security_ctx->skip_grants();
   thd->variables.max_allowed_packet= slave_max_allowed_packet;
   thd->slave_thread= 1;
-
+  thd->variables.sql_log_slow= opt_log_slow_slave_statements;
+  thd->variables.log_slow_filter= global_system_variables.log_slow_filter;
   set_slave_thread_options(thd);
   thd->client_capabilities = CLIENT_LOCAL_FILES;
   thd->net.reading_or_writing= 0;
@@ -1463,7 +1462,7 @@ rpl_parallel_change_thread_count(rpl_parallel_thread_pool *pool,
   */
   if (!new_count && !force)
   {
-    if (any_slave_sql_running(false))
+    if (any_slave_sql_running())
     {
       DBUG_PRINT("warning",
                  ("SQL threads running while trying to reset parallel pool"));
@@ -1618,7 +1617,7 @@ err:
 int rpl_parallel_resize_pool_if_no_slaves(void)
 {
   /* master_info_index is set to NULL on shutdown */
-  if (opt_slave_parallel_threads > 0 && !any_slave_sql_running(false))
+  if (opt_slave_parallel_threads > 0 && !any_slave_sql_running())
     return rpl_parallel_inactivate_pool(&global_rpl_thread_pool);
   return 0;
 }

@@ -2250,8 +2250,6 @@ row_ins_duplicate_error_in_clust_online(
 	dberr_t		err	= DB_SUCCESS;
 	const rec_t*	rec	= btr_cur_get_rec(cursor);
 
-	ut_ad(!cursor->index->is_instant());
-
 	if (cursor->low_match >= n_uniq && !page_rec_is_infimum(rec)) {
 		*offsets = rec_get_offsets(rec, cursor->index, *offsets, true,
 					   ULINT_UNDEFINED, heap);
@@ -2509,7 +2507,8 @@ row_ins_index_entry_big_rec(
 
 	if (error == DB_SUCCESS
 	    && dict_index_is_online_ddl(index)) {
-		row_log_table_insert(btr_pcur_get_rec(&pcur), index, offsets);
+		row_log_table_insert(btr_pcur_get_rec(&pcur), entry,
+				     index, offsets);
 	}
 
 	mtr.commit();
@@ -2584,7 +2583,6 @@ row_ins_clust_index_entry_low(
 		ut_ad(flags & BTR_NO_LOCKING_FLAG);
 		ut_ad(!dict_index_is_online_ddl(index));
 		ut_ad(!index->table->persistent_autoinc);
-		ut_ad(!index->is_instant());
 		mtr.set_log_mode(MTR_LOG_NO_REDO);
 	} else {
 		mtr.set_named_space(index->space);
@@ -2635,41 +2633,6 @@ row_ins_clust_index_entry_low(
 		      || rec_n_fields_is_sane(index, first_rec, entry));
 	}
 #endif /* UNIV_DEBUG */
-
-	if (UNIV_UNLIKELY(entry->info_bits)) {
-		ut_ad(entry->info_bits == REC_INFO_DEFAULT_ROW);
-		ut_ad(flags == BTR_NO_LOCKING_FLAG);
-		ut_ad(index->is_instant());
-		ut_ad(!dict_index_is_online_ddl(index));
-		ut_ad(!dup_chk_only);
-
-		const rec_t* rec = btr_cur_get_rec(cursor);
-
-		switch (rec_get_info_bits(rec, page_rec_is_comp(rec))
-			& (REC_INFO_MIN_REC_FLAG | REC_INFO_DELETED_FLAG)) {
-		case REC_INFO_MIN_REC_FLAG:
-			thr_get_trx(thr)->error_info = index;
-			err = DB_DUPLICATE_KEY;
-			goto err_exit;
-		case REC_INFO_MIN_REC_FLAG | REC_INFO_DELETED_FLAG:
-			/* The 'default row' is never delete-marked.
-			If a table loses its 'instantness', it happens
-			by the rollback of this first-time insert, or
-			by a call to btr_page_empty() on the root page
-			when the table becomes empty. */
-			err = DB_CORRUPTION;
-			goto err_exit;
-		default:
-			ut_ad(!row_ins_must_modify_rec(cursor));
-			goto do_insert;
-		}
-	}
-
-	if (index->is_instant()) entry->trim(*index);
-
-	if (rec_is_default_row(btr_cur_get_rec(cursor), index)) {
-		goto do_insert;
-	}
 
 	if (n_uniq
 	    && (cursor->up_match >= n_uniq || cursor->low_match >= n_uniq)) {
@@ -2726,14 +2689,13 @@ err_exit:
 			entry_heap, entry, thr, &mtr);
 
 		if (err == DB_SUCCESS && dict_index_is_online_ddl(index)) {
-			row_log_table_insert(btr_cur_get_rec(cursor),
+			row_log_table_insert(btr_cur_get_rec(cursor), entry,
 					     index, offsets);
 		}
 
 		mtr_commit(&mtr);
 		mem_heap_free(entry_heap);
 	} else {
-do_insert:
 		rec_t*	insert_rec;
 
 		if (mode != BTR_MODIFY_TREE) {
@@ -2787,7 +2749,7 @@ do_insert:
 			if (err == DB_SUCCESS
 			    && dict_index_is_online_ddl(index)) {
 				row_log_table_insert(
-					insert_rec, index, offsets);
+					insert_rec, entry, index, offsets);
 			}
 
 			mtr_commit(&mtr);
@@ -3230,19 +3192,16 @@ row_ins_clust_index_entry(
 
 	n_uniq = dict_index_is_unique(index) ? index->n_uniq : 0;
 
-	const ulint	flags = index->table->is_temporary()
-		? BTR_NO_LOCKING_FLAG
-		: index->table->no_rollback() ? BTR_NO_ROLLBACK : 0;
-	const ulint	orig_n_fields = entry->n_fields;
-
 	/* Try first optimistic descent to the B-tree */
 	log_free_check();
+	const ulint	flags = dict_table_is_temporary(index->table)
+		? BTR_NO_LOCKING_FLAG
+		: 0;
 
 	err = row_ins_clust_index_entry_low(
 		flags, BTR_MODIFY_LEAF, index, n_uniq, entry,
 		n_ext, thr, dup_chk_only);
 
-	entry->n_fields = orig_n_fields;
 
 	DEBUG_SYNC_C_IF_THD(thr_get_trx(thr)->mysql_thd,
 			    "after_row_ins_clust_index_entry_leaf");
@@ -3258,8 +3217,6 @@ row_ins_clust_index_entry(
 	err = row_ins_clust_index_entry_low(
 		flags, BTR_MODIFY_TREE, index, n_uniq, entry,
 		n_ext, thr, dup_chk_only);
-
-	entry->n_fields = orig_n_fields;
 
 	DBUG_RETURN(err);
 }
@@ -3354,7 +3311,7 @@ row_ins_index_entry(
 			DBUG_SET("-d,row_ins_index_entry_timeout");
 			return(DB_LOCK_WAIT);});
 
-	if (index->is_clust()) {
+	if (dict_index_is_clust(index)) {
 		return(row_ins_clust_index_entry(index, entry, thr, 0, false));
 	} else {
 		return(row_ins_sec_index_entry(index, entry, thr, false));
@@ -3778,27 +3735,7 @@ row_ins_step(
 	table during the search operation, and there is no need to set
 	it again here. But we must write trx->id to node->trx_id_buf. */
 
-	if (node->table->no_rollback()) {
-		/* No-rollback tables should only be written to by a
-		single thread at a time, but there can be multiple
-		concurrent readers. We must hold an open table handle. */
-		DBUG_ASSERT(node->table->n_ref_count > 0);
-		DBUG_ASSERT(node->ins_type == INS_DIRECT);
-		/* No-rollback tables can consist only of a single index. */
-		DBUG_ASSERT(UT_LIST_GET_LEN(node->entry_list) == 1);
-		DBUG_ASSERT(UT_LIST_GET_LEN(node->table->indexes) == 1);
-		/* There should be no possibility for interruption and
-		restarting here. In theory, we could allow resumption
-		from the INS_NODE_INSERT_ENTRIES state here. */
-		DBUG_ASSERT(node->state == INS_NODE_SET_IX_LOCK);
-		memset(node->trx_id_buf, 0, DATA_TRX_ID_LEN);
-		memset(node->row_id_buf, 0, DATA_ROW_ID_LEN);
-		node->index = dict_table_get_first_index(node->table);
-		node->entry = UT_LIST_GET_FIRST(node->entry_list);
-		node->state = INS_NODE_INSERT_ENTRIES;
-		goto do_insert;
-	}
-
+	memset(node->trx_id_buf, 0, DATA_TRX_ID_LEN);
 	trx_write_trx_id(node->trx_id_buf, trx->id);
 
 	if (node->state == INS_NODE_SET_IX_LOCK) {
@@ -3848,7 +3785,7 @@ same_trx:
 
 		return(thr);
 	}
-do_insert:
+
 	/* DO THE CHECKS OF THE CONSISTENCY CONSTRAINTS HERE */
 
 	err = row_ins(node, thr);

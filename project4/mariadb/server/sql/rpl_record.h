@@ -18,6 +18,7 @@
 #define RPL_RECORD_H
 
 #include <rpl_reporting.h>
+#include "my_global.h"                          /* uchar */
 
 struct rpl_group_info;
 struct TABLE;

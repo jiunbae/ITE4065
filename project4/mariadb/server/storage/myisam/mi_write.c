@@ -1033,9 +1033,8 @@ void mi_flush_bulk_insert(MI_INFO *info, uint inx)
   }
 }
 
-int mi_end_bulk_insert(MI_INFO *info, my_bool abort)
+void mi_end_bulk_insert(MI_INFO *info)
 {
-  int first_error= 0;
   if (info->bulk_insert)
   {
     uint i;
@@ -1043,16 +1042,10 @@ int mi_end_bulk_insert(MI_INFO *info, my_bool abort)
     {
       if (is_tree_inited(& info->bulk_insert[i]))
       {
-        int error;
-        if ((error= delete_tree(& info->bulk_insert[i], abort)))
-        {
-          first_error= first_error ? first_error : error;
-          abort= 1;
-        }
+        delete_tree(& info->bulk_insert[i]);
       }
     }
     my_free(info->bulk_insert);
     info->bulk_insert=0;
   }
-  return first_error;
 }

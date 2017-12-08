@@ -19,7 +19,6 @@ variable_name not in (
 'rand_seed2',
 'system_time_zone',
 'version_comment',
-'version_source_revision',
 'version_compile_machine', 'version_compile_os',
 'version_malloc_library', 'version_ssl_library', 'version'
         )
@@ -122,20 +121,6 @@ NUMERIC_BLOCK_SIZE	NULL
 ENUM_VALUE_LIST	OFF,ON
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	OPTIONAL
-VARIABLE_NAME	BIND_ADDRESS
-SESSION_VALUE	NULL
-GLOBAL_VALUE	127.0.0.1
-GLOBAL_VALUE_ORIGIN	CONFIG
-DEFAULT_VALUE	
-VARIABLE_SCOPE	GLOBAL
-VARIABLE_TYPE	VARCHAR
-VARIABLE_COMMENT	IP address to bind to.
-NUMERIC_MIN_VALUE	NULL
-NUMERIC_MAX_VALUE	NULL
-NUMERIC_BLOCK_SIZE	NULL
-ENUM_VALUE_LIST	NULL
-READ_ONLY	YES
-COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	BINLOG_ANNOTATE_ROW_EVENTS
 SESSION_VALUE	ON
 GLOBAL_VALUE	ON
@@ -220,20 +205,6 @@ NUMERIC_BLOCK_SIZE	NULL
 ENUM_VALUE_LIST	OFF,ON
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	OPTIONAL
-VARIABLE_NAME	BINLOG_FILE_CACHE_SIZE
-SESSION_VALUE	NULL
-GLOBAL_VALUE	16384
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	16384
-VARIABLE_SCOPE	GLOBAL
-VARIABLE_TYPE	BIGINT UNSIGNED
-VARIABLE_COMMENT	The size of file cache for the binary log
-NUMERIC_MIN_VALUE	8192
-NUMERIC_MAX_VALUE	18446744073709551615
-NUMERIC_BLOCK_SIZE	4096
-ENUM_VALUE_LIST	NULL
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	BINLOG_FORMAT
 SESSION_VALUE	MIXED
 GLOBAL_VALUE	MIXED
@@ -472,62 +443,6 @@ NUMERIC_BLOCK_SIZE	NULL
 ENUM_VALUE_LIST	NULL
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	NULL
-VARIABLE_NAME	COLUMN_COMPRESSION_THRESHOLD
-SESSION_VALUE	100
-GLOBAL_VALUE	100
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	100
-VARIABLE_SCOPE	SESSION
-VARIABLE_TYPE	INT UNSIGNED
-VARIABLE_COMMENT	Minimum column data length eligible for compression
-NUMERIC_MIN_VALUE	0
-NUMERIC_MAX_VALUE	4294967295
-NUMERIC_BLOCK_SIZE	1
-ENUM_VALUE_LIST	NULL
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	REQUIRED
-VARIABLE_NAME	COLUMN_COMPRESSION_ZLIB_LEVEL
-SESSION_VALUE	6
-GLOBAL_VALUE	6
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	6
-VARIABLE_SCOPE	SESSION
-VARIABLE_TYPE	INT UNSIGNED
-VARIABLE_COMMENT	zlib compression level (1 gives best speed, 9 gives best compression)
-NUMERIC_MIN_VALUE	0
-NUMERIC_MAX_VALUE	9
-NUMERIC_BLOCK_SIZE	1
-ENUM_VALUE_LIST	NULL
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	REQUIRED
-VARIABLE_NAME	COLUMN_COMPRESSION_ZLIB_STRATEGY
-SESSION_VALUE	DEFAULT_STRATEGY
-GLOBAL_VALUE	DEFAULT_STRATEGY
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	DEFAULT_STRATEGY
-VARIABLE_SCOPE	SESSION
-VARIABLE_TYPE	ENUM
-VARIABLE_COMMENT	The strategy parameter is used to tune the compression algorithm. Use the value DEFAULT_STRATEGY for normal data, FILTERED for data produced by a filter (or predictor), HUFFMAN_ONLY to force Huffman encoding only (no string match), or RLE to limit match distances to one (run-length encoding). Filtered data consists mostly of small values with a somewhat random distribution. In this case, the compression algorithm is tuned to compress them better. The effect of FILTERED is to force more Huffman coding and less string matching; it is somewhat intermediate between DEFAULT_STRATEGY and HUFFMAN_ONLY. RLE is designed to be almost as fast as HUFFMAN_ONLY, but give better compression for PNG image data. The strategy parameter only affects the compression ratio but not the correctness of the compressed output even if it is not set appropriately. FIXED prevents the use of dynamic Huffman codes, allowing for a simpler decoder for special applications.
-NUMERIC_MIN_VALUE	NULL
-NUMERIC_MAX_VALUE	NULL
-NUMERIC_BLOCK_SIZE	NULL
-ENUM_VALUE_LIST	DEFAULT_STRATEGY,FILTERED,HUFFMAN_ONLY,RLE,FIXED
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	REQUIRED
-VARIABLE_NAME	COLUMN_COMPRESSION_ZLIB_WRAP
-SESSION_VALUE	OFF
-GLOBAL_VALUE	OFF
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	OFF
-VARIABLE_SCOPE	SESSION
-VARIABLE_TYPE	BOOLEAN
-VARIABLE_COMMENT	Generate zlib header and trailer and compute adler32 check value. It can be used with storage engines that don't provide data integrity verification to detect data corruption.
-NUMERIC_MIN_VALUE	NULL
-NUMERIC_MAX_VALUE	NULL
-NUMERIC_BLOCK_SIZE	NULL
-ENUM_VALUE_LIST	OFF,ON
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	OPTIONAL
 VARIABLE_NAME	COMPLETION_TYPE
 SESSION_VALUE	NO_CHAIN
 GLOBAL_VALUE	NO_CHAIN
@@ -1200,20 +1115,6 @@ NUMERIC_BLOCK_SIZE	NULL
 ENUM_VALUE_LIST	OFF,ON
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	OPTIONAL
-VARIABLE_NAME	GTID_POS_AUTO_ENGINES
-SESSION_VALUE	NULL
-GLOBAL_VALUE	
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	
-VARIABLE_SCOPE	GLOBAL
-VARIABLE_TYPE	VARCHAR
-VARIABLE_COMMENT	List of engines for which to automatically create a mysql.gtid_slave_pos_ENGINE table, if a transaction using that engine is replicated. This can be used to avoid introducing cross-engine transactions, if engines are used different from that used by table mysql.gtid_slave_pos
-NUMERIC_MIN_VALUE	NULL
-NUMERIC_MAX_VALUE	NULL
-NUMERIC_BLOCK_SIZE	NULL
-ENUM_VALUE_LIST	NULL
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	NULL
 VARIABLE_NAME	GTID_SEQ_NO
 SESSION_VALUE	0
 GLOBAL_VALUE	NULL
@@ -1424,48 +1325,6 @@ NUMERIC_BLOCK_SIZE	1
 ENUM_VALUE_LIST	NULL
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	NULL
-VARIABLE_NAME	IDLE_READONLY_TRANSACTION_TIMEOUT
-SESSION_VALUE	0
-GLOBAL_VALUE	0
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	0
-VARIABLE_SCOPE	SESSION
-VARIABLE_TYPE	INT UNSIGNED
-VARIABLE_COMMENT	The number of seconds the server waits for read-only idle transaction
-NUMERIC_MIN_VALUE	0
-NUMERIC_MAX_VALUE	31536000
-NUMERIC_BLOCK_SIZE	1
-ENUM_VALUE_LIST	NULL
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	REQUIRED
-VARIABLE_NAME	IDLE_TRANSACTION_TIMEOUT
-SESSION_VALUE	0
-GLOBAL_VALUE	0
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	0
-VARIABLE_SCOPE	SESSION
-VARIABLE_TYPE	INT UNSIGNED
-VARIABLE_COMMENT	The number of seconds the server waits for idle transaction
-NUMERIC_MIN_VALUE	0
-NUMERIC_MAX_VALUE	31536000
-NUMERIC_BLOCK_SIZE	1
-ENUM_VALUE_LIST	NULL
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	REQUIRED
-VARIABLE_NAME	IDLE_WRITE_TRANSACTION_TIMEOUT
-SESSION_VALUE	0
-GLOBAL_VALUE	0
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	0
-VARIABLE_SCOPE	SESSION
-VARIABLE_TYPE	INT UNSIGNED
-VARIABLE_COMMENT	The number of seconds the server waits for write idle transaction
-NUMERIC_MIN_VALUE	0
-NUMERIC_MAX_VALUE	31536000
-NUMERIC_BLOCK_SIZE	1
-ENUM_VALUE_LIST	NULL
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	IGNORE_BUILTIN_INNODB
 SESSION_VALUE	NULL
 GLOBAL_VALUE	OFF
@@ -1564,20 +1423,6 @@ NUMERIC_BLOCK_SIZE	1
 ENUM_VALUE_LIST	NULL
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	REQUIRED
-VARIABLE_NAME	IN_SUBQUERY_CONVERSION_THRESHOLD
-SESSION_VALUE	1000
-GLOBAL_VALUE	1000
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	1000
-VARIABLE_SCOPE	SESSION
-VARIABLE_TYPE	BIGINT UNSIGNED
-VARIABLE_COMMENT	The minimum number of scalar elements in the value list of IN predicate that triggers its conversion to IN subquery
-NUMERIC_MIN_VALUE	0
-NUMERIC_MAX_VALUE	18446744073709551615
-NUMERIC_BLOCK_SIZE	1
-ENUM_VALUE_LIST	NULL
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	OPTIONAL
 VARIABLE_NAME	IN_TRANSACTION
 SESSION_VALUE	0
 GLOBAL_VALUE	NULL
@@ -1880,7 +1725,7 @@ DEFAULT_VALUE	86400
 VARIABLE_SCOPE	SESSION
 VARIABLE_TYPE	BIGINT UNSIGNED
 VARIABLE_COMMENT	Timeout in seconds to wait for a lock before returning an error.
-NUMERIC_MIN_VALUE	0
+NUMERIC_MIN_VALUE	1
 NUMERIC_MAX_VALUE	31536000
 NUMERIC_BLOCK_SIZE	1
 ENUM_VALUE_LIST	NULL
@@ -1970,20 +1815,6 @@ NUMERIC_BLOCK_SIZE	NULL
 ENUM_VALUE_LIST	OFF,ON
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	OPTIONAL
-VARIABLE_NAME	LOG_DISABLED_STATEMENTS
-SESSION_VALUE	sp
-GLOBAL_VALUE	sp
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	sp
-VARIABLE_SCOPE	SESSION
-VARIABLE_TYPE	SET
-VARIABLE_COMMENT	Don't log certain types of statements to general log
-NUMERIC_MIN_VALUE	NULL
-NUMERIC_MAX_VALUE	NULL
-NUMERIC_BLOCK_SIZE	NULL
-ENUM_VALUE_LIST	slave,sp
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	LOG_ERROR
 SESSION_VALUE	NULL
 GLOBAL_VALUE	PATH
@@ -2013,13 +1844,13 @@ ENUM_VALUE_LIST	NONE,FILE,TABLE
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	LOG_QUERIES_NOT_USING_INDEXES
-SESSION_VALUE	OFF
+SESSION_VALUE	NULL
 GLOBAL_VALUE	OFF
 GLOBAL_VALUE_ORIGIN	COMPILE-TIME
 DEFAULT_VALUE	OFF
-VARIABLE_SCOPE	SESSION
+VARIABLE_SCOPE	GLOBAL
 VARIABLE_TYPE	BOOLEAN
-VARIABLE_COMMENT	Log queries that are executed without benefit of any index to the slow log if it is open. Same as log_slow_filter='not_using_index'
+VARIABLE_COMMENT	Log queries that are executed without benefit of any index to the slow log if it is open
 NUMERIC_MIN_VALUE	NULL
 NUMERIC_MAX_VALUE	NULL
 NUMERIC_BLOCK_SIZE	NULL
@@ -2041,45 +1872,31 @@ ENUM_VALUE_LIST	OFF,ON
 READ_ONLY	YES
 COMMAND_LINE_ARGUMENT	OPTIONAL
 VARIABLE_NAME	LOG_SLOW_ADMIN_STATEMENTS
-SESSION_VALUE	ON
+SESSION_VALUE	NULL
 GLOBAL_VALUE	ON
 GLOBAL_VALUE_ORIGIN	COMPILE-TIME
 DEFAULT_VALUE	ON
-VARIABLE_SCOPE	SESSION
+VARIABLE_SCOPE	GLOBAL
 VARIABLE_TYPE	BOOLEAN
-VARIABLE_COMMENT	Log slow OPTIMIZE, ANALYZE, ALTER and other administrative statements to the slow log if it is open.  Resets or sets the option 'admin' in log_slow_disabled_statements
+VARIABLE_COMMENT	Log slow OPTIMIZE, ANALYZE, ALTER and other administrative statements to the slow log if it is open.
 NUMERIC_MIN_VALUE	NULL
 NUMERIC_MAX_VALUE	NULL
 NUMERIC_BLOCK_SIZE	NULL
 ENUM_VALUE_LIST	OFF,ON
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	OPTIONAL
-VARIABLE_NAME	LOG_SLOW_DISABLED_STATEMENTS
-SESSION_VALUE	sp
-GLOBAL_VALUE	sp
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	sp
-VARIABLE_SCOPE	SESSION
-VARIABLE_TYPE	SET
-VARIABLE_COMMENT	Don't log certain types of statements to slow log
-NUMERIC_MIN_VALUE	NULL
-NUMERIC_MAX_VALUE	NULL
-NUMERIC_BLOCK_SIZE	NULL
-ENUM_VALUE_LIST	admin,call,slave,sp
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	LOG_SLOW_FILTER
-SESSION_VALUE	admin,filesort,filesort_on_disk,filesort_priority_queue,full_join,full_scan,query_cache,query_cache_miss,tmp_table,tmp_table_on_disk
-GLOBAL_VALUE	admin,filesort,filesort_on_disk,filesort_priority_queue,full_join,full_scan,query_cache,query_cache_miss,tmp_table,tmp_table_on_disk
+SESSION_VALUE	admin,filesort,filesort_on_disk,full_join,full_scan,query_cache,query_cache_miss,tmp_table,tmp_table_on_disk
+GLOBAL_VALUE	admin,filesort,filesort_on_disk,full_join,full_scan,query_cache,query_cache_miss,tmp_table,tmp_table_on_disk
 GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	admin,filesort,filesort_on_disk,filesort_priority_queue,full_join,full_scan,query_cache,query_cache_miss,tmp_table,tmp_table_on_disk
+DEFAULT_VALUE	admin,filesort,filesort_on_disk,full_join,full_scan,query_cache,query_cache_miss,tmp_table,tmp_table_on_disk
 VARIABLE_SCOPE	SESSION
 VARIABLE_TYPE	SET
-VARIABLE_COMMENT	Log only certain types of queries to the slow log. If variable empty alll kind of queries are logged.  All types are bound by slow_query_time, except 'not_using_index' which is always logged if enabled
+VARIABLE_COMMENT	Log only certain types of queries
 NUMERIC_MIN_VALUE	NULL
 NUMERIC_MAX_VALUE	NULL
 NUMERIC_BLOCK_SIZE	NULL
-ENUM_VALUE_LIST	admin,filesort,filesort_on_disk,filesort_priority_queue,full_join,full_scan,not_using_index,query_cache,query_cache_miss,tmp_table,tmp_table_on_disk
+ENUM_VALUE_LIST	admin,filesort,filesort_on_disk,full_join,full_scan,query_cache,query_cache_miss,tmp_table,tmp_table_on_disk
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	LOG_SLOW_RATE_LIMIT
@@ -2097,13 +1914,13 @@ ENUM_VALUE_LIST	NULL
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	LOG_SLOW_SLAVE_STATEMENTS
-SESSION_VALUE	ON
+SESSION_VALUE	NULL
 GLOBAL_VALUE	ON
 GLOBAL_VALUE_ORIGIN	COMPILE-TIME
 DEFAULT_VALUE	ON
-VARIABLE_SCOPE	SESSION
+VARIABLE_SCOPE	GLOBAL
 VARIABLE_TYPE	BOOLEAN
-VARIABLE_COMMENT	Log slow statements executed by slave thread to the slow log if it is open. Resets or sets the option 'slave' in log_slow_disabled_statements
+VARIABLE_COMMENT	Log slow statements executed by slave thread to the slow log if it is open.
 NUMERIC_MIN_VALUE	NULL
 NUMERIC_MAX_VALUE	NULL
 NUMERIC_BLOCK_SIZE	NULL
@@ -2895,17 +2712,17 @@ ENUM_VALUE_LIST	NULL
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	OPTIMIZER_SWITCH
-SESSION_VALUE	index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,index_merge_sort_intersection=off,engine_condition_pushdown=off,index_condition_pushdown=on,derived_merge=on,derived_with_keys=on,firstmatch=on,loosescan=on,materialization=on,in_to_exists=on,semijoin=on,partial_match_rowid_merge=on,partial_match_table_scan=on,subquery_cache=on,mrr=off,mrr_cost_based=off,mrr_sort_keys=off,outer_join_with_cache=on,semijoin_with_cache=on,join_cache_incremental=on,join_cache_hashed=on,join_cache_bka=on,optimize_join_buffer_size=off,table_elimination=on,extended_keys=on,exists_to_in=on,orderby_uses_equalities=on,condition_pushdown_for_derived=on,split_grouping_derived=on
-GLOBAL_VALUE	index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,index_merge_sort_intersection=off,engine_condition_pushdown=off,index_condition_pushdown=on,derived_merge=on,derived_with_keys=on,firstmatch=on,loosescan=on,materialization=on,in_to_exists=on,semijoin=on,partial_match_rowid_merge=on,partial_match_table_scan=on,subquery_cache=on,mrr=off,mrr_cost_based=off,mrr_sort_keys=off,outer_join_with_cache=on,semijoin_with_cache=on,join_cache_incremental=on,join_cache_hashed=on,join_cache_bka=on,optimize_join_buffer_size=off,table_elimination=on,extended_keys=on,exists_to_in=on,orderby_uses_equalities=on,condition_pushdown_for_derived=on,split_grouping_derived=on
+SESSION_VALUE	index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,index_merge_sort_intersection=off,engine_condition_pushdown=off,index_condition_pushdown=on,derived_merge=on,derived_with_keys=on,firstmatch=on,loosescan=on,materialization=on,in_to_exists=on,semijoin=on,partial_match_rowid_merge=on,partial_match_table_scan=on,subquery_cache=on,mrr=off,mrr_cost_based=off,mrr_sort_keys=off,outer_join_with_cache=on,semijoin_with_cache=on,join_cache_incremental=on,join_cache_hashed=on,join_cache_bka=on,optimize_join_buffer_size=off,table_elimination=on,extended_keys=on,exists_to_in=on,orderby_uses_equalities=on,condition_pushdown_for_derived=on
+GLOBAL_VALUE	index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,index_merge_sort_intersection=off,engine_condition_pushdown=off,index_condition_pushdown=on,derived_merge=on,derived_with_keys=on,firstmatch=on,loosescan=on,materialization=on,in_to_exists=on,semijoin=on,partial_match_rowid_merge=on,partial_match_table_scan=on,subquery_cache=on,mrr=off,mrr_cost_based=off,mrr_sort_keys=off,outer_join_with_cache=on,semijoin_with_cache=on,join_cache_incremental=on,join_cache_hashed=on,join_cache_bka=on,optimize_join_buffer_size=off,table_elimination=on,extended_keys=on,exists_to_in=on,orderby_uses_equalities=on,condition_pushdown_for_derived=on
 GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,index_merge_sort_intersection=off,engine_condition_pushdown=off,index_condition_pushdown=on,derived_merge=on,derived_with_keys=on,firstmatch=on,loosescan=on,materialization=on,in_to_exists=on,semijoin=on,partial_match_rowid_merge=on,partial_match_table_scan=on,subquery_cache=on,mrr=off,mrr_cost_based=off,mrr_sort_keys=off,outer_join_with_cache=on,semijoin_with_cache=on,join_cache_incremental=on,join_cache_hashed=on,join_cache_bka=on,optimize_join_buffer_size=off,table_elimination=on,extended_keys=on,exists_to_in=on,orderby_uses_equalities=on,condition_pushdown_for_derived=on,split_grouping_derived=on
+DEFAULT_VALUE	index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,index_merge_sort_intersection=off,engine_condition_pushdown=off,index_condition_pushdown=on,derived_merge=on,derived_with_keys=on,firstmatch=on,loosescan=on,materialization=on,in_to_exists=on,semijoin=on,partial_match_rowid_merge=on,partial_match_table_scan=on,subquery_cache=on,mrr=off,mrr_cost_based=off,mrr_sort_keys=off,outer_join_with_cache=on,semijoin_with_cache=on,join_cache_incremental=on,join_cache_hashed=on,join_cache_bka=on,optimize_join_buffer_size=off,table_elimination=on,extended_keys=on,exists_to_in=on,orderby_uses_equalities=on,condition_pushdown_for_derived=on
 VARIABLE_SCOPE	SESSION
 VARIABLE_TYPE	FLAGSET
 VARIABLE_COMMENT	Fine-tune the optimizer behavior
 NUMERIC_MIN_VALUE	NULL
 NUMERIC_MAX_VALUE	NULL
 NUMERIC_BLOCK_SIZE	NULL
-ENUM_VALUE_LIST	index_merge,index_merge_union,index_merge_sort_union,index_merge_intersection,index_merge_sort_intersection,engine_condition_pushdown,index_condition_pushdown,derived_merge,derived_with_keys,firstmatch,loosescan,materialization,in_to_exists,semijoin,partial_match_rowid_merge,partial_match_table_scan,subquery_cache,mrr,mrr_cost_based,mrr_sort_keys,outer_join_with_cache,semijoin_with_cache,join_cache_incremental,join_cache_hashed,join_cache_bka,optimize_join_buffer_size,table_elimination,extended_keys,exists_to_in,orderby_uses_equalities,condition_pushdown_for_derived,split_grouping_derived,default
+ENUM_VALUE_LIST	index_merge,index_merge_union,index_merge_sort_union,index_merge_intersection,index_merge_sort_intersection,engine_condition_pushdown,index_condition_pushdown,derived_merge,derived_with_keys,firstmatch,loosescan,materialization,in_to_exists,semijoin,partial_match_rowid_merge,partial_match_table_scan,subquery_cache,mrr,mrr_cost_based,mrr_sort_keys,outer_join_with_cache,semijoin_with_cache,join_cache_incremental,join_cache_hashed,join_cache_bka,optimize_join_buffer_size,table_elimination,extended_keys,exists_to_in,orderby_uses_equalities,condition_pushdown_for_derived,default
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	OPTIMIZER_USE_CONDITION_SELECTIVITY
@@ -3232,9 +3049,9 @@ READ_ONLY	YES
 COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	PERFORMANCE_SCHEMA_MAX_STAGE_CLASSES
 SESSION_VALUE	NULL
-GLOBAL_VALUE	160
+GLOBAL_VALUE	150
 GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	160
+DEFAULT_VALUE	150
 VARIABLE_SCOPE	GLOBAL
 VARIABLE_TYPE	BIGINT UNSIGNED
 VARIABLE_COMMENT	Maximum number of stage instruments.
@@ -3246,9 +3063,9 @@ READ_ONLY	YES
 COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	PERFORMANCE_SCHEMA_MAX_STATEMENT_CLASSES
 SESSION_VALUE	NULL
-GLOBAL_VALUE	191
+GLOBAL_VALUE	188
 GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	191
+DEFAULT_VALUE	188
 VARIABLE_SCOPE	GLOBAL
 VARIABLE_TYPE	BIGINT UNSIGNED
 VARIABLE_COMMENT	Maximum number of statement instruments.
@@ -3496,20 +3313,6 @@ NUMERIC_BLOCK_SIZE	1
 ENUM_VALUE_LIST	NULL
 READ_ONLY	YES
 COMMAND_LINE_ARGUMENT	NULL
-VARIABLE_NAME	PROXY_PROTOCOL_NETWORKS
-SESSION_VALUE	NULL
-GLOBAL_VALUE	
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	
-VARIABLE_SCOPE	GLOBAL
-VARIABLE_TYPE	VARCHAR
-VARIABLE_COMMENT	Enable proxy protocol for these source networks. The syntax is a comma separated list of IPv4 and IPv6 networks. If the network doesn't contain mask, it is considered to be a single host. "*" represents all networks and must the only directive on the line. String "localhost" represents non-TCP local connections (Unix domain socket, Windows named pipe or shared memory).
-NUMERIC_MIN_VALUE	NULL
-NUMERIC_MAX_VALUE	NULL
-NUMERIC_BLOCK_SIZE	NULL
-ENUM_VALUE_LIST	NULL
-READ_ONLY	YES
-COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	PROXY_USER
 SESSION_VALUE	
 GLOBAL_VALUE	NULL
@@ -4085,13 +3888,13 @@ ENUM_VALUE_LIST	OFF,ON
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	OPTIONAL
 VARIABLE_NAME	SESSION_TRACK_SYSTEM_VARIABLES
-SESSION_VALUE	autocommit,character_set_client,character_set_connection,character_set_results,time_zone
-GLOBAL_VALUE	autocommit,character_set_client,character_set_connection,character_set_results,time_zone
+SESSION_VALUE	
+GLOBAL_VALUE	
 GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	autocommit,character_set_client,character_set_connection,character_set_results,time_zone
+DEFAULT_VALUE	
 VARIABLE_SCOPE	SESSION
 VARIABLE_TYPE	VARCHAR
-VARIABLE_COMMENT	Track changes in registered system variables. 
+VARIABLE_COMMENT	Track changes in registered system variables. For compatibility with MySQL defaults this variable should be set to "autocommit, character_set_client, character_set_connection, character_set_results, time_zone"
 NUMERIC_MIN_VALUE	NULL
 NUMERIC_MAX_VALUE	NULL
 NUMERIC_BLOCK_SIZE	NULL
@@ -4571,7 +4374,7 @@ VARIABLE_COMMENT	Sets the sql mode
 NUMERIC_MIN_VALUE	NULL
 NUMERIC_MAX_VALUE	NULL
 NUMERIC_BLOCK_SIZE	NULL
-ENUM_VALUE_LIST	REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,IGNORE_BAD_TABLE_OPTIONS,ONLY_FULL_GROUP_BY,NO_UNSIGNED_SUBTRACTION,NO_DIR_IN_CREATE,POSTGRESQL,ORACLE,MSSQL,DB2,MAXDB,NO_KEY_OPTIONS,NO_TABLE_OPTIONS,NO_FIELD_OPTIONS,MYSQL323,MYSQL40,ANSI,NO_AUTO_VALUE_ON_ZERO,NO_BACKSLASH_ESCAPES,STRICT_TRANS_TABLES,STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ALLOW_INVALID_DATES,ERROR_FOR_DIVISION_BY_ZERO,TRADITIONAL,NO_AUTO_CREATE_USER,HIGH_NOT_PRECEDENCE,NO_ENGINE_SUBSTITUTION,PAD_CHAR_TO_FULL_LENGTH,EMPTY_STRING_IS_NULL
+ENUM_VALUE_LIST	REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,IGNORE_BAD_TABLE_OPTIONS,ONLY_FULL_GROUP_BY,NO_UNSIGNED_SUBTRACTION,NO_DIR_IN_CREATE,POSTGRESQL,ORACLE,MSSQL,DB2,MAXDB,NO_KEY_OPTIONS,NO_TABLE_OPTIONS,NO_FIELD_OPTIONS,MYSQL323,MYSQL40,ANSI,NO_AUTO_VALUE_ON_ZERO,NO_BACKSLASH_ESCAPES,STRICT_TRANS_TABLES,STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ALLOW_INVALID_DATES,ERROR_FOR_DIVISION_BY_ZERO,TRADITIONAL,NO_AUTO_CREATE_USER,HIGH_NOT_PRECEDENCE,NO_ENGINE_SUBSTITUTION,PAD_CHAR_TO_FULL_LENGTH
 READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	SQL_NOTES
@@ -4923,48 +4726,6 @@ NUMERIC_MAX_VALUE	64
 NUMERIC_BLOCK_SIZE	1
 ENUM_VALUE_LIST	NULL
 READ_ONLY	YES
-COMMAND_LINE_ARGUMENT	REQUIRED
-VARIABLE_NAME	TCP_KEEPALIVE_INTERVAL
-SESSION_VALUE	NULL
-GLOBAL_VALUE	0
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	0
-VARIABLE_SCOPE	GLOBAL
-VARIABLE_TYPE	INT
-VARIABLE_COMMENT	The interval, in seconds, between when successive keep-alive packets are sent if no acknowledgement is received.If set to 0, system dependent default is used.
-NUMERIC_MIN_VALUE	0
-NUMERIC_MAX_VALUE	2147483
-NUMERIC_BLOCK_SIZE	1
-ENUM_VALUE_LIST	NULL
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	REQUIRED
-VARIABLE_NAME	TCP_KEEPALIVE_PROBES
-SESSION_VALUE	NULL
-GLOBAL_VALUE	0
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	0
-VARIABLE_SCOPE	GLOBAL
-VARIABLE_TYPE	INT
-VARIABLE_COMMENT	The number of unacknowledged probes to send before considering the connection dead and notifying the application layer.If set to 0, system dependent default is used.
-NUMERIC_MIN_VALUE	0
-NUMERIC_MAX_VALUE	2147483
-NUMERIC_BLOCK_SIZE	1
-ENUM_VALUE_LIST	NULL
-READ_ONLY	NO
-COMMAND_LINE_ARGUMENT	REQUIRED
-VARIABLE_NAME	TCP_KEEPALIVE_TIME
-SESSION_VALUE	NULL
-GLOBAL_VALUE	0
-GLOBAL_VALUE_ORIGIN	COMPILE-TIME
-DEFAULT_VALUE	0
-VARIABLE_SCOPE	GLOBAL
-VARIABLE_TYPE	INT
-VARIABLE_COMMENT	Timeout, in milliseconds, with no activity until the first TCP keep-alive packet is sent.If set to 0, system dependent default is used.
-NUMERIC_MIN_VALUE	0
-NUMERIC_MAX_VALUE	2147483
-NUMERIC_BLOCK_SIZE	1
-ENUM_VALUE_LIST	NULL
-READ_ONLY	NO
 COMMAND_LINE_ARGUMENT	REQUIRED
 VARIABLE_NAME	THREAD_CACHE_SIZE
 SESSION_VALUE	NULL
@@ -5388,7 +5149,6 @@ where variable_name in (
 'rand_seed2',
 'system_time_zone',
 'version_comment',
-'version_source_revision',
 'version_compile_machine', 'version_compile_os',
 'version_malloc_library', 'version_ssl_library', 'version'
         )
@@ -5537,16 +5297,6 @@ VARIABLE_NAME	VERSION_MALLOC_LIBRARY
 VARIABLE_SCOPE	GLOBAL
 VARIABLE_TYPE	VARCHAR
 VARIABLE_COMMENT	Version of the used malloc library
-NUMERIC_MIN_VALUE	NULL
-NUMERIC_MAX_VALUE	NULL
-NUMERIC_BLOCK_SIZE	NULL
-ENUM_VALUE_LIST	NULL
-READ_ONLY	YES
-COMMAND_LINE_ARGUMENT	NULL
-VARIABLE_NAME	VERSION_SOURCE_REVISION
-VARIABLE_SCOPE	GLOBAL
-VARIABLE_TYPE	VARCHAR
-VARIABLE_COMMENT	Source control revision id for MariaDB source code
 NUMERIC_MIN_VALUE	NULL
 NUMERIC_MAX_VALUE	NULL
 NUMERIC_BLOCK_SIZE	NULL

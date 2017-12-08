@@ -23,7 +23,7 @@
 /* For use of 'PRIu64': */
 #define __STDC_FORMAT_MACROS
 
-#include <my_global.h>
+#include <my_config.h>
 
 #include <inttypes.h>
 
@@ -6052,7 +6052,7 @@ int ha_rocksdb::create_cfs(
           }
           my_error(ER_UNSUPPORTED_COLLATION, MYF(0),
                    tbl_def_arg->full_tablename().c_str(),
-                   table_arg->key_info[i].key_part[part].field->field_name.str,
+                   table_arg->key_info[i].key_part[part].field->field_name,
                    collation_err.c_str());
           DBUG_RETURN(HA_EXIT_FAILURE);
         }
@@ -6217,7 +6217,7 @@ std::unordered_map<std::string, uint> ha_rocksdb::get_old_key_positions(
       ALTER TABLE t1 DROP INDEX ka, ADD INDEX ka(b), ALGORITHM=INPLACE;
     */
     const KEY *const old_key = &old_table_arg->key_info[i];
-    const auto &it = new_key_pos.find(old_key->name.str);
+    const auto &it = new_key_pos.find(old_key->name);
     if (it == new_key_pos.end()) {
       continue;
     }
@@ -6245,7 +6245,7 @@ std::unordered_map<std::string, uint> ha_rocksdb::get_old_key_positions(
       continue;
     }
 
-    old_key_pos[old_key->name.str] = i;
+    old_key_pos[old_key->name] = i;
   }
 
   DBUG_RETURN(old_key_pos);
@@ -6260,7 +6260,7 @@ int ha_rocksdb::compare_keys(const KEY *const old_key,
   DBUG_ASSERT(new_key != nullptr);
 
   /* Check index name. */
-  if (strcmp(old_key->name.str, new_key->name.str) != 0) {
+  if (strcmp(old_key->name, new_key->name) != 0) {
     DBUG_RETURN(HA_EXIT_FAILURE);
   }
 
@@ -6299,8 +6299,8 @@ int ha_rocksdb::compare_key_parts(const KEY *const old_key,
 
   /* Check to see that key parts themselves match */
   for (uint i = 0; i < old_key->user_defined_key_parts; i++) {
-    if (strcmp(old_key->key_part[i].field->field_name.str,
-               new_key->key_part[i].field->field_name.str) != 0) {
+    if (strcmp(old_key->key_part[i].field->field_name,
+               new_key->key_part[i].field->field_name) != 0) {
       DBUG_RETURN(HA_EXIT_FAILURE);
     }
 
@@ -8257,9 +8257,9 @@ const char *ha_rocksdb::get_key_name(const uint index,
   }
 
   DBUG_ASSERT(table_arg->key_info != nullptr);
-  DBUG_ASSERT(table_arg->key_info[index].name.str != nullptr);
+  DBUG_ASSERT(table_arg->key_info[index].name != nullptr);
 
-  return table_arg->key_info[index].name.str;
+  return table_arg->key_info[index].name;
 }
 
 const char *ha_rocksdb::get_key_comment(const uint index,
@@ -9722,8 +9722,7 @@ void ha_rocksdb::calc_updated_indexes() {
     HA_EXIT_SUCCESS  OK
     other            HA_ERR error code (can be SE-specific)
 */
-int ha_rocksdb::update_row(const uchar *const old_data,
-                           const uchar *const new_data) {
+int ha_rocksdb::update_row(const uchar *const old_data, uchar *const new_data) {
   DBUG_ENTER_FUNC();
 
   DBUG_ASSERT(old_data != nullptr);

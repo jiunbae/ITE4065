@@ -162,16 +162,20 @@ struct trx_rseg_t {
 	ulint				curr_size;
 
 	/*--------------------------------------------------------*/
-	/* Fields for undo logs */
-	/** List of undo logs */
-	UT_LIST_BASE_NODE_T(trx_undo_t)	undo_list;
+	/* Fields for update undo logs */
+	/** List of update undo logs */
+	UT_LIST_BASE_NODE_T(trx_undo_t)	update_undo_list;
 
-	/** List of undo log segments cached for fast reuse */
-	UT_LIST_BASE_NODE_T(trx_undo_t)	undo_cached;
+	/** List of update undo log segments cached for fast reuse */
+	UT_LIST_BASE_NODE_T(trx_undo_t)	update_undo_cached;
 
-	/** List of recovered old insert_undo logs of incomplete
-	transactions (to roll back or XA COMMIT & purge) */
-	UT_LIST_BASE_NODE_T(trx_undo_t) old_insert_list;
+	/*--------------------------------------------------------*/
+	/* Fields for insert undo logs */
+	/** List of insert undo logs */
+	UT_LIST_BASE_NODE_T(trx_undo_t) insert_undo_list;
+
+	/** List of insert undo log segments cached for fast reuse */
+	UT_LIST_BASE_NODE_T(trx_undo_t) insert_undo_cached;
 
 	/*--------------------------------------------------------*/
 
@@ -185,8 +189,8 @@ struct trx_rseg_t {
 	/** Transaction number of the last not yet purged log */
 	trx_id_t			last_trx_no;
 
-	/** Whether the log segment needs purge */
-	bool				needs_purge;
+	/** TRUE if the last not yet purged log needs purging */
+	ibool				last_del_marks;
 
 	/** Reference counter to track rseg allocated transactions. */
 	ulint				trx_ref_count;

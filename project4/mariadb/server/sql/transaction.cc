@@ -18,7 +18,7 @@
 #pragma implementation                         // gcc: Class implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "transaction.h"
 #include "rpl_handler.h"
@@ -576,7 +576,7 @@ bool trans_rollback_stmt(THD *thd)
 
 /* Find a named savepoint in the current transaction. */
 static SAVEPOINT **
-find_savepoint(THD *thd, LEX_CSTRING name)
+find_savepoint(THD *thd, LEX_STRING name)
 {
   SAVEPOINT **sv= &thd->transaction.savepoints;
 
@@ -602,7 +602,7 @@ find_savepoint(THD *thd, LEX_CSTRING name)
   @retval TRUE   Failure
 */
 
-bool trans_savepoint(THD *thd, LEX_CSTRING name)
+bool trans_savepoint(THD *thd, LEX_STRING name)
 {
   SAVEPOINT **sv, *newsv;
   DBUG_ENTER("trans_savepoint");
@@ -679,7 +679,7 @@ bool trans_savepoint(THD *thd, LEX_CSTRING name)
   @retval TRUE   Failure
 */
 
-bool trans_rollback_to_savepoint(THD *thd, LEX_CSTRING name)
+bool trans_rollback_to_savepoint(THD *thd, LEX_STRING name)
 {
   int res= FALSE;
   SAVEPOINT *sv= *find_savepoint(thd, name);
@@ -756,7 +756,7 @@ bool trans_rollback_to_savepoint(THD *thd, LEX_CSTRING name)
   @retval TRUE   Failure
 */
 
-bool trans_release_savepoint(THD *thd, LEX_CSTRING name)
+bool trans_release_savepoint(THD *thd, LEX_STRING name)
 {
   int res= FALSE;
   SAVEPOINT *sv= *find_savepoint(thd, name);

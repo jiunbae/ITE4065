@@ -5,7 +5,7 @@
 --disable_query_log
 call mtr.add_suppression("InnoDB: Table `mysql`\\.`innodb_table_stats` not found");
 call mtr.add_suppression("InnoDB: incorrect flags in SYS_TABLES");
-call mtr.add_suppression("InnoDB: Table `test`.`t[cp]` in InnoDB data dictionary contains invalid flags\\. SYS_TABLES\\.TYPE=(129|289|3873|1232[31]) SYS_TABLES\\.N_COLS=2147483649\\r?$");
+call mtr.add_suppression("InnoDB: Table `test`.`t[czp]` in InnoDB data dictionary contains invalid flags\\. SYS_TABLES\\.TYPE=(129|289|3873|1232[31]) SYS_TABLES\\.N_COLS=2147483649\\r?$");
 call mtr.add_suppression("InnoDB: Table `test`\\.`tr` in InnoDB data dictionary contains invalid flags\\. SYS_TABLES\\.TYPE=65 SYS_TABLES\\.MIX_LEN=4294967295\\r?$");
 call mtr.add_suppression("InnoDB: Refusing to load '\\..test.td\\.ibd' \\(id=3, flags=0x([2e]1)\\); dictionary contains id=3, flags=0x100\\1\\r?$");
 call mtr.add_suppression("InnoDB: Refusing to load '\\..test.td\\.ibd' \\(id=3, flags=0x(1[2ae]1)\\); dictionary contains id=3, flags=0x10\\1\\r?$");
@@ -27,10 +27,7 @@ let bugdir= $MYSQLTEST_VARDIR/tmp/table_flags;
 --let $d=--innodb-data-home-dir=$bugdir --innodb-log-group-home-dir=$bugdir
 --let $d=$d --innodb-data-file-path=ibdata1:1M:autoextend
 --let $d=$d --innodb-undo-tablespaces=0
---let $d=$d --innodb-purge-rseg-truncate-frequency=1
---let $d=$d --skip-innodb-fast-shutdown
-
---let $restart_parameters=$d --innodb-stats-persistent=0
+--let $restart_parameters=$d --innodb-stats-persistent=0 --innodb-file-format=1
 --source include/restart_mysqld.inc
 
 SET GLOBAL innodb_file_per_table=1;
@@ -137,19 +134,15 @@ SHOW CREATE TABLE tr;
 SHOW CREATE TABLE tc;
 --error ER_NO_SUCH_TABLE_IN_ENGINE
 SHOW CREATE TABLE td;
-# This table was converted to NO_ROLLBACK due to the SYS_TABLES.TYPE change.
+--error ER_NO_SUCH_TABLE_IN_ENGINE
 SHOW CREATE TABLE tz;
-BEGIN;
-INSERT INTO tz VALUES(42);
-ROLLBACK;
-SELECT * FROM tz;
 --error ER_NO_SUCH_TABLE_IN_ENGINE
 SHOW CREATE TABLE tp;
 
 --source include/shutdown_mysqld.inc
 
 let SEARCH_FILE= $MYSQLTEST_VARDIR/log/mysqld.1.err;
---let SEARCH_PATTERN= InnoDB: Table `test`.`t[cp]` in InnoDB data dictionary contains invalid flags\. SYS_TABLES\.TYPE=(129|289|3873|1232[13]) SYS_TABLES\.N_COLS=2147483649
+--let SEARCH_PATTERN= InnoDB: Table `test`.`t[czp]` in InnoDB data dictionary contains invalid flags\. SYS_TABLES\.TYPE=(129|289|3873|1232[13]) SYS_TABLES\.N_COLS=2147483649
 --source include/search_pattern_in_file.inc
 --let SEARCH_PATTERN= InnoDB: Refusing to load '\..test.td\.ibd' \(id=3, flags=0x1?[2ae]1\); dictionary contains id=3, flags=0x10[01][2ae]1\b
 --source include/search_pattern_in_file.inc
@@ -186,17 +179,14 @@ BEGIN;
 INSERT INTO tr VALUES(1);
 INSERT INTO tc VALUES(1);
 INSERT INTO td VALUES(1);
-# We cannot access tz, because due to our fiddling of the NO_ROLLBACK flag,
-# it now has a record with DB_TRX_ID=0, which is invalid for
-# transactional tables until MDEV-12288 is implemented.
-# INSERT INTO tz VALUES(1);
+INSERT INTO tz VALUES(1);
 INSERT INTO tp VALUES(1);
 ROLLBACK;
 
 SELECT * FROM tr;
 SELECT * FROM tc;
 SELECT * FROM td;
-# SELECT * FROM tz;
+SELECT * FROM tz;
 SELECT * FROM tp;
 
 DROP TABLE tr,tc,td,tz,tp;

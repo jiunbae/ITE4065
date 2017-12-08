@@ -3273,6 +3273,3 @@ row_number() over (partition by i order by i)	i
 1	1
 1	2
 DROP TABLE t1;
-#
-# Start of 10.3 tests
-#

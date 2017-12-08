@@ -287,7 +287,7 @@ public:
 
     @param  initial_state  (optional) name of period before first state change
   */
-  void start_new_query(const char *initial_state= "Starting")
+  void start_new_query(const char *initial_state= "starting")
   {
     DBUG_ASSERT(!current);
     if (unlikely(enabled))

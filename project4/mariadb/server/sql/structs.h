@@ -29,7 +29,6 @@
 #include <mysql_com.h>                  /* USERNAME_LENGTH */
 
 struct TABLE;
-class Type_handler;
 class Field;
 class Index_statistics;
 
@@ -109,9 +108,9 @@ typedef struct st_key {
       pk2 is explicitly present in idx1, it is not in the extension, so
       ext_key_part_map.is_set(1) == false
   */
-  LEX_CSTRING name;
   key_part_map ext_key_part_map;
   uint  block_size;
+  uint  name_length;
   enum  ha_key_alg algorithm;
   /* 
     The flag is on if statistical data for the index prefixes
@@ -125,9 +124,10 @@ typedef struct st_key {
   union
   {
     plugin_ref parser;                  /* Fulltext [pre]parser */
-    LEX_CSTRING *parser_name;           /* Fulltext [pre]parser name */
+    LEX_STRING *parser_name;            /* Fulltext [pre]parser name */
   };
   KEY_PART_INFO *key_part;
+  char	*name;				/* Name of key */
   /* Unique name for cache;  db + \0 + table_name + \0 + key_name + \0 */
   uchar *cache_name;
   /*
@@ -152,7 +152,7 @@ typedef struct st_key {
     int  bdb_return_if_eq;
   } handler;
   TABLE *table;
-  LEX_CSTRING comment;
+  LEX_STRING comment;
   /** reference to the list of options or NULL */
   engine_option_value *option_list;
   ha_index_option_struct *option_struct;                  /* structure with parsed options */
@@ -203,39 +203,24 @@ extern const char *show_comp_option_name[];
 
 typedef int *(*update_var)(THD *, struct st_mysql_show_var *);
 
-
-struct AUTHID
-{
-  LEX_CSTRING user, host;
-  void init() { memset(this, 0, sizeof(*this)); }
-  void copy(MEM_ROOT *root, const LEX_CSTRING *usr, const LEX_CSTRING *host);
+typedef struct	st_lex_user {
+  LEX_STRING user, host, plugin, auth;
+  LEX_STRING pwtext, pwhash;
   bool is_role() const { return user.str[0] && !host.str[0]; }
-  void set_lex_string(LEX_CSTRING *l, char *buf)
+  void set_lex_string(LEX_STRING *l, char *buf)
   {
     if (is_role())
       *l= user;
     else
-    {
-      l->str= buf;
-      l->length= strxmov(buf, user.str, "@", host.str, NullS) - buf;
-    }
+      l->length= strxmov(l->str= buf, user.str, "@", host.str, NullS) - buf;
   }
-  void parse(const char *str, size_t length);
-  bool read_from_mysql_proc_row(THD *thd, TABLE *table);
-};
-
-
-struct LEX_USER: public AUTHID
-{
-  LEX_CSTRING plugin, auth;
-  LEX_CSTRING pwtext, pwhash;
   void reset_auth()
   {
     pwtext.length= pwhash.length= plugin.length= auth.length= 0;
     pwtext.str= pwhash.str= 0;
-    plugin.str= auth.str= "";
+    plugin.str= auth.str= const_cast<char*>("");
   }
-};
+} LEX_USER;
 
 /*
   This structure specifies the maximum amount of resources which
@@ -593,27 +578,27 @@ public:
 struct Lex_field_type_st: public Lex_length_and_dec_st
 {
 private:
-  const Type_handler *m_handler;
-  void set(const Type_handler *handler, const char *length, const char *dec)
+  enum_field_types m_type;
+  void set(enum_field_types type, const char *length, const char *dec)
   {
-    m_handler= handler;
+    m_type= type;
     Lex_length_and_dec_st::set(length, dec);
   }
 public:
-  void set(const Type_handler *handler, Lex_length_and_dec_st length_and_dec)
+  void set(enum_field_types type, Lex_length_and_dec_st length_and_dec)
   {
-    m_handler= handler;
+    m_type= type;
     Lex_length_and_dec_st::operator=(length_and_dec);
   }
-  void set(const Type_handler *handler, const char *length)
+  void set(enum_field_types type, const char *length)
   {
-    set(handler, length, 0);
+    set(type, length, 0);
   }
-  void set(const Type_handler *handler)
+  void set(enum_field_types type)
   {
-    set(handler, 0, 0);
+    set(type, 0, 0);
   }
-  const Type_handler *type_handler() const { return m_handler; }
+  enum_field_types field_type() const { return m_type; }
 };
 
 
@@ -641,91 +626,6 @@ public:
     set(type, 0, 0);
   }
   int dyncol_type() const { return m_type; }
-};
-
-
-struct Lex_spblock_handlers_st
-{
-public:
-  int hndlrs;
-  void init(int count) { hndlrs= count; }
-};
-
-
-struct Lex_spblock_st: public Lex_spblock_handlers_st
-{
-public:
-  int vars;
-  int conds;
-  int curs;
-  void init()
-  {
-    vars= conds= hndlrs= curs= 0;
-  }
-  void init_using_vars(uint nvars)
-  {
-    vars= nvars;
-    conds= hndlrs= curs= 0;
-  }
-  void join(const Lex_spblock_st &b1, const Lex_spblock_st &b2)
-  {
-    vars= b1.vars + b2.vars;
-    conds= b1.conds + b2.conds;
-    hndlrs= b1.hndlrs + b2.hndlrs;
-    curs= b1.curs + b2.curs;
-  }
-};
-
-
-class Lex_spblock: public Lex_spblock_st
-{
-public:
-  Lex_spblock() { init(); }
-  Lex_spblock(const Lex_spblock_handlers_st &other)
-  {
-    vars= conds= curs= 0;
-    hndlrs= other.hndlrs;
-  }
-};
-
-
-struct Lex_for_loop_bounds_st
-{
-public:
-  class sp_assignment_lex *m_index;
-  class sp_assignment_lex *m_upper_bound;
-  int8 m_direction;
-  bool m_implicit_cursor;
-  bool is_for_loop_cursor() const { return m_upper_bound == NULL; }
-};
-
-
-struct Lex_for_loop_st
-{
-public:
-  class sp_variable *m_index;
-  class sp_variable *m_upper_bound;
-  int m_cursor_offset;
-  int8 m_direction;
-  bool m_implicit_cursor;
-  void init()
-  {
-    m_index= 0;
-    m_upper_bound= 0;
-    m_direction= 0;
-    m_implicit_cursor= false;
-  }
-  void init(const Lex_for_loop_st &other)
-  {
-    *this= other;
-  }
-  bool is_for_loop_cursor() const { return m_upper_bound == NULL; }
-};
-
-
-struct Lex_string_with_pos_st: public LEX_CSTRING
-{
-  const char *m_pos;
 };
 
 

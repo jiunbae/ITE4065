@@ -18,7 +18,7 @@
   This files defines some MySQL C API functions that are server specific
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "sql_class.h"                          // system_variables
 

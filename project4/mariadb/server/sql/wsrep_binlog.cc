@@ -13,7 +13,6 @@
    with this program; if not, write to the Free Software Foundation, Inc.,
    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA. */
 
-#include "mariadb.h"
 #include "wsrep_binlog.h"
 #include "wsrep_priv.h"
 #include "log.h"
@@ -452,8 +451,8 @@ void wsrep_dump_rbr_buf_with_header(THD *thd, const void *rbr_buf,
   char filename[PATH_MAX]= {0};
   File file;
   IO_CACHE cache;
-  Log_event_writer writer(&cache, 0);
-  Format_description_log_event *ev= 0;
+  Log_event_writer writer(&cache);
+  Format_description_log_event *ev=NULL;
 
   int len= my_snprintf(filename, PATH_MAX, "%s/GRA_%lld_%lld_v2.log",
                        wsrep_data_home_dir, (longlong) thd->thread_id,

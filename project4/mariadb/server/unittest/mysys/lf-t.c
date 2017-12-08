@@ -182,11 +182,14 @@ pthread_handler_t test_lf_hash(void *arg)
 
 void do_tests()
 {
-  plan(6);
+  plan(7);
 
   lf_alloc_init(&lf_allocator, sizeof(TLA), offsetof(TLA, not_used));
   lf_hash_init(&lf_hash, sizeof(int), LF_HASH_UNIQUE, 0, sizeof(int), 0,
                &my_charset_bin);
+
+  bad= my_atomic_initialize();
+  ok(!bad, "my_atomic_initialize() returned %d", bad);
 
   with_my_thread_init= 1;
   test_concurrently("lf_pinbox (with my_thread_init)", test_lf_pinbox, N= THREADS, CYCLES);

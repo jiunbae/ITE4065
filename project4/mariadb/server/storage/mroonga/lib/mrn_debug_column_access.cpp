@@ -23,13 +23,13 @@ namespace mrn {
   DebugColumnAccess::DebugColumnAccess(TABLE *table, MY_BITMAP *bitmap)
     : table_(table),
       bitmap_(bitmap) {
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
     map_ = dbug_tmp_use_all_columns(table_, bitmap_);
 #endif
   }
 
   DebugColumnAccess::~DebugColumnAccess() {
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
     dbug_tmp_restore_column_map(bitmap_, map_);
 #endif
   }

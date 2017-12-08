@@ -6,12 +6,20 @@ use My::Platform;
 sub skip_combinations {
   my @combinations;
 
-  # disable innodb combinations for configurations that were not built
+  # disable innodb/xtradb combinatons for configurations that were not built
   push @combinations, 'innodb_plugin' unless $ENV{HA_INNODB_SO};
 
-  push @combinations, 'innodb' unless $::mysqld_variables{'innodb'} eq "ON";
+  push @combinations, qw(xtradb innodb) unless $::mysqld_variables{'innodb'} eq "ON";
 
-  my %skip = ( 'include/have_innodb.combinations' => [ @combinations ]);
+  # unconditionally, for now in 10.2. Later it could check for xtradb I_S plugins
+  push @combinations, 'xtradb';
+
+  # XtraDB is RECOMPILE_FOR_EMBEDDED, ha_xtradb.so cannot work with embedded server
+  push @combinations, 'xtradb_plugin' if not $ENV{HA_XTRADB_SO}
+                                          or $::opt_embedded_server;
+
+  my %skip = ( 'include/have_innodb.combinations' => [ @combinations ],
+               'include/have_xtradb.combinations' => [ @combinations ]);
 
   # don't run tests for the wrong platform
   $skip{'include/platform.combinations'} = [ (IS_WINDOWS) ? 'unix' : 'win' ];

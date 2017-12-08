@@ -396,7 +396,7 @@ bool Session_sysvars_tracker::vars_list::parse_var_list(THD *thd,
     return false;
   }
 
-  if(!strcmp(var_list.str, "*"))
+  if(!strcmp(var_list.str,(const char *)"*"))
   {
     track_all= true;
     buffer_length= 2;
@@ -418,7 +418,7 @@ bool Session_sysvars_tracker::vars_list::parse_var_list(THD *thd,
   for (;;)
   {
     sys_var *svar;
-    LEX_CSTRING var;
+    LEX_STRING var;
     uint not_used;
 
     lasts= (char *) memchr(token, separator, rest);
@@ -435,7 +435,7 @@ bool Session_sysvars_tracker::vars_list::parse_var_list(THD *thd,
     /* Remove leading/trailing whitespace. */
     trim_whitespace(char_set, &var, &not_used);
 
-    if(!strcmp(var.str, "*"))
+    if(!strcmp(var.str,(const char *)"*"))
     {
       track_all= true;
     }
@@ -483,7 +483,7 @@ bool Session_sysvars_tracker::check_var_list(THD *thd,
   size_t rest= var_list.length;
 
   if (!var_list.str || var_list.length == 0 ||
-      !strcmp(var_list.str, "*"))
+      !strcmp(var_list.str,(const char *)"*"))
   {
     return false;
   }
@@ -500,7 +500,7 @@ bool Session_sysvars_tracker::check_var_list(THD *thd,
     mysql_mutex_lock(&LOCK_plugin);
   for (;;)
   {
-    LEX_CSTRING var;
+    LEX_STRING var;
     uint not_used;
 
     lasts= (char *) memchr(token, separator, rest);
@@ -517,7 +517,7 @@ bool Session_sysvars_tracker::check_var_list(THD *thd,
     /* Remove leading/trailing whitespace. */
     trim_whitespace(char_set, &var, &not_used);
 
-    if(!strcmp(var.str, "*") &&
+    if(!strcmp(var.str,(const char *)"*") &&
        !find_sys_var_ex(thd, var.str, var.length, throw_error, true))
     {
       if (throw_error && take_mutex && thd)
@@ -1216,7 +1216,7 @@ bool Transaction_state_tracker::store(THD *thd, String *buf)
           tx_isolation_typelib as it hyphenates its items.
         */
         buf->append(STRING_WITH_LEN("SET TRANSACTION ISOLATION LEVEL "));
-        buf->append(&isol[tx_isol_level - 1]);
+        buf->append(isol[tx_isol_level - 1].str, isol[tx_isol_level - 1].length);
         buf->append(STRING_WITH_LEN("; "));
       }
 

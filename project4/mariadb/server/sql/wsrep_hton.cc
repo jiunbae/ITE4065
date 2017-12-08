@@ -13,7 +13,6 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02111-1301 USA */
 
-#include "mariadb.h"
 #include <mysqld.h>
 #include "sql_base.h"
 #include "rpl_filter.h"
@@ -97,8 +96,7 @@ void wsrep_register_hton(THD* thd, bool all)
          * replicated unless we declare wsrep hton as read/write here
 	 */
         if (i->is_trx_read_write() ||
-            ((thd->lex->sql_command == SQLCOM_CREATE_TABLE ||
-              thd->lex->sql_command == SQLCOM_CREATE_SEQUENCE) &&
+            (thd->lex->sql_command == SQLCOM_CREATE_TABLE &&
              thd->wsrep_exec_mode == LOCAL_STATE))
         {
           thd->ha_data[wsrep_hton->slot].ha_info[all].set_trx_read_write();
@@ -384,7 +382,7 @@ wsrep_run_wsrep_commit(THD *thd, bool all)
     mysql_mutex_unlock(&thd->LOCK_wsrep_thd);
 
     mysql_mutex_lock(&thd->mysys_var->mutex);
-    thd_proc_info(thd, "WSREP waiting on replaying");
+    thd_proc_info(thd, "wsrep waiting on replaying");
     thd->mysys_var->current_mutex= &LOCK_wsrep_replaying;
     thd->mysys_var->current_cond=  &COND_wsrep_replaying;
     mysql_mutex_unlock(&thd->mysys_var->mutex);

@@ -84,7 +84,7 @@ When one supplies long data for a placeholder:
     at statement execute.
 */
 
-#include "mariadb.h"                          /* NO_EMBEDDED_ACCESS_CHECKS */
+#include <my_global.h>                          /* NO_EMBEDDED_ACCESS_CHECKS */
 #include "sql_priv.h"
 #include "unireg.h"
 #include "sql_class.h"                          // set_var.h: THD
@@ -203,7 +203,7 @@ public:
   void setup_set_params();
   virtual Query_arena::Type type() const;
   virtual void cleanup_stmt();
-  bool set_name(LEX_CSTRING *name);
+  bool set_name(LEX_STRING *name);
   inline void close_cursor() { delete cursor; cursor= 0; }
   inline bool is_in_use() { return flags & (uint) IS_IN_USE; }
   inline bool is_sql_prepare() const { return flags & (uint) IS_SQL_PREPARE; }
@@ -725,36 +725,13 @@ void set_param_date(Item_param *param, uchar **pos, ulong len)
 #endif /*!EMBEDDED_LIBRARY*/
 
 
-static void set_param_str_or_null(Item_param *param, uchar **pos, ulong len,
-                                  bool empty_string_is_null)
-{
-  ulong length= get_param_length(pos, len);
-  if (length == 0 && empty_string_is_null)
-    param->set_null();
-  else
-  {
-    if (length > len)
-      length= len;
-    param->set_str((const char *) *pos, length);
-    *pos+= length;
-  }
-}
-
-
 static void set_param_str(Item_param *param, uchar **pos, ulong len)
 {
-  set_param_str_or_null(param, pos, len, false);
-}
-
-
-/*
-  set_param_str_empty_is_null : bind empty string as null value
-  when sql_mode=MODE_EMPTY_STRING_IS_NULL
-*/
-static void set_param_str_empty_is_null(Item_param *param, uchar **pos,
-                                        ulong len)
-{
-  set_param_str_or_null(param, pos, len, true);
+  ulong length= get_param_length(pos, len);
+  if (length > len)
+    length= len;
+  param->set_str((const char *)*pos, length);
+  *pos+= length;
 }
 
 
@@ -829,10 +806,7 @@ static void setup_one_conversion_function(THD *thd, Item_param *param,
       param->value.cs_info.final_character_set_of_str_value=
         String::needs_conversion(0, fromcs, tocs, &dummy_offset) ?
         tocs : fromcs;
-
-      param->set_param_func=
-        (thd->variables.sql_mode & MODE_EMPTY_STRING_IS_NULL) ?
-        set_param_str_empty_is_null : set_param_str;
+      param->set_param_func= set_param_str;
       /*
         Exact value of max_length is not known unless data is converted to
         charset of connection, so we have to set it later.
@@ -843,6 +817,20 @@ static void setup_one_conversion_function(THD *thd, Item_param *param,
 }
 
 #ifndef EMBEDDED_LIBRARY
+
+/**
+  Check whether this parameter data type is compatible with long data.
+  Used to detect whether a long data stream has been supplied to a
+  incompatible data type.
+*/
+inline bool is_param_long_data_type(Item_param *param)
+{
+  enum_field_types field_type= param->field_type();
+  return (((field_type >= MYSQL_TYPE_TINY_BLOB) &&
+           (field_type <= MYSQL_TYPE_STRING)) ||
+          field_type == MYSQL_TYPE_VARCHAR);
+}
+
 
 /**
   Routines to assign parameters from data supplied by the client.
@@ -921,7 +909,7 @@ static bool insert_params_with_log(Prepared_statement *stmt, uchar *null_array,
       type (the types are supplied at execute). Check that the
       supplied type of placeholder can accept a data stream.
     */
-    else if (!param->type_handler()->is_param_long_data_type())
+    else if (! is_param_long_data_type(param))
       DBUG_RETURN(1);
 
     if (acc.append(param))
@@ -969,7 +957,7 @@ static bool insert_params(Prepared_statement *stmt, uchar *null_array,
       type (the types are supplied at execute). Check that the
       supplied type of placeholder can accept a data stream.
     */
-    else if (!param->type_handler()->is_param_long_data_type())
+    else if (! is_param_long_data_type(param))
       DBUG_RETURN(1);
     if (param->convert_str_value(stmt->thd))
       DBUG_RETURN(1);                           /* out of memory */
@@ -1427,7 +1415,6 @@ static int mysql_test_update(Prepared_statement *stmt,
   int res;
   THD *thd= stmt->thd;
   uint table_count= 0;
-  TABLE_LIST *update_source_table;
   SELECT_LEX *select= &stmt->lex->select_lex;
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
   uint          want_privilege;
@@ -1441,11 +1428,9 @@ static int mysql_test_update(Prepared_statement *stmt,
   if (mysql_handle_derived(thd->lex, DT_INIT))
     goto error;
 
-  if (((update_source_table= unique_table(thd, table_list,
-                                          table_list->next_global, 0)) ||
-        table_list->is_multitable()))
+  if (table_list->is_multitable())
   {
-    DBUG_ASSERT(update_source_table || table_list->view != 0);
+    DBUG_ASSERT(table_list->view != 0);
     DBUG_PRINT("info", ("Switch to multi-update"));
     /* pass counter value */
     thd->lex->table_count= table_count;
@@ -1526,7 +1511,6 @@ static bool mysql_test_delete(Prepared_statement *stmt,
   uint table_count= 0;
   THD *thd= stmt->thd;
   LEX *lex= stmt->lex;
-  bool delete_while_scanning;
   DBUG_ENTER("mysql_test_delete");
 
   if (delete_precheck(thd, table_list) ||
@@ -1555,8 +1539,7 @@ static bool mysql_test_delete(Prepared_statement *stmt,
   DBUG_RETURN(mysql_prepare_delete(thd, table_list, 
                                    lex->select_lex.with_wild, 
                                    lex->select_lex.item_list,
-                                   &lex->select_lex.where,
-                                   &delete_while_scanning));
+                                   &lex->select_lex.where));
 error:
   DBUG_RETURN(TRUE);
 }
@@ -1981,7 +1964,8 @@ static int mysql_test_show_grants(Prepared_statement *stmt)
   THD *thd= stmt->thd;
   List<Item> fields;
 
-  mysql_show_grants_get_fields(thd, &fields, STRING_WITH_LEN("Grants for"));
+  mysql_show_grants_get_fields(thd, &fields, "Grants for");
+    
   DBUG_RETURN(send_stmt_metadata(thd, stmt, &fields));
 }
 #endif /*NO_EMBEDDED_ACCESS_CHECKS*/
@@ -2070,14 +2054,13 @@ static int mysql_test_show_binlogs(Prepared_statement *stmt)
     TRUE              error, error message is set in THD
 */
 
-static int mysql_test_show_create_routine(Prepared_statement *stmt,
-                                          const Sp_handler *sph)
+static int mysql_test_show_create_routine(Prepared_statement *stmt, int type)
 {
   DBUG_ENTER("mysql_test_show_binlogs");
   THD *thd= stmt->thd;
   List<Item> fields;
 
-  sp_head::show_create_routine_get_fields(thd, sph, &fields);
+  sp_head::show_create_routine_get_fields(thd, type, &fields);
     
   DBUG_RETURN(send_stmt_metadata(thd, stmt, &fields));
 }
@@ -2105,7 +2088,7 @@ static bool mysql_test_create_view(Prepared_statement *stmt)
   TABLE_LIST *view= lex->unlink_first_table(&link_to_local);
   TABLE_LIST *tables= lex->query_tables;
 
-  if (create_view_precheck(thd, tables, view, lex->create_view->mode))
+  if (create_view_precheck(thd, tables, view, lex->create_view_mode))
     goto err;
 
   /*
@@ -2305,7 +2288,7 @@ static int mysql_test_handler_read(Prepared_statement *stmt,
   {
     if (!lex->result && !(lex->result= new (stmt->mem_root) select_send(thd)))
     {
-      my_error(ER_OUTOFMEMORY, MYF(0), (int) sizeof(select_send));
+      my_error(ER_OUTOFMEMORY, MYF(0), sizeof(select_send));
       DBUG_RETURN(1);
     }
     if (send_prep_stmt(stmt, ha_table->fields.elements) ||
@@ -2417,7 +2400,6 @@ static bool check_prepared_statement(Prepared_statement *stmt)
     }
     break;
   case SQLCOM_CREATE_TABLE:
-  case SQLCOM_CREATE_SEQUENCE:
     res= mysql_test_create_table(stmt);
     break;
   case SQLCOM_SHOW_CREATE:
@@ -2467,21 +2449,21 @@ static bool check_prepared_statement(Prepared_statement *stmt)
     break;
 #endif /* EMBEDDED_LIBRARY */
   case SQLCOM_SHOW_CREATE_PROC:
-    if ((res= mysql_test_show_create_routine(stmt, &sp_handler_procedure)) == 2)
+    if ((res= mysql_test_show_create_routine(stmt, TYPE_ENUM_PROCEDURE)) == 2)
     {
       /* Statement and field info has already been sent */
       DBUG_RETURN(FALSE);
     }
     break;
   case SQLCOM_SHOW_CREATE_FUNC:
-    if ((res= mysql_test_show_create_routine(stmt, &sp_handler_function)) == 2)
+    if ((res= mysql_test_show_create_routine(stmt, TYPE_ENUM_FUNCTION)) == 2)
     {
       /* Statement and field info has already been sent */
       DBUG_RETURN(FALSE);
     }
     break;
   case SQLCOM_CREATE_VIEW:
-    if (lex->create_view->mode == VIEW_ALTER)
+    if (lex->create_view_mode == VIEW_ALTER)
     {
       my_message(ER_UNSUPPORTED_PS, ER_THD(thd, ER_UNSUPPORTED_PS), MYF(0));
       goto error;
@@ -2519,10 +2501,8 @@ static bool check_prepared_statement(Prepared_statement *stmt)
     */
   case SQLCOM_SHOW_EXPLAIN:
   case SQLCOM_DROP_TABLE:
-  case SQLCOM_DROP_SEQUENCE:
   case SQLCOM_RENAME_TABLE:
   case SQLCOM_ALTER_TABLE:
-  case SQLCOM_ALTER_SEQUENCE:
   case SQLCOM_COMMIT:
   case SQLCOM_CREATE_INDEX:
   case SQLCOM_DROP_INDEX:
@@ -2804,7 +2784,7 @@ bool LEX::get_dynamic_sql_string(LEX_CSTRING *dst, String *buffer)
 void mysql_sql_stmt_prepare(THD *thd)
 {
   LEX *lex= thd->lex;
-  LEX_CSTRING *name= &lex->prepared_stmt_name;
+  LEX_STRING *name= &lex->prepared_stmt_name;
   Prepared_statement *stmt;
   LEX_CSTRING query;
   DBUG_ENTER("mysql_sql_stmt_prepare");
@@ -2983,7 +2963,7 @@ void reinit_stmt_before_use(THD *thd, LEX *lex)
       for (order= sl->order_list.first; order; order= order->next)
         order->item= &order->item_ptr;
       {
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
         bool res=
 #endif
           sl->handle_derived(lex, DT_REINIT);
@@ -3238,7 +3218,7 @@ void mysql_sql_stmt_execute(THD *thd)
 {
   LEX *lex= thd->lex;
   Prepared_statement *stmt;
-  LEX_CSTRING *name= &lex->prepared_stmt_name;
+  LEX_STRING *name= &lex->prepared_stmt_name;
   /* Query text for binary, general or slow log, if any of them is open */
   String expanded_query;
   DBUG_ENTER("mysql_sql_stmt_execute");
@@ -3459,7 +3439,7 @@ void mysqld_stmt_close(THD *thd, char *packet)
 void mysql_sql_stmt_close(THD *thd)
 {
   Prepared_statement* stmt;
-  LEX_CSTRING *name= &thd->lex->prepared_stmt_name;
+  LEX_STRING *name= &thd->lex->prepared_stmt_name;
   DBUG_PRINT("info", ("DEALLOCATE PREPARE: %.*s\n", (int) name->length,
                       name->str));
 
@@ -3813,7 +3793,7 @@ void Prepared_statement::cleanup_stmt()
 {
   DBUG_ENTER("Prepared_statement::cleanup_stmt");
   DBUG_PRINT("enter",("stmt: %p", this));
-  lex->restore_set_statement_var();
+  thd->restore_set_statement_var();
   cleanup_items(free_list);
   thd->cleanup_after_query();
   thd->rollback_item_tree_changes();
@@ -3822,7 +3802,7 @@ void Prepared_statement::cleanup_stmt()
 }
 
 
-bool Prepared_statement::set_name(LEX_CSTRING *name_arg)
+bool Prepared_statement::set_name(LEX_STRING *name_arg)
 {
   name.length= name_arg->length;
   name.str= (char*) memdup_root(mem_root, name_arg->str, name_arg->length);
@@ -4284,7 +4264,7 @@ Prepared_statement::execute_bulk_loop(String *expanded_query,
   packet_end= packet_end_arg;
   iterations= TRUE;
   start_param= true;
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   Item *free_list_state= thd->free_list;
 #endif
   thd->select_number= select_number_after_prepare;
@@ -4480,7 +4460,7 @@ Prepared_statement::reprepare()
   char saved_cur_db_name_buf[SAFE_NAME_LEN+1];
   LEX_STRING saved_cur_db_name=
     { saved_cur_db_name_buf, sizeof(saved_cur_db_name_buf) };
-  LEX_CSTRING stmt_db_name= { db, db_length };
+  LEX_STRING stmt_db_name= { db, db_length };
   bool cur_db_changed;
   bool error;
 
@@ -4503,13 +4483,13 @@ Prepared_statement::reprepare()
   thd->variables.sql_mode= save_sql_mode;
 
   if (cur_db_changed)
-    mysql_change_db(thd, (LEX_CSTRING*) &saved_cur_db_name, TRUE);
+    mysql_change_db(thd, &saved_cur_db_name, TRUE);
 
   if (! error)
   {
     swap_prepared_statement(&copy);
     swap_parameter_array(param_array, copy.param_array, param_count);
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
     is_reprepared= TRUE;
 #endif
     /*
@@ -4601,7 +4581,7 @@ Prepared_statement::swap_prepared_statement(Prepared_statement *copy)
   /* Don't swap flags: the copy has IS_SQL_PREPARE always set. */
   /* swap_variables(uint, flags, copy->flags); */
   /* Swap names, the old name is allocated in the wrong memory root */
-  swap_variables(LEX_CSTRING, name, copy->name);
+  swap_variables(LEX_STRING, name, copy->name);
   /* Ditto */
   swap_variables(char *, db, copy->db);
   swap_variables(size_t, db_length, copy->db_length);
@@ -4646,7 +4626,7 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor)
     { saved_cur_db_name_buf, sizeof(saved_cur_db_name_buf) };
   bool cur_db_changed;
 
-  LEX_CSTRING stmt_db_name= { db, db_length };
+  LEX_STRING stmt_db_name= { db, db_length };
 
   status_var_increment(thd->status_var.com_stmt_execute);
 
@@ -4774,7 +4754,7 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor)
   */
 
   if (cur_db_changed)
-    mysql_change_db(thd, (LEX_CSTRING*) &saved_cur_db_name, TRUE);
+    mysql_change_db(thd, &saved_cur_db_name, TRUE);
 
   /* Assert that if an error, no cursor is open */
   DBUG_ASSERT(! (error && cursor));
@@ -4849,8 +4829,8 @@ bool Prepared_statement::execute_immediate(const char *query, uint query_len)
 {
   DBUG_ENTER("Prepared_statement::execute_immediate");
   String expanded_query;
-  static LEX_CSTRING execute_immediate_stmt_name=
-    {STRING_WITH_LEN("(immediate)") };
+  static LEX_STRING execute_immediate_stmt_name=
+    {(char*) STRING_WITH_LEN("(immediate)") };
 
   set_sql_prepare();
   name= execute_immediate_stmt_name;      // for DBUG_PRINT etc

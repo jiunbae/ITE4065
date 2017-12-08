@@ -21,7 +21,7 @@
 /* For use of 'PRIu64': */
 #define __STDC_FORMAT_MACROS
 
-#include <my_global.h>
+#include <my_config.h>
 /* This C++ file's header file */
 #include "./rdb_datadic.h"
 
@@ -61,7 +61,7 @@ void get_mem_comparable_space(const CHARSET_INFO *cs,
 inline bool field_check_field_name_match(Field *field, const char *name)
 {
   return (0 == my_strcasecmp(system_charset_info,
-                             field->field_name.str,
+                             field->field_name,
                              name));
 }
 
@@ -173,7 +173,7 @@ void Rdb_key_def::setup(const TABLE *const tbl,
       key_info = &tbl->key_info[m_keyno];
       if (!hidden_pk_exists)
         pk_info = &tbl->key_info[tbl->s->primary_key];
-      m_name = std::string(key_info->name.str);
+      m_name = std::string(key_info->name);
     } else {
       m_name = HIDDEN_PK_NAME;
     }
@@ -3590,16 +3590,16 @@ bool Rdb_validate_tbls::check_frm_file(const std::string &fullpath,
     the connection handle as we don't have one here.
   */
   char eng_type_buf[NAME_CHAR_LEN+1];
-  LEX_CSTRING eng_type_str = {eng_type_buf, 0}; 
-  bool is_sequence;
-  enum Table_type type = dd_frm_type(nullptr, fullfilename.c_ptr(), &eng_type_str, &is_sequence);
-  if (type == TABLE_TYPE_UNKNOWN) {
+  LEX_STRING eng_type_str = {eng_type_buf, 0}; 
+  //enum legacy_db_type eng_type;
+  frm_type_enum type = dd_frm_type(nullptr, fullfilename.c_ptr(), &eng_type_str);
+  if (type == FRMTYPE_ERROR) {
     sql_print_warning("RocksDB: Failed to open/read .from file: %s",
                       fullfilename.ptr());
     return false;
   }
 
-  if (type == TABLE_TYPE_NORMAL) {
+  if (type == FRMTYPE_TABLE) {
     /* For a RocksDB table do we have a reference in the data dictionary? */
     if (!strncmp(eng_type_str.str, "ROCKSDB", eng_type_str.length)) {
       /*

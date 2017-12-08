@@ -30,6 +30,7 @@ EOF
 done
 
 # These engines need an extra check to see if thy are compiled
+# Note, including innodb will also test xtradb
 ENGINES2="innodb"
 for ENGINE in $ENGINES2 ; do
   cat > general-$ENGINE.test <<EOF

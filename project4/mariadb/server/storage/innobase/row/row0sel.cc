@@ -106,10 +106,10 @@ row_sel_sec_rec_is_for_blob(
 	ulint	len;
 	byte	buf[REC_VERSION_56_MAX_INDEX_COL_LEN];
 
-	/* This function should never be invoked on tables in
-	ROW_FORMAT=REDUNDANT or ROW_FORMAT=COMPACT, because they
-	should always contain enough prefix in the clustered index record. */
-	ut_ad(dict_table_has_atomic_blobs(table));
+	/* This function should never be invoked on an Antelope format
+	table, because they should always contain enough prefix in the
+	clustered index record. */
+	ut_ad(dict_table_get_format(table) >= UNIV_FORMAT_B);
 	ut_a(clust_len >= BTR_EXTERN_FIELD_REF_SIZE);
 	ut_ad(prefix_len >= sec_len);
 	ut_ad(prefix_len > 0);
@@ -242,7 +242,7 @@ row_sel_sec_rec_is_for_clust_rec(
 			clust_field = static_cast<byte*>(vfield->data);
 		} else {
 			clust_pos = dict_col_get_clust_pos(col, clust_index);
-			ut_ad(!rec_offs_nth_default(clust_offs, clust_pos));
+
 			clust_field = rec_get_nth_field(
 				clust_rec, clust_offs, clust_pos, &clust_len);
 		}
@@ -517,6 +517,7 @@ row_sel_fetch_columns(
 					rec, offsets,
 					dict_table_page_size(index->table),
 					field_no, &len, heap);
+				//field_no, &len, heap, NULL);
 
 				/* data == NULL means that the
 				externally stored field was not
@@ -533,8 +534,9 @@ row_sel_fetch_columns(
 
 				needs_copy = TRUE;
 			} else {
-				data = rec_get_nth_cfield(rec, index, offsets,
-							  field_no, &len);
+				data = rec_get_nth_field(rec, offsets,
+							 field_no, &len);
+
 				needs_copy = column->copy_val;
 			}
 
@@ -1492,15 +1494,6 @@ row_sel_try_search_shortcut(
 		return(SEL_RETRY);
 	}
 
-	if (rec_is_default_row(rec, index)) {
-		/* Skip the 'default row' pseudo-record. */
-		if (!btr_pcur_move_to_next_user_rec(&plan->pcur, mtr)) {
-			return(SEL_RETRY);
-		}
-
-		rec = btr_pcur_get_rec(&plan->pcur);
-	}
-
 	ut_ad(plan->mode == PAGE_CUR_GE);
 
 	/* As the cursor is now placed on a user record after a search with
@@ -1824,12 +1817,6 @@ skip_lock:
 
 		cost_counter++;
 
-		goto next_rec;
-	}
-
-	if (rec_is_default_row(rec, index)) {
-		/* Skip the 'default row' pseudo-record. */
-		cost_counter++;
 		goto next_rec;
 	}
 
@@ -3037,6 +3024,7 @@ row_sel_store_mysql_field_func(
 			rec, offsets,
 			dict_table_page_size(prebuilt->table),
 			field_no, &len, heap);
+		//field_no, &len, heap, NULL);
 
 		if (UNIV_UNLIKELY(!data)) {
 			/* The externally stored field was not written
@@ -3063,19 +3051,9 @@ row_sel_store_mysql_field_func(
 			mem_heap_free(heap);
 		}
 	} else {
-		/* The field is stored in the index record, or
-		in the 'default row' for instant ADD COLUMN. */
+		/* Field is stored in the row. */
 
-		if (rec_offs_nth_default(offsets, field_no)) {
-			ut_ad(dict_index_is_clust(index));
-			ut_ad(index->is_instant());
-			const dict_index_t* clust_index
-				= dict_table_get_first_index(prebuilt->table);
-			ut_ad(index == clust_index);
-			data = clust_index->instant_field_value(field_no,&len);
-		} else {
-			data = rec_get_nth_field(rec, offsets, field_no, &len);
-		}
+		data = rec_get_nth_field(rec, offsets, field_no, &len);
 
 		if (len == UNIV_SQL_NULL) {
 			/* MySQL assumes that the field for an SQL
@@ -3609,12 +3587,7 @@ sel_restore_position_for_mysql(
 	case BTR_PCUR_ON:
 		if (!success && moves_up) {
 next:
-			if (btr_pcur_move_to_next(pcur, mtr)
-			    && rec_is_default_row(btr_pcur_get_rec(pcur),
-						  pcur->btr_cur.index)) {
-				btr_pcur_move_to_next(pcur, mtr);
-			}
-
+			btr_pcur_move_to_next(pcur, mtr);
 			return(TRUE);
 		}
 		return(!success);
@@ -3625,9 +3598,7 @@ next:
 		/* positioned to record after pcur->old_rec. */
 		pcur->pos_state = BTR_PCUR_IS_POSITIONED;
 prev:
-		if (btr_pcur_is_on_user_rec(pcur) && !moves_up
-		    && !rec_is_default_row(btr_pcur_get_rec(pcur),
-					   pcur->btr_cur.index)) {
+		if (btr_pcur_is_on_user_rec(pcur) && !moves_up) {
 			btr_pcur_move_to_prev(pcur, mtr);
 		}
 		return(TRUE);
@@ -3907,15 +3878,6 @@ row_sel_try_search_shortcut_for_mysql(
 		return(SEL_RETRY);
 	}
 
-	if (rec_is_default_row(rec, index)) {
-		/* Skip the 'default row' pseudo-record. */
-		if (!btr_pcur_move_to_next_user_rec(pcur, mtr)) {
-			return(SEL_RETRY);
-		}
-
-		rec = btr_pcur_get_rec(pcur);
-	}
-
 	/* As the cursor is now placed on a user record after a search with
 	the mode PAGE_CUR_GE, the up_match field in the cursor tells how many
 	fields in the user record matched to the search tuple */
@@ -4058,9 +4020,6 @@ row_sel_fill_vrow(
 	rec_offs_init(offsets_);
 
 	ut_ad(!(*vrow));
-	ut_ad(heap);
-	ut_ad(!dict_index_is_clust(index));
-	ut_ad(!index->is_instant());
 	ut_ad(page_rec_is_leaf(rec));
 
 	offsets = rec_get_offsets(rec, index, offsets, true,
@@ -4074,18 +4033,18 @@ row_sel_fill_vrow(
 
 	for (ulint i = 0; i < dict_index_get_n_fields(index); i++) {
 		const dict_field_t*     field;
-		const dict_col_t*       col;
+                const dict_col_t*       col;
 
 		field = dict_index_get_nth_field(index, i);
 		col = dict_field_get_col(field);
 
 		if (dict_col_is_virtual(col)) {
 			const byte*     data;
-			ulint           len;
+		        ulint           len;
 
 			data = rec_get_nth_field(rec, offsets, i, &len);
 
-			const dict_v_col_t*     vcol = reinterpret_cast<
+                        const dict_v_col_t*     vcol = reinterpret_cast<
 				const dict_v_col_t*>(col);
 
 			dfield_t* dfield = dtuple_get_nth_v_field(
@@ -4124,10 +4083,9 @@ row_search_mvcc(
 	ulint		direction)
 {
 	DBUG_ENTER("row_search_mvcc");
-	DBUG_ASSERT(prebuilt->index->table == prebuilt->table);
 
 	dict_index_t*	index		= prebuilt->index;
-	ibool		comp		= dict_table_is_comp(prebuilt->table);
+	ibool		comp		= dict_table_is_comp(index->table);
 	const dtuple_t*	search_tuple	= prebuilt->search_tuple;
 	btr_pcur_t*	pcur		= prebuilt->pcur;
 	trx_t*		trx		= prebuilt->trx;
@@ -4448,18 +4406,16 @@ row_search_mvcc(
 	thread that is currently serving the transaction. Because we
 	are that thread, we can read trx->state without holding any
 	mutex. */
-	ut_ad(prebuilt->sql_stat_start
-	      || trx->state == TRX_STATE_ACTIVE
-	      || (prebuilt->table->no_rollback()
-		  && trx->state == TRX_STATE_NOT_STARTED));
+	ut_ad(prebuilt->sql_stat_start || trx->state == TRX_STATE_ACTIVE);
 
 	ut_ad(!trx_is_started(trx) || trx->state == TRX_STATE_ACTIVE);
 
 	ut_ad(prebuilt->sql_stat_start
 	      || prebuilt->select_lock_type != LOCK_NONE
 	      || MVCC::is_view_active(trx->read_view)
-	      || prebuilt->table->no_rollback()
 	      || srv_read_only_mode);
+
+	trx_start_if_not_started(trx, false);
 
 	if (trx->isolation_level <= TRX_ISO_READ_COMMITTED
 	    && prebuilt->select_lock_type != LOCK_NONE
@@ -4493,15 +4449,11 @@ row_search_mvcc(
 
 	que_thr_move_to_run_state_for_mysql(thr, trx);
 
-	clust_index = dict_table_get_first_index(prebuilt->table);
+	clust_index = dict_table_get_first_index(index->table);
 
 	/* Do some start-of-statement preparations */
 
-	if (prebuilt->table->no_rollback()) {
-		/* NO_ROLLBACK tables do not support MVCC or locking. */
-		prebuilt->select_lock_type = LOCK_NONE;
-		prebuilt->sql_stat_start = FALSE;
-	} else if (!prebuilt->sql_stat_start) {
+	if (!prebuilt->sql_stat_start) {
 		/* No need to set an intention lock or assign a read view */
 
 		if (!MVCC::is_view_active(trx->read_view)
@@ -4518,7 +4470,6 @@ row_search_mvcc(
 	} else if (prebuilt->select_lock_type == LOCK_NONE) {
 		/* This is a consistent read */
 		/* Assign a read view for the query */
-		trx_start_if_not_started(trx, false);
 
 		if (!srv_read_only_mode) {
 			trx_assign_read_view(trx);
@@ -4526,9 +4477,8 @@ row_search_mvcc(
 
 		prebuilt->sql_stat_start = FALSE;
 	} else {
-		trx_start_if_not_started(trx, false);
 wait_table_again:
-		err = lock_table(0, prebuilt->table,
+		err = lock_table(0, index->table,
 				 prebuilt->select_lock_type == LOCK_S
 				 ? LOCK_IS : LOCK_IX, thr);
 
@@ -4744,24 +4694,12 @@ rec_loop:
 	corruption */
 
 	if (comp) {
-		if (rec_get_info_bits(rec, true) & REC_INFO_MIN_REC_FLAG) {
-			/* Skip the 'default row' pseudo-record. */
-			ut_ad(index->is_instant());
-			goto next_rec;
-		}
-
 		next_offs = rec_get_next_offs(rec, TRUE);
 		if (UNIV_UNLIKELY(next_offs < PAGE_NEW_SUPREMUM)) {
 
 			goto wrong_offs;
 		}
 	} else {
-		if (rec_get_info_bits(rec, false) & REC_INFO_MIN_REC_FLAG) {
-			/* Skip the 'default row' pseudo-record. */
-			ut_ad(index->is_instant());
-			goto next_rec;
-		}
-
 		next_offs = rec_get_next_offs(rec, FALSE);
 		if (UNIV_UNLIKELY(next_offs < PAGE_OLD_SUPREMUM)) {
 
@@ -5076,8 +5014,7 @@ no_gap_lock:
 		/* This is a non-locking consistent read: if necessary, fetch
 		a previous version of the record */
 
-		if (trx->isolation_level == TRX_ISO_READ_UNCOMMITTED
-		    || prebuilt->table->no_rollback()) {
+		if (trx->isolation_level == TRX_ISO_READ_UNCOMMITTED) {
 
 			/* Do nothing: we let a non-locking SELECT read the
 			latest version of the record */
@@ -6033,9 +5970,6 @@ row_search_get_max_rec(
 
 	btr_pcur_close(&pcur);
 
-	ut_ad(!rec
-	      || !(rec_get_info_bits(rec, dict_table_is_comp(index->table))
-		   & (REC_INFO_MIN_REC_FLAG | REC_INFO_DELETED_FLAG)));
 	return(rec);
 }
 

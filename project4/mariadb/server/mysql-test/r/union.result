@@ -88,7 +88,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 2	UNION	t2	ALL	NULL	NULL	NULL	NULL	4	100.00	Using filesort
 NULL	UNION RESULT	<union1,2>	ALL	NULL	NULL	NULL	NULL	NULL	NULL	Using filesort
 Warnings:
-Note	1003	(/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` limit 2) union all (/* select#2 */ select `test`.`t2`.`a` AS `a`,`test`.`t2`.`b` AS `b` from `test`.`t2` order by `test`.`t2`.`a` limit 1) order by `b` desc
+Note	1003	(select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` limit 2) union all (select `test`.`t2`.`a` AS `a`,`test`.`t2`.`b` AS `b` from `test`.`t2` order by `test`.`t2`.`a` limit 1) order by `b` desc
 select count(*) from (
 (select                      a,b from t1 limit 2)  union all (select a,b from t2 order by a)) q;
 count(*)
@@ -544,7 +544,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 2	UNION	t2	const	PRIMARY	PRIMARY	4	const	1	100.00	
 NULL	UNION RESULT	<union1,2>	ALL	NULL	NULL	NULL	NULL	NULL	NULL	
 Warnings:
-Note	1003	(/* select#1 */ select 1 AS `a`,1 AS `b` from `test`.`t1` where 1) union (/* select#2 */ select 1 AS `a`,10 AS `b` from `test`.`t2` where 1)
+Note	1003	(select 1 AS `a`,1 AS `b` from `test`.`t1` where 1) union (select 1 AS `a`,10 AS `b` from `test`.`t2` where 1)
 (select * from t1 where a=5) union (select * from t2 where a=1);
 a	b
 1	10
@@ -852,7 +852,7 @@ select * from t1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `1` int(2) NOT NULL DEFAULT 0
+  `1` bigint(20) NOT NULL DEFAULT 0
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 create table t1 select _latin1"test" union select _latin2"testt" ;
@@ -1449,28 +1449,6 @@ t2	CREATE TABLE `t2` (
   `f8` mediumtext CHARACTER SET utf8 DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1, t2;
-CREATE TABLE t1
-(
-c_varchar varchar(1) character set utf8 collate utf8_general_ci,
-c_tinytext tinytext,
-c_text text,
-c_mediumtext mediumtext,
-c_longtext longtext
-);
-CREATE TABLE t2 AS
-SELECT c_tinytext, c_text, c_mediumtext, c_longtext FROM t1
-UNION
-SELECT c_varchar, c_varchar, c_varchar, c_varchar FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `c_tinytext` text CHARACTER SET utf8 DEFAULT NULL,
-  `c_text` mediumtext CHARACTER SET utf8 DEFAULT NULL,
-  `c_mediumtext` longtext CHARACTER SET utf8 DEFAULT NULL,
-  `c_longtext` longtext CHARACTER SET utf8 DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-DROP TABLE t1;
 (select avg(1)) union (select avg(1)) union (select avg(1)) union
 (select avg(1)) union (select avg(1)) union (select avg(1)) union
 (select avg(1)) union (select avg(1)) union (select avg(1)) union
@@ -1608,7 +1586,7 @@ NULL	binary(0)	YES		NULL
 CREATE TABLE t5 SELECT NULL UNION SELECT NULL;
 DESC t5;
 Field	Type	Null	Key	Default	Extra
-NULL	null	YES		NULL	
+NULL	binary(0)	YES		NULL	
 CREATE TABLE t6 
 SELECT * FROM (SELECT * FROM (SELECT NULL)a) b UNION SELECT a FROM t1;
 DESC t6;
@@ -1638,7 +1616,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 2	UNION	t1	system	NULL	NULL	NULL	NULL	0	0.00	const row not found
 NULL	UNION RESULT	<union1,2>	ALL	NULL	NULL	NULL	NULL	NULL	NULL	Using filesort
 Warnings:
-Note	1003	/* select#1 */ select NULL AS `a` from `test`.`t1` union /* select#2 */ select NULL AS `a` from `test`.`t1` order by `a`
+Note	1003	select NULL AS `a` from `test`.`t1` union select NULL AS `a` from `test`.`t1` order by `a`
 DROP TABLE t1;
 #
 # Bug#32858: Error: "Incorrect usage of UNION and INTO" does not take 
@@ -1692,7 +1670,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 2	UNION	t1	ALL	NULL	NULL	NULL	NULL	2	100.00	
 NULL	UNION RESULT	<union1,2>	ALL	NULL	NULL	NULL	NULL	NULL	NULL	Using filesort
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` union /* select#2 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` order by `a` + 12
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` union select `test`.`t1`.`a` AS `a` from `test`.`t1` order by `a` + 12
 # Should not crash
 SELECT * FROM t1 UNION SELECT * FROM t1 ORDER BY a + 12;
 a
@@ -1707,7 +1685,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 2	UNION	t1	ALL	NULL	NULL	NULL	NULL	2	100.00	
 NULL	UNION RESULT	<union1,2>	ALL	NULL	NULL	NULL	NULL	NULL	NULL	Using filesort
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` union /* select#2 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` order by (match `a` against ('+abc' in boolean mode))
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` union select `test`.`t1`.`a` AS `a` from `test`.`t1` order by (match `a` against ('+abc' in boolean mode))
 # Should not crash
 SELECT * FROM t1 UNION SELECT * FROM t1
 ORDER BY MATCH(a) AGAINST ('+abc' IN BOOLEAN MODE);
@@ -1731,7 +1709,7 @@ NULL	UNION RESULT	<union1,2>	ALL	NULL	NULL	NULL	NULL	NULL	NULL	Using filesort
 3	DEPENDENT SUBQUERY	t2	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
 Warnings:
 Note	1276	Field or reference 'a' of SELECT #3 was resolved in SELECT #-1
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` union /* select#2 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` order by <expr_cache><`a`>((/* select#3 */ select `a` from `test`.`t2` where `test`.`t2`.`b` = 12))
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` union select `test`.`t1`.`a` AS `a` from `test`.`t1` order by <expr_cache><`a`>((select `a` from `test`.`t2` where `test`.`t2`.`b` = 12))
 # Should not crash
 SELECT * FROM t1 UNION SELECT * FROM t1
 ORDER BY (SELECT a FROM t2 WHERE b = 12);
@@ -2196,6 +2174,7 @@ WHERE t1_2.b NOT IN ( SELECT 4 UNION ALL SELECT 5 );
 a	b	a	b
 1	1	1	1
 DROP TABLE t1;
+#
 # Bug mdev-12788: UNION ALL + impossible having for derived
 #                 with IN subquery in WHERE
 #
@@ -2223,242 +2202,5 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 2	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Impossible HAVING noticed after reading const tables
 Warnings:
-Note	1003	/* select#1 */ select 1 AS `1`,2 AS `2` union all /* select#2 */ select 1 AS `i`,count(0) AS `COUNT(*)` from `test`.`t2` where 1 group by 1 having 0
+Note	1003	select 1 AS `1`,2 AS `2` union all select 1 AS `i`,count(0) AS `COUNT(*)` from `test`.`t2` where 1 group by 1 having 0
 DROP TABLE t1,t2;
-#
-# Start of 10.3 tests
-#
-#
-# MDEV-12619 UNION creates excessive integer column types for integer literals
-#
-CREATE TABLE t1 AS SELECT 1;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `1` int(1) NOT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-CREATE OR REPLACE TABLE t1 AS SELECT 1 UNION SELECT 1;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `1` int(1) NOT NULL DEFAULT 0
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-CREATE OR REPLACE TABLE t1 AS SELECT * FROM (SELECT 1 UNION SELECT 1) AS t0;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `1` int(1) NOT NULL DEFAULT 0
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-#
-# MDEV-9495 Wrong field type for a UNION of a signed and an unsigned INT expression
-#
-CREATE TABLE t1 (a INT, b INT UNSIGNED);
-INSERT INTO t1 VALUES (0x7FFFFFFF,0xFFFFFFFF);
-CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT b FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `a` decimal(10,0) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-SELECT * FROM t2 ORDER BY a;
-a
-2147483647
-4294967295
-DROP TABLE t2;
-CREATE TABLE t2 AS SELECT COALESCE(a,b), COALESCE(b,a) FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `COALESCE(a,b)` decimal(10,0) DEFAULT NULL,
-  `COALESCE(b,a)` decimal(10,0) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-SELECT * FROM t2;
-COALESCE(a,b)	COALESCE(b,a)
-2147483647	4294967295
-DROP TABLE t2;
-DROP TABLE t1;
-#
-# MDEV-9497 UNION and COALESCE produce different field types for DECIMAL+INT
-#
-CREATE TABLE t1 AS SELECT COALESCE(10.1,CAST(10 AS UNSIGNED)) AS a;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `a` decimal(3,1) NOT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-CREATE OR REPLACE TABLE t1 AS SELECT 10.1 AS a UNION SELECT CAST(10 AS UNSIGNED);
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `a` decimal(3,1) NOT NULL DEFAULT 0.0
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-#
-# MDEV-12594 UNION between fixed length double columns does not always preserve scale
-#
-CREATE TABLE t1 (a FLOAT(20,4), b FLOAT(20,3), c FLOAT(20,4));
-INSERT INTO t1 VALUES (1111,2222,3333);
-CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT a FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `a` float(20,4) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-CREATE OR REPLACE TABLE t2 SELECT a FROM t1 UNION SELECT c FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `a` float(20,4) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-CREATE OR REPLACE TABLE t2 SELECT b FROM t1 UNION SELECT b FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `b` float(20,3) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-CREATE OR REPLACE TABLE t2 SELECT c FROM t1 UNION SELECT c FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `c` float(20,4) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-CREATE OR REPLACE TABLE t2 SELECT c FROM t1 UNION SELECT a FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `c` float(20,4) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-CREATE OR REPLACE TABLE t2 AS SELECT a FROM t1 UNION SELECT b FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `a` float(21,4) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-CREATE OR REPLACE TABLE t2 AS SELECT b FROM t1 UNION SELECT a FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `b` float(21,4) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-DROP TABLE t1;
-# Corner case
-CREATE TABLE t1 (a FLOAT(255,4), b FLOAT(255,3));
-INSERT INTO t1 VALUES (1111,2222);
-CREATE OR REPLACE TABLE t2 AS SELECT b FROM t1 UNION SELECT a FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `b` float(255,4) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-DROP TABLE t1;
-#
-# MDEV-12595 UNION converts INT to BIGINT
-#
-CREATE TABLE t1 AS SELECT
-1,
--1,
-COALESCE(1,1),
-COALESCE(-1,-1),
-COALESCE(1,-1),
-COALESCE(-1,1);
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `1` int(1) NOT NULL,
-  `-1` int(2) NOT NULL,
-  `COALESCE(1,1)` int(1) NOT NULL,
-  `COALESCE(-1,-1)` int(2) NOT NULL,
-  `COALESCE(1,-1)` int(2) NOT NULL,
-  `COALESCE(-1,1)` int(2) NOT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-CREATE TABLE t1 AS SELECT 1 AS c1,1 AS c2,-1 AS c3,-1 AS c4 UNION SELECT 1,-1,1,-1;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `c1` int(1) NOT NULL DEFAULT 0,
-  `c2` int(2) NOT NULL DEFAULT 0,
-  `c3` int(2) NOT NULL DEFAULT 0,
-  `c4` int(2) NOT NULL DEFAULT 0
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-#
-# MDEV-12599 UNION is not symmetric when mixing INT and CHAR
-#
-CREATE OR REPLACE TABLE t1 AS SELECT 1 AS c1, 'a' AS c2 UNION SELECT 'a', 1;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `c1` varchar(1) NOT NULL DEFAULT '',
-  `c2` varchar(1) NOT NULL DEFAULT ''
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-CREATE OR REPLACE TABLE t1 AS SELECT 11112222 AS c1, 'a' AS c2 UNION SELECT 'a', 11112222;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `c1` varchar(8) NOT NULL DEFAULT '',
-  `c2` varchar(8) NOT NULL DEFAULT ''
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-CREATE OR REPLACE TABLE t1 AS SELECT 111122223333 AS c1, 'a' AS c2 UNION SELECT 'a', 111122223333;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `c1` varchar(12) NOT NULL DEFAULT '',
-  `c2` varchar(12) NOT NULL DEFAULT ''
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-CREATE OR REPLACE TABLE t1 AS SELECT 1111222233334444 AS c1, 'a' AS c2 UNION SELECT 'a', 1111222233334444;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `c1` varchar(16) NOT NULL DEFAULT '',
-  `c2` varchar(16) NOT NULL DEFAULT ''
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-CREATE TABLE t1 (a INT(3), b VARCHAR(1));
-CREATE TABLE t2 AS SELECT a,b FROM t1 UNION SELECT b,a FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `a` varchar(11) DEFAULT NULL,
-  `b` varchar(11) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-DROP TABLE t1;
-CREATE TABLE t1 (a BIGINT(3), b VARCHAR(1));
-CREATE TABLE t2 AS SELECT a,b FROM t1 UNION SELECT b,a FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `a` varchar(20) DEFAULT NULL,
-  `b` varchar(20) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-DROP TABLE t1;
-CREATE TABLE t1 (a BIGINT(12), b VARCHAR(1));
-CREATE TABLE t2 AS SELECT a,b FROM t1 UNION SELECT b,a FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `a` varchar(20) DEFAULT NULL,
-  `b` varchar(20) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-DROP TABLE t1;
-#
-# End of 10.3 tests
-#

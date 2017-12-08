@@ -59,7 +59,7 @@ static bool tables_have_same_keys(
     for (uint32_t i=0; i < table->s->keys; i++) {
         KEY* curr_orig_key = &table->key_info[i];
         KEY* curr_altered_key = &altered_table->key_info[i];
-        if (strcmp(curr_orig_key->name.str, curr_altered_key->name.str)) {
+        if (strcmp(curr_orig_key->name, curr_altered_key->name)) {
             if (print_error) {
                 sql_print_error(
                     "key %d has different name, %s %s",
@@ -697,8 +697,8 @@ static int find_changed_columns(
             sql_print_error(
                 "Two fields that were supposedly the same are not: %s in "
                 "original, %s in new",
-                curr_field_in_orig->field_name.str,
-                curr_field_in_new->field_name.str);
+                curr_field_in_orig->field_name,
+                curr_field_in_new->field_name);
             retval = 1;
             goto cleanup;
         }

@@ -1439,13 +1439,6 @@ IndexPurge::open() UNIV_NOTHROW
 
 	btr_pcur_open_at_index_side(
 		true, m_index, BTR_MODIFY_LEAF, &m_pcur, true, 0, &m_mtr);
-	btr_pcur_move_to_next_user_rec(&m_pcur, &m_mtr);
-	if (rec_is_default_row(btr_pcur_get_rec(&m_pcur), m_index)) {
-		ut_ad(btr_pcur_is_on_user_rec(&m_pcur));
-		/* Skip the 'default row' pseudo-record. */
-	} else {
-		btr_pcur_move_to_prev_on_page(&m_pcur);
-	}
 }
 
 /**
@@ -1544,16 +1537,18 @@ PageConverter::PageConverter(
 	:
 	AbstractCallback(trx),
 	m_cfg(cfg),
-	m_index(cfg->m_indexes),
-	m_current_lsn(log_get_lsn()),
 	m_page_zip_ptr(0),
-	m_rec_iter(),
-	m_offsets_(), m_offsets(m_offsets_),
-	m_heap(0),
-	m_cluster_index(dict_table_get_first_index(cfg->m_table)) UNIV_NOTHROW
+	m_heap(0) UNIV_NOTHROW
 {
+	m_index = m_cfg->m_indexes;
+
+	m_current_lsn = log_get_lsn();
 	ut_a(m_current_lsn > 0);
+
+	m_offsets = m_offsets_;
 	rec_offs_init(m_offsets_);
+
+	m_cluster_index = dict_table_get_first_index(m_cfg->m_table);
 }
 
 /** Adjust the BLOB reference for a single column that is externally stored
@@ -1820,13 +1815,6 @@ PageConverter::update_index_page(
 	if (dict_index_is_clust(m_index->m_srv_index)) {
 		if (page_is_root(page)) {
 			/* Preserve the PAGE_ROOT_AUTO_INC. */
-			if (m_index->m_srv_index->table->supports_instant()
-			    && btr_cur_instant_root_init(
-				    const_cast<dict_index_t*>(
-					    m_index->m_srv_index),
-				    page)) {
-				return(DB_CORRUPTION);
-			}
 		} else {
 			/* Clear PAGE_MAX_TRX_ID so that it can be
 			used for other purposes in the future. IMPORT
@@ -1919,8 +1907,6 @@ PageConverter::update_page(
 			return(DB_CORRUPTION);
 		}
 
-		/* fall through */
-	case FIL_PAGE_TYPE_INSTANT:
 		/* This is on every page in the tablespace. */
 		mach_write_to_4(
 			get_frame(block)
@@ -2022,7 +2008,7 @@ PageConverter::operator() (
 		we can work on them */
 
 		if ((err = update_page(block, page_type)) != DB_SUCCESS) {
-			break;
+			return(err);
 		}
 
 		/* Note: For compressed pages this function will write to the
@@ -2061,15 +2047,9 @@ PageConverter::operator() (
 			<< " at offset " << offset
 			<< " looks corrupted in file " << m_filepath;
 
-		err = DB_CORRUPTION;
+		return(DB_CORRUPTION);
 	}
 
-	/* If we already had and old page with matching number
-	in the buffer pool, evict it now, because
-	we no longer evict the pages on DISCARD TABLESPACE. */
-	buf_page_get_gen(block->page.id, get_page_size(),
-			 RW_NO_LATCH, NULL, BUF_EVICT_IF_IN_POOL,
-			 __FILE__, __LINE__, NULL, NULL);
 	return(err);
 }
 
@@ -2329,14 +2309,7 @@ row_import_set_sys_max_row_id(
 	rec = btr_pcur_get_rec(&pcur);
 
 	/* Check for empty table. */
-	if (page_rec_is_infimum(rec)) {
-		/* The table is empty. */
-		err = DB_SUCCESS;
-	} else if (rec_is_default_row(rec, index)) {
-		/* The clustered index contains the 'default row',
-		that is, the table is empty. */
-		err = DB_SUCCESS;
-	} else {
+	if (!page_rec_is_infimum(rec)) {
 		ulint		len;
 		const byte*	field;
 		mem_heap_t*	heap = NULL;
@@ -2363,6 +2336,9 @@ row_import_set_sys_max_row_id(
 		if (heap != NULL) {
 			mem_heap_free(heap);
 		}
+	} else {
+		/* The table is empty. */
+		err = DB_SUCCESS;
 	}
 
 	btr_pcur_close(&pcur);
@@ -3400,8 +3376,9 @@ row_import_for_mysql(
 	mutex_enter(&trx->undo_mutex);
 
 	/* TODO: Do not write any undo log for the IMPORT cleanup. */
-	err = trx_undo_assign_undo(trx, trx->rsegs.m_redo.rseg,
-				   &trx->rsegs.m_redo.undo);
+	trx_undo_t**	pundo = &trx->rsegs.m_redo.update_undo;
+	err = trx_undo_assign_undo(trx, trx->rsegs.m_redo.rseg, pundo,
+				   TRX_UNDO_UPDATE);
 
 	mutex_exit(&trx->undo_mutex);
 
@@ -3412,7 +3389,7 @@ row_import_for_mysql(
 
 		return(row_import_cleanup(prebuilt, trx, err));
 
-	} else if (trx->rsegs.m_redo.undo == 0) {
+	} else if (trx->rsegs.m_redo.update_undo == 0) {
 
 		err = DB_TOO_MANY_CONCURRENT_TRXS;
 		return(row_import_cleanup(prebuilt, trx, err));
@@ -3672,7 +3649,8 @@ row_import_for_mysql(
 	The only dirty pages generated should be from the pessimistic purge
 	of delete marked records that couldn't be purged in Phase I. */
 
-	buf_LRU_flush_or_remove_pages(prebuilt->table->space, trx);
+	buf_LRU_flush_or_remove_pages(
+		prebuilt->table->space, BUF_REMOVE_FLUSH_WRITE,	trx);
 
 	if (trx_is_interrupted(trx)) {
 		ib::info() << "Phase III - Flush interrupted";

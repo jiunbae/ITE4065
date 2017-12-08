@@ -112,7 +112,7 @@ public:
   virtual sys_var_pluginvar *cast_pluginvar() { return 0; }
 
   bool check(THD *thd, set_var *var);
-  uchar *value_ptr(THD *thd, enum_var_type type, const LEX_CSTRING *base);
+  uchar *value_ptr(THD *thd, enum_var_type type, const LEX_STRING *base);
 
   /**
      Update the system variable with the default value from either
@@ -123,9 +123,9 @@ public:
   bool update(THD *thd, set_var *var);
 
   String *val_str_nolock(String *str, THD *thd, const uchar *value);
-  longlong val_int(bool *is_null, THD *thd, enum_var_type type, const LEX_CSTRING *base);
-  String *val_str(String *str, THD *thd, enum_var_type type, const LEX_CSTRING *base);
-  double val_real(bool *is_null, THD *thd, enum_var_type type, const LEX_CSTRING *base);
+  longlong val_int(bool *is_null, THD *thd, enum_var_type type, const LEX_STRING *base);
+  String *val_str(String *str, THD *thd, enum_var_type type, const LEX_STRING *base);
+  double val_real(bool *is_null, THD *thd, enum_var_type type, const LEX_STRING *base);
 
   SHOW_TYPE show_type() { return show_val_type; }
   int scope() const { return flags & SCOPE_MASK; }
@@ -158,7 +158,6 @@ public:
     case GET_BOOL:
     case GET_SET:
     case GET_FLAGSET:
-    case GET_BIT:
       return type != STRING_RESULT && type != INT_RESULT;
     case GET_DOUBLE:
       return type != INT_RESULT && type != REAL_RESULT && type != DECIMAL_RESULT;
@@ -230,8 +229,8 @@ protected:
     It must be of show_val_type type (my_bool for SHOW_MY_BOOL,
     int for SHOW_INT, longlong for SHOW_LONGLONG, etc).
   */
-  virtual uchar *session_value_ptr(THD *thd, const LEX_CSTRING *base);
-  virtual uchar *global_value_ptr(THD *thd, const LEX_CSTRING *base);
+  virtual uchar *session_value_ptr(THD *thd, const LEX_STRING *base);
+  virtual uchar *global_value_ptr(THD *thd, const LEX_STRING *base);
 
   /**
     A pointer to a storage area of the variable, to the raw data.
@@ -287,15 +286,14 @@ public:
     longlong longlong_value;            ///< for signed integer
     double double_value;                ///< for Sys_var_double
     plugin_ref plugin;                  ///< for Sys_var_plugin
-    plugin_ref *plugins;                ///< for Sys_var_pluginlist
     Time_zone *time_zone;               ///< for Sys_var_tz
     LEX_STRING string_value;            ///< for Sys_var_charptr and others
     const void *ptr;                    ///< for Sys_var_struct
   } save_result;
-  LEX_CSTRING base; /**< for structured variables, like keycache_name.variable_name */
+  LEX_STRING base; /**< for structured variables, like keycache_name.variable_name */
 
   set_var(THD *thd, enum_var_type type_arg, sys_var *var_arg,
-          const LEX_CSTRING *base_name_arg, Item *value_arg);
+          const LEX_STRING *base_name_arg, Item *value_arg);
   virtual bool is_system() { return 1; }
   int check(THD *thd);
   int update(THD *thd);
@@ -332,10 +330,10 @@ public:
 
 class set_var_role: public set_var_base
 {
-  LEX_CSTRING role;
+  LEX_STRING role;
   ulonglong access;
 public:
-  set_var_role(LEX_CSTRING role_arg) : role(role_arg) {}
+  set_var_role(LEX_STRING role_arg) : role(role_arg) {}
   int check(THD *thd);
   int update(THD *thd);
 };
@@ -345,9 +343,9 @@ public:
 class set_var_default_role: public set_var_base
 {
   LEX_USER *user, *real_user;
-  LEX_CSTRING role;
+  LEX_STRING role;
 public:
-  set_var_default_role(LEX_USER *user_arg, LEX_CSTRING role_arg) :
+  set_var_default_role(LEX_USER *user_arg, LEX_STRING role_arg) :
     user(user_arg), role(role_arg) {}
   int check(THD *thd);
   int update(THD *thd);
@@ -393,7 +391,6 @@ SHOW_VAR* enumerate_sys_vars(THD *thd, bool sorted, enum enum_var_type type);
 int fill_sysvars(THD *thd, TABLE_LIST *tables, COND *cond);
 
 sys_var *find_sys_var(THD *thd, const char *str, size_t length=0);
-bool find_sys_var_null_base(THD *thd, struct sys_var_with_base *tmp);
 int sql_set_variables(THD *thd, List<set_var_base> *var_list, bool free);
 
 #define SYSVAR_AUTOSIZE(VAR,VAL)                        \
@@ -414,8 +411,7 @@ inline bool IS_SYSVAR_AUTOSIZE(void *ptr)
 bool fix_delay_key_write(sys_var *self, THD *thd, enum_var_type type);
 
 sql_mode_t expand_sql_mode(sql_mode_t sql_mode);
-bool sql_mode_string_representation(THD *thd, sql_mode_t sql_mode,
-                                    LEX_CSTRING *ls);
+bool sql_mode_string_representation(THD *thd, sql_mode_t sql_mode, LEX_STRING *ls);
 int default_regex_flags_pcre(const THD *thd);
 
 extern sys_var *Sys_autocommit_ptr;
@@ -426,12 +422,6 @@ int sys_var_init();
 uint sys_var_elements();
 int sys_var_add_options(DYNAMIC_ARRAY *long_options, int parse_flags);
 void sys_var_end(void);
-plugin_ref *resolve_engine_list(THD *thd, const char *str_arg, size_t str_arg_len,
-                                bool error_on_unknown_engine, bool temp_copy);
-void free_engine_list(plugin_ref *list);
-plugin_ref *copy_engine_list(plugin_ref *list);
-plugin_ref *temp_copy_engine_list(THD *thd, plugin_ref *list);
-char *pretty_print_engine_list(THD *thd, plugin_ref *list);
 
 #endif
 

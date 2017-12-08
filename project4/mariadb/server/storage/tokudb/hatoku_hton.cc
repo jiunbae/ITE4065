@@ -101,7 +101,7 @@ static int tokudb_discover3(
     THD* thd,
     const char* db,
     const char* name,
-    const char* path,
+    char* path,
     uchar** frmblob,
     size_t* frmlen);
 handlerton* tokudb_hton;
@@ -1208,7 +1208,7 @@ static int tokudb_discover3(
     THD* thd,
     const char* db,
     const char* name,
-    const char* path,
+    char* path,
     uchar** frmblob,
     size_t* frmlen) {
 

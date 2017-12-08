@@ -1163,6 +1163,11 @@ dict_sys_tables_type_valid(ulint type, bool not_redundant)
 		return(false);
 	}
 
+	/* ATOMIC_WRITES cannot be 3; it is the 10.3 NO_ROLLBACK flag. */
+	if (!(~type & DICT_TF_MASK_ATOMIC_WRITES)) {
+		return(false);
+	}
+
 	return(dict_tf_is_valid_not_redundant(type));
 }
 
@@ -1183,8 +1188,7 @@ dict_sys_tables_type_to_tf(ulint type, bool not_redundant)
 			 | DICT_TF_MASK_ATOMIC_BLOBS
 			 | DICT_TF_MASK_DATA_DIR
 			 | DICT_TF_MASK_PAGE_COMPRESSION
-			 | DICT_TF_MASK_PAGE_COMPRESSION_LEVEL
-			 | DICT_TF_MASK_NO_ROLLBACK);
+			 | DICT_TF_MASK_PAGE_COMPRESSION_LEVEL);
 
 	ut_ad(dict_tf_is_valid(flags));
 	return(flags);
@@ -1236,8 +1240,7 @@ dict_sys_tables_rec_read(
 
 	MariaDB 10.2.2 introduced the SHARED_SPACE flag from MySQL 5.7,
 	shifting the flags PAGE_COMPRESSION, PAGE_COMPRESSION_LEVEL,
-	ATOMIC_WRITES (repurposed to NO_ROLLBACK in 10.3.1) by one bit.
-	The SHARED_SPACE flag would always
+	ATOMIC_WRITES by one bit. The SHARED_SPACE flag would always
 	be written as 0 by MariaDB, because MariaDB does not support
 	CREATE TABLESPACE or CREATE TABLE...TABLESPACE for InnoDB.
 
@@ -1306,7 +1309,7 @@ dict_sys_tables_rec_read(
 
 	/* The low order bit of SYS_TABLES.TYPE is always set to 1. But in
 	dict_table_t::flags the low order bit is used to determine if the
-	ROW_FORMAT=REDUNDANT (0) or anything else (1).
+	row format is Redundant (0) or Compact (1) when the format is Antelope.
 	Read the 4 byte N_COLS field and look at the high order bit.  It
 	should be set for COMPACT and later.  It should not be set for
 	REDUNDANT. */
@@ -3005,11 +3008,10 @@ err_exit:
 
 	dict_load_virtual(table, heap);
 
-	dict_table_add_system_columns(table, heap);
-
 	if (cached) {
-		table->can_be_evicted = true;
-		table->add_to_cache();
+		dict_table_add_to_cache(table, TRUE, heap);
+	} else {
+		dict_table_add_system_columns(table, heap);
 	}
 
 	mem_heap_empty(heap);
@@ -3049,11 +3051,6 @@ err_exit:
 				table->corrupted = true;
 			}
 		}
-	}
-
-	if (err == DB_SUCCESS && cached && table->is_readable()
-	    && table->supports_instant()) {
-		err = btr_cur_instant_init(table);
 	}
 
 	/* Initialize table foreign_child value. Its value could be

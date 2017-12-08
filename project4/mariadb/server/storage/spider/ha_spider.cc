@@ -18,7 +18,6 @@
 #endif
 
 #define MYSQL_SERVER 1
-#include <my_global.h>
 #include "mysql_version.h"
 #if MYSQL_VERSION_ID < 50500
 #include "mysql_priv.h"
@@ -7796,8 +7795,7 @@ int ha_spider::cmp_ref(
     ) {
       if ((ret = (*field)->cmp_binary_offset((uint)ptr_diff)))
       {
-        DBUG_PRINT("info",("spider different at %s",
-                           (*field)->field_name.str));
+        DBUG_PRINT("info",("spider different at %s", (*field)->field_name));
         break;
       }
     }
@@ -9754,7 +9752,7 @@ void ha_spider::end_bulk_update(
 
 int ha_spider::bulk_update_row(
   const uchar *old_data,
-  const uchar *new_data,
+  uchar *new_data,
   uint *dup_key_found
 ) {
   DBUG_ENTER("ha_spider::bulk_update_row");
@@ -9765,7 +9763,7 @@ int ha_spider::bulk_update_row(
 
 int ha_spider::update_row(
   const uchar *old_data,
-  const uchar *new_data
+  uchar *new_data
 ) {
   int error_num;
   THD *thd = ha_thd();
@@ -9997,7 +9995,7 @@ int ha_spider::pre_direct_update_rows_init(
   KEY_MULTI_RANGE *ranges,
   uint range_count,
   bool sorted,
-  const uchar *new_data
+  uchar *new_data
 ) {
   int error_num;
   DBUG_ENTER("ha_spider::pre_direct_update_rows_init");

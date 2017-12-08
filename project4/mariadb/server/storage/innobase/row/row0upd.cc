@@ -594,11 +594,7 @@ row_upd_changes_field_size_or_external(
 		}
 
 		new_val = &(upd_field->new_val);
-		if (dfield_is_ext(new_val)) {
-			return(TRUE);
-		}
 		new_len = dfield_get_len(new_val);
-		ut_ad(new_len != UNIV_SQL_DEFAULT);
 
 		if (dfield_is_null(new_val) && !rec_offs_comp(offsets)) {
 			/* A bug fixed on Dec 31st, 2004: we looked at the
@@ -612,14 +608,11 @@ row_upd_changes_field_size_or_external(
 				0);
 		}
 
-		if (rec_offs_nth_default(offsets, upd_field->field_no)) {
-			/* This is an instantly added column that is
-			at the initial default value. */
-			return(TRUE);
-		}
+		old_len = rec_offs_nth_size(offsets, upd_field->field_no);
 
 		if (rec_offs_comp(offsets)
-		    && rec_offs_nth_sql_null(offsets, upd_field->field_no)) {
+		    && rec_offs_nth_sql_null(offsets,
+					     upd_field->field_no)) {
 			/* Note that in the compact table format, for a
 			variable length field, an SQL NULL will use zero
 			bytes in the offset array at the start of the physical
@@ -628,12 +621,9 @@ row_upd_changes_field_size_or_external(
 			if we update an SQL NULL varchar to an empty string! */
 
 			old_len = UNIV_SQL_NULL;
-		} else {
-			old_len = rec_offs_nth_size(offsets,
-						    upd_field->field_no);
 		}
 
-		if (old_len != new_len
+		if (dfield_is_ext(new_val) || old_len != new_len
 		    || rec_offs_nth_extern(offsets, upd_field->field_no)) {
 
 			return(TRUE);
@@ -707,20 +697,6 @@ row_upd_rec_in_place(
 	ut_ad(rec_offs_validate(rec, index, offsets));
 
 	if (rec_offs_comp(offsets)) {
-#ifdef UNIV_DEBUG
-		switch (rec_get_status(rec)) {
-		case REC_STATUS_ORDINARY:
-			break;
-		case REC_STATUS_COLUMNS_ADDED:
-			ut_ad(index->is_instant());
-			break;
-		case REC_STATUS_INFIMUM:
-		case REC_STATUS_SUPREMUM:
-		case REC_STATUS_NODE_PTR:
-			ut_ad(!"wrong record status in update");
-		}
-#endif /* UNIV_DEBUG */
-
 		rec_set_info_bits_new(rec, update->info_bits);
 	} else {
 		rec_set_info_bits_old(rec, update->info_bits);
@@ -1002,7 +978,6 @@ row_upd_build_sec_rec_difference_binary(
 	ut_ad(rec_offs_validate(rec, index, offsets));
 	ut_ad(rec_offs_n_fields(offsets) == dtuple_get_n_fields(entry));
 	ut_ad(!rec_offs_any_extern(offsets));
-	ut_ad(!rec_offs_any_default(offsets));
 
 	update = upd_create(dtuple_get_n_fields(entry), heap);
 
@@ -1101,7 +1076,8 @@ row_upd_build_difference_binary(
 	}
 
 	for (i = 0; i < n_fld; i++) {
-		data = rec_get_nth_cfield(rec, index, offsets, i, &len);
+
+		data = rec_get_nth_field(rec, offsets, i, &len);
 
 		dfield = dtuple_get_nth_field(entry, i);
 
@@ -1332,25 +1308,41 @@ row_upd_index_replace_new_col_val(
 	}
 }
 
-/** Apply an update vector to an index entry.
-@param[in,out]	entry	index entry to be updated; the clustered index record
-			must be covered by a lock or a page latch to prevent
-			deletion (rollback or purge)
-@param[in]	index	index of the entry
-@param[in]	update	update vector built for the entry
-@param[in,out]	heap	memory heap for copying off-page columns */
+/***********************************************************//**
+Replaces the new column values stored in the update vector to the index entry
+given. */
 void
 row_upd_index_replace_new_col_vals_index_pos(
-	dtuple_t*		entry,
-	const dict_index_t*	index,
-	const upd_t*		update,
-	mem_heap_t*		heap)
+/*=========================================*/
+	dtuple_t*	entry,	/*!< in/out: index entry where replaced;
+				the clustered index record must be
+				covered by a lock or a page latch to
+				prevent deletion (rollback or purge) */
+	dict_index_t*	index,	/*!< in: index; NOTE that this may also be a
+				non-clustered index */
+	const upd_t*	update,	/*!< in: an update vector built for the index so
+				that the field number in an upd_field is the
+				index position */
+	ibool		order_only,
+				/*!< in: if TRUE, limit the replacement to
+				ordering fields of index; note that this
+				does not work for non-clustered indexes. */
+	mem_heap_t*	heap)	/*!< in: memory heap for allocating and
+				copying the new values */
 {
+	ulint		i;
+	ulint		n_fields;
 	const page_size_t&	page_size = dict_table_page_size(index->table);
 
 	dtuple_set_info_bits(entry, update->info_bits);
 
-	for (unsigned i = index->n_fields; i--; ) {
+	if (order_only) {
+		n_fields = dict_index_get_n_unique(index);
+	} else {
+		n_fields = dict_index_get_n_fields(index);
+	}
+
+	for (i = 0; i < n_fields; i++) {
 		const dict_field_t*	field;
 		const dict_col_t*	col;
 		const upd_field_t*	uf;
@@ -1799,8 +1791,8 @@ row_upd_changes_ord_field_binary_func(
 			/* Get the new mbr. */
 			if (dfield_is_ext(new_field)) {
 				if (flag == ROW_BUILD_FOR_UNDO
-				    && dict_table_has_atomic_blobs(
-					    index->table)) {
+				    && dict_table_get_format(index->table)
+					>= UNIV_FORMAT_B) {
 					/* For undo, and the table is Barrcuda,
 					we need to skip the prefix data. */
 					flen = BTR_EXTERN_FIELD_REF_SIZE;
@@ -2053,19 +2045,16 @@ row_upd_copy_columns(
 /*=================*/
 	rec_t*		rec,	/*!< in: record in a clustered index */
 	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
-	const dict_index_t*	index, /*!< in: index of rec */
 	sym_node_t*	column)	/*!< in: first column in a column list, or
 				NULL */
 {
-	ut_ad(dict_index_is_clust(index));
-
-	const byte*	data;
+	byte*	data;
 	ulint	len;
 
 	while (column) {
-		data = rec_get_nth_cfield(
-			rec, index, offsets,
-			column->field_nos[SYM_CLUST_FIELD_NO], &len);
+		data = rec_get_nth_field(rec, offsets,
+					 column->field_nos[SYM_CLUST_FIELD_NO],
+					 &len);
 		eval_node_copy_and_alloc_val(column, data, len);
 
 		column = UT_LIST_GET_NEXT(col_var_list, column);
@@ -2210,10 +2199,10 @@ row_upd_store_row(
 	offsets = rec_get_offsets(rec, clust_index, offsets_, true,
 				  ULINT_UNDEFINED, &heap);
 
-	if (dict_table_has_atomic_blobs(node->table)) {
-		/* There is no prefix of externally stored columns in
-		the clustered index record. Build a cache of column
-		prefixes. */
+	if (dict_table_get_format(node->table) >= UNIV_FORMAT_B) {
+		/* In DYNAMIC or COMPRESSED format, there is no prefix
+		of externally stored columns in the clustered index
+		record. Build a cache of column prefixes. */
 		ext = &node->ext;
 	} else {
 		/* REDUNDANT and COMPACT formats store a local
@@ -2320,7 +2309,7 @@ row_upd_sec_index_entry(
 		mtr.set_named_space(index->space);
 		/* fall through */
 	case IBUF_SPACE_ID:
-		flags = index->table->no_rollback() ? BTR_NO_ROLLBACK : 0;
+		flags = 0;
 		break;
 	}
 
@@ -2599,7 +2588,6 @@ row_upd_clust_rec_by_insert_inherit_func(
 
 #ifdef UNIV_DEBUG
 		if (UNIV_LIKELY(rec != NULL)) {
-			ut_ad(!rec_offs_nth_default(offsets, i));
 			const byte* rec_data
 				= rec_get_nth_field(rec, offsets, i, &len);
 			ut_ad(len == dfield_get_len(dfield));
@@ -2634,7 +2622,8 @@ row_upd_clust_rec_by_insert_inherit_func(
 		data[BTR_EXTERN_LEN] &= ~BTR_EXTERN_OWNER_FLAG;
 		data[BTR_EXTERN_LEN] |= BTR_EXTERN_INHERITED_FLAG;
 		/* The BTR_EXTERN_INHERITED_FLAG only matters in
-		rollback of a fresh insert. Purge will always free
+		rollback of a fresh insert (insert_undo log).
+		Purge (operating on update_undo log) will always free
 		the extern fields of a delete-marked row. */
 
 		inherit = true;
@@ -2684,7 +2673,6 @@ row_upd_clust_rec_by_insert(
 
 	entry = row_build_index_entry_low(node->upd_row, node->upd_ext,
 					  index, heap, ROW_BUILD_FOR_INSERT);
-	if (index->is_instant()) entry->trim(*index);
 	ut_ad(dtuple_get_info_bits(entry) == 0);
 
 	row_upd_index_entry_sys_field(entry, index, DATA_TRX_ID, trx->id);
@@ -2914,9 +2902,18 @@ row_upd_clust_rec(
 	if (err == DB_SUCCESS) {
 success:
 		if (dict_index_is_online_ddl(index)) {
+			dtuple_t*	new_v_row = NULL;
+			dtuple_t*	old_v_row = NULL;
+
+			if (!(node->cmpl_info & UPD_NODE_NO_ORD_CHANGE)) {
+				new_v_row = node->upd_row;
+				old_v_row = node->update->old_vrow;
+			}
+
 			row_log_table_update(
 				btr_cur_get_rec(btr_cur),
-				index, offsets, rebuilt_old_pk);
+				index, offsets, rebuilt_old_pk, new_v_row,
+				old_v_row);
 		}
 	}
 
@@ -3039,7 +3036,6 @@ row_upd_clust_step(
 	ulint		offsets_[REC_OFFS_NORMAL_SIZE];
 	ulint*		offsets;
 	ibool		referenced;
-	ulint		flags;
 	ibool		foreign = FALSE;
 	trx_t*		trx = thr_get_trx(thr);
 
@@ -3061,16 +3057,14 @@ row_upd_clust_step(
 	mtr_start_trx(&mtr, thr_get_trx(thr));
 	mtr.set_named_space(index->space);
 
-	if (dict_table_is_temporary(node->table)) {
-		/* Disable locking, because temporary tables are
-		private to the connection (no concurrent access). */
-		flags = node->table->no_rollback()
-			? BTR_NO_ROLLBACK
-			: BTR_NO_LOCKING_FLAG;
-		/* Redo logging only matters for persistent tables. */
+	/* Disable REDO logging as lifetime of temp-tables is limited to
+	server or connection lifetime and so REDO information is not needed
+	on restart for recovery.
+	Disable locking as temp-tables are not shared across connection. */
+	const ulint flags = dict_table_is_temporary(index->table)
+		? BTR_NO_LOCKING_FLAG : 0;
+	if (flags) {
 		mtr.set_log_mode(MTR_LOG_NO_REDO);
-	} else {
-		flags = node->table->no_rollback() ? BTR_NO_ROLLBACK : 0;
 	}
 
 	/* If the restoration does not succeed, then the same
@@ -3148,10 +3142,9 @@ row_upd_clust_step(
 		}
 	}
 
-	ut_ad(index->table->no_rollback()
-	      || lock_trx_has_rec_x_lock(thr_get_trx(thr), index->table,
-					 btr_pcur_get_block(pcur),
-					 page_rec_get_heap_no(rec)));
+	ut_ad(lock_trx_has_rec_x_lock(thr_get_trx(thr), index->table,
+				      btr_pcur_get_block(pcur),
+				      page_rec_get_heap_no(rec)));
 
 	/* NOTE: the following function calls will also commit mtr */
 
@@ -3173,7 +3166,7 @@ row_upd_clust_step(
 	if (UNIV_UNLIKELY(!node->in_mysql_interface)) {
 		/* Copy the necessary columns from clust_rec and calculate the
 		new values to set */
-		row_upd_copy_columns(rec, offsets, index,
+		row_upd_copy_columns(rec, offsets,
 				     UT_LIST_GET_FIRST(node->columns));
 		row_upd_eval_new_vals(node->update);
 	}
@@ -3350,6 +3343,8 @@ row_upd_step(
 	ut_ad(thr);
 
 	trx = thr_get_trx(thr);
+
+	trx_start_if_not_started_xa(trx, true);
 
 	node = static_cast<upd_node_t*>(thr->run_node);
 

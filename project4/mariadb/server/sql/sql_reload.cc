@@ -14,7 +14,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_reload.h"
 #include "sql_priv.h"
 #include "mysqld.h"      // select_errors
@@ -166,7 +166,7 @@ bool reload_acl_and_cache(THD *thd, unsigned long long options,
   if (options & REFRESH_RELAY_LOG)
   {
 #ifdef HAVE_REPLICATION
-    LEX_CSTRING connection_name;
+    LEX_STRING connection_name;
     Master_info *mi;
     if (thd)
       connection_name= thd->lex->relay_log_connection_name;

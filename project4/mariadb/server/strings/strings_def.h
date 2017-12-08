@@ -17,7 +17,6 @@
 
 /* This file is to be include first in all files in the string directory */
 
-#undef DBUG_ASSERT_AS_PRINTF
 #include <my_global.h>		/* Define standar vars */
 #include "m_string.h"		/* Exernal defintions of string functions */
 

@@ -76,7 +76,7 @@ public:
 		{
 			m_mutex = mutex;
 
-			my_atomic_storelint(&m_thread_id, os_thread_get_curr_id());
+			m_thread_id = os_thread_get_curr_id();
 
 			m_filename = filename;
 
@@ -89,7 +89,7 @@ public:
 		{
 			m_mutex = NULL;
 
-			my_atomic_storelint(&m_thread_id, ULINT_UNDEFINED);
+			m_thread_id = os_thread_id_t(ULINT_UNDEFINED);
 
 			m_filename = NULL;
 
@@ -138,7 +138,7 @@ public:
 		unsigned	m_line;
 
 		/** Thread ID of the thread that own(ed) the mutex */
-		ulint		m_thread_id;
+		os_thread_id_t	m_thread_id;
 	};
 
 	/** Constructor. */
@@ -157,7 +157,7 @@ public:
 	/** Mutex is being destroyed. */
 	void destroy() UNIV_NOTHROW
 	{
-		ut_ad((ulint)my_atomic_loadlint(&m_context.m_thread_id) == ULINT_UNDEFINED);
+		ut_ad(m_context.m_thread_id == os_thread_id_t(ULINT_UNDEFINED));
 
 		m_magic_n = 0;
 
@@ -199,7 +199,7 @@ public:
 	bool is_owned() const UNIV_NOTHROW
 	{
 		return(os_thread_eq(
-				(os_thread_id_t)my_atomic_loadlint(&m_context.m_thread_id),
+				m_context.m_thread_id,
 				os_thread_get_curr_id()));
 	}
 
@@ -221,7 +221,7 @@ public:
 	os_thread_id_t get_thread_id() const
 		UNIV_NOTHROW
 	{
-		return((os_thread_id_t)my_atomic_loadlint(&m_context.m_thread_id));
+		return(m_context.m_thread_id);
 	}
 
 	/** Magic number to check for memory corruption. */

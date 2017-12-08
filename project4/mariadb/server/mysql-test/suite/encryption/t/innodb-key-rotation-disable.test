@@ -6,10 +6,15 @@
 SELECT NAME FROM INFORMATION_SCHEMA.INNODB_TABLESPACES_ENCRYPTION WHERE MIN_KEY_VERSION <> 0;
 SELECT NAME FROM INFORMATION_SCHEMA.INNODB_TABLESPACES_ENCRYPTION WHERE MIN_KEY_VERSION = 0;
 
+--disable_query_log
+--disable_warnings
 let $encryption = `SELECT @@innodb_encrypt_tables`;
+SET GLOBAL innodb_file_format = `Barracuda`;
 SET GLOBAL innodb_file_per_table = ON;
 # zlib
 set global innodb_compression_algorithm = 1;
+--enable_warnings
+--enable_query_log
 
 create database enctests;
 use enctests;

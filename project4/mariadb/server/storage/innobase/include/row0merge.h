@@ -59,9 +59,6 @@ Created 13/06/2005 Jan Lindstrom
 // Forward declaration
 struct ib_sequence_t;
 
-/** The DB_TRX_ID,DB_ROLL_PTR values for "no history is available" */
-extern const byte reset_trx_id[DATA_TRX_ID_LEN + DATA_ROLL_PTR_LEN];
-
 /** @brief Block size for I/O operations in merge sort.
 
 The minimum is UNIV_PAGE_SIZE, or page_get_free_space_of_empty()
@@ -263,6 +260,7 @@ row_merge_rename_index_to_drop(
 	MY_ATTRIBUTE((nonnull(1), warn_unused_result));
 
 /** Create the index and load in to the dictionary.
+@param[in,out]	trx		trx (sets error_state)
 @param[in,out]	table		the index is on this table
 @param[in]	index_def	the index definition
 @param[in]	add_v		new virtual columns added along with add
@@ -270,6 +268,7 @@ row_merge_rename_index_to_drop(
 @return index, or NULL on error */
 dict_index_t*
 row_merge_create_index(
+	trx_t*			trx,
 	dict_table_t*		table,
 	const index_def_t*	index_def,
 	const dict_add_v_col_t*	add_v)

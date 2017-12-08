@@ -48,8 +48,6 @@ ${WSREP_INCLUDES}
 SET(GEN_SOURCES
 ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.h 
 ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
-${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.h
-${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.cc
 ${CMAKE_CURRENT_BINARY_DIR}/lex_hash.h
 ${CMAKE_CURRENT_BINARY_DIR}/lex_token.h
 )
@@ -77,8 +75,7 @@ ENDIF()
 
 SET (SQL_SOURCE
               ../sql-common/client.c compat56.cc derror.cc des_key_file.cc
-               discover.cc ../sql-common/errmsg.c
-               field.cc field_conv.cc field_comp.cc
+               discover.cc ../sql-common/errmsg.c field.cc field_conv.cc
                filesort_utils.cc
                filesort.cc gstream.cc
                signal_handler.cc
@@ -141,11 +138,8 @@ SET (SQL_SOURCE
                sql_type.cc
                item_windowfunc.cc sql_window.cc
 	       sql_cte.cc
-               sql_sequence.cc sql_sequence.h ha_sequence.h
-               sql_tvc.cc sql_tvc.h
 	       ${WSREP_SOURCES}
                table_cache.cc encryption.cc temporary_tables.cc
-               proxy_protocol.cc
                ${CMAKE_CURRENT_BINARY_DIR}/sql_builtin.cc
                ${GEN_SOURCES}
                ${MYSYS_LIBWRAP_SOURCE}
@@ -164,8 +158,6 @@ IF (CMAKE_SYSTEM_NAME MATCHES "Linux" OR
 ENDIF()
 
 MYSQL_ADD_PLUGIN(partition ha_partition.cc STORAGE_ENGINE DEFAULT STATIC_ONLY
-RECOMPILE_FOR_EMBEDDED)
-MYSQL_ADD_PLUGIN(sql_sequence ha_sequence.cc STORAGE_ENGINE MANDATORY STATIC_ONLY
 RECOMPILE_FOR_EMBEDDED)
 
 ADD_LIBRARY(sql STATIC ${SQL_SOURCE})
@@ -357,14 +349,6 @@ RUN_BISON(
   ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy 
   ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
   ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.h
-  MYSQL
-)
-
-RUN_BISON(
-  ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc_ora.yy
-  ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.cc
-  ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.h
-  ORA
 )
 
 # Gen_lex_hash
@@ -403,7 +387,6 @@ CONFIGURE_FILE(
 ADD_CUSTOM_TARGET(dist 
   COMMAND ${CMAKE_COMMAND} -P ${CMAKE_BINARY_DIR}/make_dist.cmake
   DEPENDS ${CMAKE_BINARY_DIR}/sql/sql_yacc.cc ${CMAKE_BINARY_DIR}/sql/sql_yacc.h
-  DEPENDS ${CMAKE_BINARY_DIR}/sql/sql_yacc_ora.cc ${CMAKE_BINARY_DIR}/sql/sql_yacc_ora.h
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 

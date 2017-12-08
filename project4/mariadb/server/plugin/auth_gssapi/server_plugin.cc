@@ -31,18 +31,9 @@
 
   GSSAPI authentication plugin, server side
 */
-
-#ifdef _WIN32
-typedef unsigned __int64 my_ulonglong;
-#else
-typedef unsigned long long my_ulonglong;
-#endif
-
-#include <stdlib.h>
+#include <my_sys.h>
 #include <mysqld_error.h>
-#include <typelib.h>
 #include <mysql/plugin_auth.h>
-#include "string.h"
 #include "server_plugin.h"
 #include "common.h"
 
@@ -141,7 +132,7 @@ static const char* mech_names[] = {
   NULL
 };
 static TYPELIB mech_name_typelib = {
-  3,
+  array_elements(mech_names) - 1,
   "mech_name_typelib",
   mech_names,
   NULL

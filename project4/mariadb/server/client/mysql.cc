@@ -40,7 +40,7 @@
 #include "my_readline.h"
 #include <signal.h>
 #include <violite.h>
-#include <source_revision.h>
+
 #if defined(USE_LIBEDIT_INTERFACE) && defined(HAVE_LOCALE_H)
 #include <locale.h>
 #endif
@@ -1073,7 +1073,9 @@ static void print_table_data_xml(MYSQL_RES *result);
 static void print_tab_data(MYSQL_RES *result);
 static void print_table_data_vertically(MYSQL_RES *result);
 static void print_warnings(void);
-static void end_timer(ulonglong start_time, char *buff);
+static ulong start_timer(void);
+static void end_timer(ulong start_time,char *buff);
+static void mysql_end_timer(ulong start_time,char *buff);
 static void nice_time(double sec,char *buff,bool part_second);
 extern "C" sig_handler mysql_end(int sig) __attribute__ ((noreturn));
 extern "C" sig_handler handle_sigint(int sig);
@@ -1092,7 +1094,7 @@ inline bool is_delimiter_command(char *name, ulong len)
     only name(first DELIMITER_NAME_LEN bytes) is checked.
   */
   return (len >= DELIMITER_NAME_LEN &&
-          !my_strnncoll(&my_charset_latin1, (uchar*) name, DELIMITER_NAME_LEN,
+          !my_strnncoll(charset_info, (uchar*) name, DELIMITER_NAME_LEN,
                         (uchar *) DELIMITER_NAME, DELIMITER_NAME_LEN));
 }
 
@@ -1718,8 +1720,8 @@ static void usage(int version)
 	 my_progname, VER, MYSQL_SERVER_VERSION, SYSTEM_TYPE, MACHINE_TYPE,
          readline, rl_library_version);
 #else
-  printf("%s  Ver %s Distrib %s, for %s (%s), source revision %s\n", my_progname, VER,
-	MYSQL_SERVER_VERSION, SYSTEM_TYPE, MACHINE_TYPE,SOURCE_REVISION);
+  printf("%s  Ver %s Distrib %s, for %s (%s)\n", my_progname, VER,
+	MYSQL_SERVER_VERSION, SYSTEM_TYPE, MACHINE_TYPE);
 #endif
 
   if (version)
@@ -3209,10 +3211,9 @@ static int
 com_go(String *buffer,char *line __attribute__((unused)))
 {
   char		buff[200]; /* about 110 chars used so far */
-  char          time_buff[53+3+1]; /* time max + space&parens + NUL */
+  char		time_buff[52+3+1]; /* time max + space&parens + NUL */
   MYSQL_RES	*result;
-  ulonglong	timer;
-  ulong		warnings= 0;
+  ulong		timer, warnings= 0;
   uint		error= 0;
   int           err= 0;
 
@@ -3251,7 +3252,7 @@ com_go(String *buffer,char *line __attribute__((unused)))
     return 0;
   }
 
-  timer= microsecond_interval_timer();
+  timer=start_timer();
   executing_query= 1;
   error= mysql_real_query_for_lazy(buffer->ptr(),buffer->length());
   report_progress_end();
@@ -3290,7 +3291,7 @@ com_go(String *buffer,char *line __attribute__((unused)))
     }
 
     if (verbose >= 3 || !opt_silent)
-      end_timer(timer, time_buff);
+      mysql_end_timer(timer,time_buff);
     else
       time_buff[0]= '\0';
 
@@ -5086,11 +5087,31 @@ void tee_putc(int c, FILE *file)
     putc(c, OUTFILE);
 }
 
+#if defined(__WIN__)
+#include <time.h>
+#else
+#include <sys/times.h>
+#ifdef _SC_CLK_TCK				// For mit-pthreads
+#undef CLOCKS_PER_SEC
+#define CLOCKS_PER_SEC (sysconf(_SC_CLK_TCK))
+#endif
+#endif
+
+static ulong start_timer(void)
+{
+#if defined(__WIN__)
+  return clock();
+#else
+  struct tms tms_tmp;
+  return times(&tms_tmp);
+#endif
+}
+
 
 /** 
   Write as many as 52+1 bytes to buff, in the form of a legible duration of time.
 
-  len("4294967296 days, 23 hours, 59 minutes, 60.000 seconds")  ->  53
+  len("4294967296 days, 23 hours, 59 minutes, 60.00 seconds")  ->  52
 */
 static void nice_time(double sec,char *buff,bool part_second)
 {
@@ -5117,20 +5138,24 @@ static void nice_time(double sec,char *buff,bool part_second)
     buff=strmov(buff," min ");
   }
   if (part_second)
-    sprintf(buff,"%.3f sec",sec);
+    sprintf(buff,"%.2f sec",sec);
   else
     sprintf(buff,"%d sec",(int) sec);
 }
 
 
-static void end_timer(ulonglong start_time, char *buff)
+static void end_timer(ulong start_time,char *buff)
 {
-  double sec;
+  nice_time((double) (start_timer() - start_time) /
+	    CLOCKS_PER_SEC,buff,1);
+}
 
+
+static void mysql_end_timer(ulong start_time,char *buff)
+{
   buff[0]=' ';
   buff[1]='(';
-  sec= (microsecond_interval_timer() - start_time) / (double) (1000 * 1000);
-  nice_time(sec, buff + 2, 1);
+  end_timer(start_time,buff+2);
   strmov(strend(buff),")");
 }
 

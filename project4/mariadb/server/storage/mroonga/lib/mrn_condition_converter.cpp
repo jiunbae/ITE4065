@@ -28,8 +28,8 @@
 #  define MRN_ITEM_FIELD_GET_NAME(item)        ((item)->item_name.ptr())
 #  define MRN_ITEM_FIELD_GET_NAME_LENGTH(item) ((item)->item_name.length())
 #else
-#  define MRN_ITEM_FIELD_GET_NAME(item)        ((item)->name.str)
-#  define MRN_ITEM_FIELD_GET_NAME_LENGTH(item) ((item)->name.length)
+#  define MRN_ITEM_FIELD_GET_NAME(item)        ((item)->name)
+#  define MRN_ITEM_FIELD_GET_NAME_LENGTH(item) (strlen((item)->name))
 #endif
 
 namespace mrn {
@@ -352,9 +352,6 @@ namespace mrn {
     case MYSQL_TYPE_GEOMETRY:
       type = UNSUPPORTED_TYPE;
       break;
-    case MYSQL_TYPE_VARCHAR_COMPRESSED:
-    case MYSQL_TYPE_BLOB_COMPRESSED:
-      DBUG_ASSERT(0);
     }
 
     DBUG_RETURN(type);

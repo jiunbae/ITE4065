@@ -115,13 +115,11 @@ FOREACH(_base
   ENDIF()
 ENDFOREACH()
 
-FOREACH(tool gtar tar)
+FOREACH(tool gtar tar git)
  STRING(TOUPPER ${tool}  TOOL)
  FIND_PROGRAM(${TOOL}_EXECUTABLE ${tool} DOC "path to the executable")
  MARK_AS_ADVANCED(${TOOL}_EXECUTABLE)
 ENDFOREACH()
-
-FIND_PACKAGE(Git)
 
 # Following autotools tradition, add preprocessor definitions
 # specified in environment variable CPPFLAGS
@@ -206,30 +204,20 @@ IF (WITH_ASAN)
   ENDIF()
 ENDIF()
 
-OPTION(WITH_TSAN "Enable thread sanitizer" OFF)
-IF (WITH_TSAN)
-  IF(SECURITY_HARDENED)
-    MESSAGE(FATAL_ERROR "WITH_TSAN and SECURITY_HARDENED are mutually exclusive")
-  ENDIF()
-  MY_CHECK_AND_SET_COMPILER_FLAG("-fsanitize=thread" DEBUG RELWITHDEBINFO)
+# enable security hardening features, like most distributions do
+# in our benchmarks that costs about ~1% of performance, depending on the load
+IF(CMAKE_C_COMPILER_VERSION VERSION_LESS "4.6")
+  SET(security_default OFF)
+ELSE()
+  SET(security_default ON)
 ENDIF()
-
-IF(NOT WITH_TSAN)
-  # enable security hardening features, like most distributions do
-  # in our benchmarks that costs about ~1% of performance, depending on the load
-  IF(CMAKE_C_COMPILER_VERSION VERSION_LESS "4.6")
-    SET(security_default OFF)
-  ELSE()
-    SET(security_default ON)
-  ENDIF()
-  OPTION(SECURITY_HARDENED "Use security-enhancing compiler features (stack protector, relro, etc)" ${security_default})
-  IF(SECURITY_HARDENED)
-    # security-enhancing flags
-    MY_CHECK_AND_SET_COMPILER_FLAG("-pie -fPIC")
-    MY_CHECK_AND_SET_COMPILER_FLAG("-Wl,-z,relro,-z,now")
-    MY_CHECK_AND_SET_COMPILER_FLAG("-fstack-protector --param=ssp-buffer-size=4")
-    MY_CHECK_AND_SET_COMPILER_FLAG("-D_FORTIFY_SOURCE=2" RELEASE RELWITHDEBINFO)
-  ENDIF()
+OPTION(SECURITY_HARDENED "Use security-enhancing compiler features (stack protector, relro, etc)" ${security_default})
+IF(SECURITY_HARDENED)
+  # security-enhancing flags
+  MY_CHECK_AND_SET_COMPILER_FLAG("-pie -fPIC")
+  MY_CHECK_AND_SET_COMPILER_FLAG("-Wl,-z,relro,-z,now")
+  MY_CHECK_AND_SET_COMPILER_FLAG("-fstack-protector --param=ssp-buffer-size=4")
+  MY_CHECK_AND_SET_COMPILER_FLAG("-D_FORTIFY_SOURCE=2" RELEASE RELWITHDEBINFO)
 ENDIF()
 
 # Always enable debug sync for debug builds.
@@ -255,8 +243,8 @@ ENDIF()
 # Set DBUG_OFF and other optional release-only flags for non-debug project types
 FOREACH(BUILD_TYPE RELEASE RELWITHDEBINFO MINSIZEREL)
   FOREACH(LANG C CXX)
-    IF (NOT CMAKE_${LANG}_FLAGS_${BUILD_TYPE} MATCHES "DDBUG_ON" AND
-        NOT CMAKE_${LANG}_FLAGS MATCHES "DDBUG_ON")
+    IF (NOT CMAKE_${LANG}_FLAGS_${BUILD_TYPE} MATCHES "DDBUG_" AND
+        NOT CMAKE_${LANG}_FLAGS MATCHES "DDBUG_")
       SET(CMAKE_${LANG}_FLAGS_${BUILD_TYPE} 
        "${CMAKE_${LANG}_FLAGS_${BUILD_TYPE}} -DDBUG_OFF")
     ENDIF()
@@ -444,22 +432,6 @@ CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/include/mysql_version.h.in
                ${CMAKE_BINARY_DIR}/include/mysql_version.h )
 CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/sql/sql_builtin.cc.in
     ${CMAKE_BINARY_DIR}/sql/sql_builtin.cc)
-
-IF(GIT_EXECUTABLE)
-  EXECUTE_PROCESS(
-    COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
-      WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-       OUTPUT_VARIABLE OUT RESULT_VARIABLE RES)
-  IF(RES EQUAL 0)
-    STRING(REGEX REPLACE "\n$" "" SOURCE_REVISION "${OUT}")
-  ENDIF()
-ENDIF()
-IF(SOURCE_REVISION OR
-  (NOT EXISTS ${PROJECT_SOURCE_DIR}/include/source_revision.h))
-  CONFIGURE_FILE(${PROJECT_SOURCE_DIR}/include/source_revision.h.in
-               ${PROJECT_BINARY_DIR}/include/source_revision.h )
-ENDIF()
-
 CONFIGURE_FILE(
     ${CMAKE_SOURCE_DIR}/cmake/info_macros.cmake.in
     ${CMAKE_BINARY_DIR}/info_macros.cmake @ONLY)

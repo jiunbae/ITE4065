@@ -14,7 +14,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "item_inetfunc.h"
 
 #include "my_net.h"
@@ -181,8 +181,7 @@ String *Item_func_inet_str_base::val_str_ascii(String *buffer)
     return NULL;
   }
 
-  StringBuffer<STRING_BUFFER_USUAL_SIZE> tmp;
-  String *arg_str= args[0]->val_str(&tmp);
+  String *arg_str= args[0]->val_str(buffer);
   if (!arg_str) // Out-of memory happened. The error has been reported.
   {             // Or: the underlying field is NULL
     null_value= true;
@@ -218,7 +217,7 @@ static bool str_to_ipv4(const char *str, size_t str_length, in_addr *ipv4_addres
   {
     DBUG_PRINT("error", ("str_to_ipv4(%.*s): "
                          "invalid IPv4 address: too short.",
-                         (int) str_length, str));
+                         (int)str_length, str));
     return false;
   }
 
@@ -226,7 +225,7 @@ static bool str_to_ipv4(const char *str, size_t str_length, in_addr *ipv4_addres
   {
     DBUG_PRINT("error", ("str_to_ipv4(%.*s): "
                          "invalid IPv4 address: too long.",
-                         (int) str_length, str));
+                         (int)str_length, str));
     return false;
   }
 
@@ -249,7 +248,7 @@ static bool str_to_ipv4(const char *str, size_t str_length, in_addr *ipv4_addres
       {
         DBUG_PRINT("error", ("str_to_ipv4(%.*s): invalid IPv4 address: "
                              "too many characters in a group.",
-                             (int) str_length, str));
+                             (int)str_length, str));
         return false;
       }
 
@@ -259,7 +258,7 @@ static bool str_to_ipv4(const char *str, size_t str_length, in_addr *ipv4_addres
       {
         DBUG_PRINT("error", ("str_to_ipv4(%.*s): invalid IPv4 address: "
                              "invalid byte value.",
-                             (int) str_length, str));
+                             (int)str_length, str));
         return false;
       }
     }
@@ -269,7 +268,7 @@ static bool str_to_ipv4(const char *str, size_t str_length, in_addr *ipv4_addres
       {
         DBUG_PRINT("error", ("str_to_ipv4(%.*s): invalid IPv4 address: "
                              "too few characters in a group.",
-                             (int) str_length, str));
+                             (int)str_length, str));
         return false;
       }
 
@@ -282,7 +281,7 @@ static bool str_to_ipv4(const char *str, size_t str_length, in_addr *ipv4_addres
       if (dot_count > 3)
       {
         DBUG_PRINT("error", ("str_to_ipv4(%.*s): invalid IPv4 address: "
-                             "too many dots.", (int) str_length, str));
+                             "too many dots.", (int)str_length, str));
         return false;
       }
     }
@@ -290,7 +289,7 @@ static bool str_to_ipv4(const char *str, size_t str_length, in_addr *ipv4_addres
     {
       DBUG_PRINT("error", ("str_to_ipv4(%.*s): invalid IPv4 address: "
                            "invalid character at pos %d.",
-                           (int) str_length, str, (int) (p - str)));
+                           (int)str_length, str, (int) (p - str)));
       return false;
     }
   }
@@ -298,7 +297,7 @@ static bool str_to_ipv4(const char *str, size_t str_length, in_addr *ipv4_addres
   if (c == '.')
   {
     DBUG_PRINT("error", ("str_to_ipv4(%.*s): invalid IPv4 address: "
-                         "ending at '.'.", (int) str_length, str));
+                         "ending at '.'.",(int)str_length, str));
     return false;
   }
 
@@ -306,14 +305,14 @@ static bool str_to_ipv4(const char *str, size_t str_length, in_addr *ipv4_addres
   {
     DBUG_PRINT("error", ("str_to_ipv4(%.*s): invalid IPv4 address: "
                          "too few groups.",
-                         (int) str_length, str));
+                         (int)str_length, str));
     return false;
   }
 
   ipv4_bytes[3]= (unsigned char) byte_value;
 
   DBUG_PRINT("info", ("str_to_ipv4(%.*s): valid IPv4 address: %d.%d.%d.%d",
-                      (int) str_length, str,
+                      (int)str_length, str,
                       ipv4_bytes[0], ipv4_bytes[1],
                       ipv4_bytes[2], ipv4_bytes[3]));
   return true;
@@ -680,7 +679,7 @@ static void ipv6_to_str(const in6_addr *ipv6, char *str)
   @retval true  The string has been converted sucessfully.
 */
 
-bool Item_func_inet6_aton::calc_value(const String *arg, String *buffer)
+bool Item_func_inet6_aton::calc_value(String *arg, String *buffer)
 {
   // ipv4-string -> varbinary(4)
   // ipv6-string -> varbinary(16)
@@ -720,7 +719,7 @@ bool Item_func_inet6_aton::calc_value(const String *arg, String *buffer)
   @retval true  The string has been converted sucessfully.
 */
 
-bool Item_func_inet6_ntoa::calc_value(const String *arg, String *buffer)
+bool Item_func_inet6_ntoa::calc_value(String *arg, String *buffer)
 {
   if (arg->charset() != &my_charset_bin)
     return false;

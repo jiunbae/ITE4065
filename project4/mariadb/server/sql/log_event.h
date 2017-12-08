@@ -716,21 +716,6 @@ enum Log_event_type
   ENUM_END_EVENT /* end marker */
 };
 
-
-/*
-  Bit flags for what has been writting to cache. Used to
-  discard logs with table map events but not row events and
-  nothing else important. This is stored by cache.
-*/
-
-enum enum_logged_status
-{
-  LOGGED_TABLE_MAP= 1,
-  LOGGED_ROW_EVENT= 2,
-  LOGGED_NO_DATA=   4,
-  LOGGED_CRITICAL=  8
-};
-
 static inline bool LOG_EVENT_IS_QUERY(enum Log_event_type type)
 {
   return type == QUERY_EVENT || type == QUERY_COMPRESSED_EVENT;
@@ -800,7 +785,6 @@ class THD;
 
 class Format_description_log_event;
 class Relay_log_info;
-class binlog_cache_data;
 
 #ifdef MYSQL_CLIENT
 enum enum_base64_output_mode {
@@ -912,7 +896,6 @@ typedef struct st_print_event_info
   This class encapsulates writing of Log_event objects to IO_CACHE.
   Automatically calculates the checksum and encrypts the data, if necessary.
 */
-
 class Log_event_writer
 {
 public:
@@ -924,16 +907,13 @@ public:
   int write_data(const uchar *pos, size_t len);
   int write_footer();
   my_off_t pos() { return my_b_safe_tell(file); }
-  void add_status(enum_logged_status status);
 
-  Log_event_writer(IO_CACHE *file_arg, binlog_cache_data *cache_data_arg,
-                   Binlog_crypt_data *cr= 0)
+Log_event_writer(IO_CACHE *file_arg, Binlog_crypt_data *cr= 0)
   : bytes_written(0), ctx(0),
-    file(file_arg), cache_data(cache_data_arg), crypto(cr) { }
+    file(file_arg), crypto(cr) { }
 
 private:
   IO_CACHE *file;
-  binlog_cache_data *cache_data;
   /**
     Placeholder for event checksum while writing to binlog.
    */
@@ -1256,7 +1236,7 @@ public:
                     bool is_more);
   void print_base64(IO_CACHE* file, PRINT_EVENT_INFO* print_event_info,
                     bool is_more);
-#endif /* MYSQL_SERVER */
+#endif
 
   /* The following code used for Flashback */
 #ifdef MYSQL_CLIENT
@@ -1402,7 +1382,6 @@ public:
   }
 #endif
   virtual Log_event_type get_type_code() = 0;
-  virtual enum_logged_status logged_status() { return LOGGED_CRITICAL; }
   virtual bool is_valid() const = 0;
   virtual my_off_t get_header_len(my_off_t len) { return len; }
   void set_artificial_event() { flags |= LOG_EVENT_ARTIFICIAL_F; }
@@ -2013,8 +1992,8 @@ protected:
 */
 class Query_log_event: public Log_event
 {
-  LEX_CSTRING user;
-  LEX_CSTRING host;
+  LEX_STRING user;
+  LEX_STRING host;
 protected:
   Log_event::Byte* data_buf;
 public:
@@ -3041,9 +3020,9 @@ public:
     UNDEF_F= 0,
     UNSIGNED_F= 1
   };
-  const char *name;
+  char *name;
   uint name_len;
-  const char *val;
+  char *val;
   ulong val_len;
   Item_result type;
   uint charset_number;
@@ -3052,8 +3031,8 @@ public:
 #ifdef MYSQL_SERVER
   bool deferred;
   query_id_t query_id;
-  User_var_log_event(THD* thd_arg, const char *name_arg, uint name_len_arg,
-                     const char *val_arg, ulong val_len_arg, Item_result type_arg,
+  User_var_log_event(THD* thd_arg, char *name_arg, uint name_len_arg,
+                     char *val_arg, ulong val_len_arg, Item_result type_arg,
 		     uint charset_number_arg, uchar flags_arg,
                      bool using_trans, bool direct)
     :Log_event(thd_arg, 0, using_trans),
@@ -3382,7 +3361,6 @@ public:
                  const Format_description_log_event *description_event);
   ~Gtid_log_event() { }
   Log_event_type get_type_code() { return GTID_EVENT; }
-  enum_logged_status logged_status() { return LOGGED_NO_DATA; }
   int get_data_size()
   {
     return GTID_HEADER_LEN + ((flags2 & FL_GROUP_COMMIT_ID) ? 2 : 0);
@@ -3459,7 +3437,7 @@ public:
 
   The three elements in the body repeat COUNT times to form the GTID list.
 
-  At the time of writing, only two flag bit are in use.
+  At the time of writing, only one flag bit is in use.
 
   Bit 28 of `count' is used for flag FLAG_UNTIL_REACHED, which is sent in a
   Gtid_list event from the master to the slave to indicate that the START
@@ -3477,12 +3455,9 @@ public:
   uint64 *sub_id_list;
 
   static const uint element_size= 4+4+8;
-  /* Upper bits stored in 'count'. See comment above */
-  enum gtid_flags
-  {
-    FLAG_UNTIL_REACHED= (1<<28),
-    FLAG_IGN_GTIDS= (1<<29),
-  };
+  static const uint32 FLAG_UNTIL_REACHED= (1<<28);
+  static const uint32 FLAG_IGN_GTIDS= (1<<29);
+
 #ifdef MYSQL_SERVER
   Gtid_list_log_event(rpl_binlog_state *gtid_set, uint32 gl_flags);
   Gtid_list_log_event(slave_connection_state *gtid_set, uint32 gl_flags);
@@ -3882,7 +3857,6 @@ public:
 
   virtual int get_data_size();
   virtual Log_event_type get_type_code();
-  enum_logged_status logged_status() { return LOGGED_NO_DATA; }
   virtual bool is_valid() const;
   virtual bool is_part_of_group() { return 1; }
 
@@ -3912,7 +3886,6 @@ private:
   char *m_save_thd_query_txt;
   uint  m_save_thd_query_len;
   bool  m_saved_thd_query;
-  bool  m_used_query_txt;
 };
 
 /**
@@ -4299,7 +4272,6 @@ public:
   const char *get_db_name() const    { return m_dbnam; }
 
   virtual Log_event_type get_type_code() { return TABLE_MAP_EVENT; }
-  virtual enum_logged_status logged_status() { return LOGGED_TABLE_MAP; }
   virtual bool is_valid() const { return m_memory != NULL; /* we check malloc */ }
   virtual bool is_part_of_group() { return 1; }
 
@@ -4428,7 +4400,6 @@ public:
   void update_flags() { int2store(temp_buf + m_flags_pos, m_flags); }
 
   Log_event_type get_type_code() { return m_type; } /* Specific type (_V1 etc) */
-  enum_logged_status logged_status() { return LOGGED_ROW_EVENT; }
   virtual Log_event_type get_general_type_code() = 0; /* General rows op type, no version */
 
 #if defined(MYSQL_SERVER) && defined(HAVE_REPLICATION)
@@ -4608,7 +4579,6 @@ protected:
   int find_key(); // Find a best key to use in find_row()
   int find_row(rpl_group_info *);
   int write_row(rpl_group_info *, const bool);
-  int update_sequence();
 
   // Unpack the current row into m_table->record[0], but with
   // a different columns bitmap.
@@ -5193,7 +5163,6 @@ inline int Log_event_writer::write(Log_event *ev)
   ev->writer= this;
   int res= ev->write();
   IF_DBUG(ev->writer= 0,); // writer must be set before every Log_event::write
-  add_status(ev->logged_status());
   return res;
 }
 
@@ -5205,6 +5174,10 @@ inline int Log_event_writer::write(Log_event *ev)
 */
 bool slave_execute_deferred_events(THD *thd);
 #endif
+
+bool rpl_get_position_info(const char **log_file_name, ulonglong *log_pos,
+                           const char **group_relay_log_name,
+                           ulonglong *relay_log_pos);
 
 bool event_that_should_be_ignored(const char *buf);
 bool event_checksum_test(uchar *buf, ulong event_len, enum_binlog_checksum_alg alg);

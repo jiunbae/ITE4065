@@ -16,6 +16,7 @@
 #ifndef FILESORT_UTILS_INCLUDED
 #define FILESORT_UTILS_INCLUDED
 
+#include "my_global.h"
 #include "my_base.h"
 #include "sql_array.h"
 

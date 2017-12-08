@@ -13,7 +13,6 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02111-1301 USA */
 
-#include "mariadb.h"
 #include <mysqld.h>
 #include <sql_class.h>
 #include <sql_parse.h>
@@ -246,17 +245,6 @@ static void wsrep_log_cb(wsrep_log_level_t level, const char *msg) {
     break;
   }
 }
-
-void wsrep_log(void (*fun)(const char *, ...), const char *format, ...)
-{
-  va_list args;
-  char msg[1024];
-  va_start(args, format);
-  vsnprintf(msg, sizeof(msg) - 1, format, args);
-  va_end(args);
-  (fun)("WSREP: %s", msg);
-}
-
 
 static void wsrep_log_states (wsrep_log_level_t   const level,
                               const wsrep_uuid_t* const group_uuid,
@@ -527,7 +515,7 @@ static void wsrep_synced_cb(void* app_ctx)
   if (wsrep_restart_slave_activated)
   {
     int rcode;
-    WSREP_INFO("MariaDB slave restart");
+    WSREP_INFO("MySQL slave restart");
     wsrep_restart_slave_activated= FALSE;
 
     mysql_mutex_lock(&LOCK_active_mi);
@@ -1243,7 +1231,7 @@ int wsrep_to_buf_helper(
     THD* thd, const char *query, uint query_len, uchar** buf, size_t* buf_len)
 {
   IO_CACHE tmp_io_cache;
-  Log_event_writer writer(&tmp_io_cache,0);
+  Log_event_writer writer(&tmp_io_cache);
   if (open_cached_file(&tmp_io_cache, mysql_tmpdir, TEMP_PREFIX,
                        65536, MYF(MY_WME)))
     return 1;
@@ -1322,17 +1310,22 @@ create_view_query(THD *thd, uchar** buf, size_t* buf_len)
     SELECT_LEX *select_lex= &lex->select_lex;
     TABLE_LIST *first_table= select_lex->table_list.first;
     TABLE_LIST *views = first_table;
-    LEX_USER *definer;
+
     String buff;
     const LEX_STRING command[3]=
       {{ C_STRING_WITH_LEN("CREATE ") },
        { C_STRING_WITH_LEN("ALTER ") },
        { C_STRING_WITH_LEN("CREATE OR REPLACE ") }};
 
-    buff.append(&command[thd->lex->create_view->mode]);
+    buff.append(command[thd->lex->create_view_mode].str,
+                command[thd->lex->create_view_mode].length);
+
+    LEX_USER *definer;
 
     if (lex->definer)
+    {
       definer= get_current_user(thd, lex->definer);
+    }
     else
     {
       /*
@@ -1353,9 +1346,9 @@ create_view_query(THD *thd, uchar** buf, size_t* buf_len)
       return 1;
     }
 
-    views->algorithm    = lex->create_view->algorithm;
-    views->view_suid    = lex->create_view->suid;
-    views->with_check   = lex->create_view->check;
+    views->algorithm    = lex->create_view_algorithm;
+    views->view_suid    = lex->create_view_suid;
+    views->with_check   = lex->create_view_check;
 
     view_store_options(thd, views, &buff);
     buff.append(STRING_WITH_LEN("VIEW "));
@@ -1384,8 +1377,8 @@ create_view_query(THD *thd, uchar** buf, size_t* buf_len)
     }
     buff.append(STRING_WITH_LEN(" AS "));
     //buff.append(views->source.str, views->source.length);
-    buff.append(thd->lex->create_view->select.str,
-                thd->lex->create_view->select.length);
+    buff.append(thd->lex->create_view_select.str,
+                thd->lex->create_view_select.length);
     //int errcode= query_error_code(thd, TRUE);
     //if (thd->binlog_query(THD::STMT_QUERY_TYPE,
     //                      buff.ptr(), buff.length(), FALSE, FALSE, FALSE, errcod
@@ -1480,7 +1473,7 @@ static bool wsrep_can_run_in_toi(THD *thd, const char *db, const char *table,
    1: TOI replication was skipped
   -1: TOI replication failed 
  */
-static int wsrep_TOI_begin(THD *thd, const char *db_, const char *table_,
+static int wsrep_TOI_begin(THD *thd, char *db_, char *table_,
                            const TABLE_LIST* table_list)
 {
   wsrep_status_t ret(WSREP_WARNING);
@@ -1550,8 +1543,8 @@ static int wsrep_TOI_begin(THD *thd, const char *db_, const char *table_,
                ret,
                (thd->db ? thd->db : "(null)"),
                (thd->query()) ? thd->query() : "void");
-    my_message(ER_LOCK_DEADLOCK, "WSREP replication failed. Check "
-               "your wsrep connection state and retry the query.", MYF(0));
+    my_error(ER_LOCK_DEADLOCK, MYF(0), "WSREP replication failed. Check "
+	     "your wsrep connection state and retry the query.");
     wsrep_keys_free(&key_arr);
     rc= -1;
   }
@@ -1589,7 +1582,7 @@ static void wsrep_TOI_end(THD *thd) {
   }
 }
 
-static int wsrep_RSU_begin(THD *thd, const char *db_, const char *table_)
+static int wsrep_RSU_begin(THD *thd, char *db_, char *table_)
 {
   wsrep_status_t ret(WSREP_WARNING);
   WSREP_DEBUG("RSU BEGIN: %lld, %d : %s", (long long)wsrep_thd_trx_seqno(thd),
@@ -1672,7 +1665,7 @@ static void wsrep_RSU_end(THD *thd)
   thd->variables.wsrep_on = 1;
 }
 
-int wsrep_to_isolation_begin(THD *thd, const char *db_, const char *table_,
+int wsrep_to_isolation_begin(THD *thd, char *db_, char *table_,
                              const TABLE_LIST* table_list)
 {
   int ret= 0;
@@ -1861,8 +1854,7 @@ bool wsrep_grant_mdl_exception(MDL_context *requestor_ctx,
       /* Print some debug information. */
       if (wsrep_debug)
       {
-        if (request_thd->lex->sql_command == SQLCOM_DROP_TABLE ||
-            request_thd->lex->sql_command == SQLCOM_DROP_SEQUENCE)
+        if (request_thd->lex->sql_command == SQLCOM_DROP_TABLE)
         {
           WSREP_DEBUG("DROP caused BF abort");
         }
@@ -1935,6 +1927,7 @@ pthread_handler_t start_wsrep_THD(void *arg)
     close_connection(thd, ER_OUT_OF_RESOURCES);
     statistic_increment(aborted_connects,&LOCK_status);
     MYSQL_CALLBACK(thread_scheduler, end_thread, (thd, 0));
+
     goto error;
   }
 
@@ -1957,6 +1950,7 @@ pthread_handler_t start_wsrep_THD(void *arg)
     close_connection(thd, ER_OUT_OF_RESOURCES);
     statistic_increment(aborted_connects,&LOCK_status);
     MYSQL_CALLBACK(thread_scheduler, end_thread, (thd, 0));
+    delete thd;
     goto error;
   }
 
@@ -2000,8 +1994,13 @@ pthread_handler_t start_wsrep_THD(void *arg)
     // at server shutdown
   }
 
-  unlink_not_visible_thd(thd);
-  delete thd;
+  if (thread_handling > SCHEDULER_ONE_THREAD_PER_CONNECTION)
+  {
+    mysql_mutex_lock(&LOCK_thread_count);
+    thd->unlink();
+    mysql_mutex_unlock(&LOCK_thread_count);
+    delete thd;
+  }
   my_thread_end();
   return(NULL);
 
@@ -2022,7 +2021,7 @@ static bool abort_replicated(THD *thd)
   bool ret_code= false;
   if (thd->wsrep_query_state== QUERY_COMMITTING)
   {
-    WSREP_DEBUG("aborting replicated trx: %lu", (ulong) thd->real_id);
+    WSREP_DEBUG("aborting replicated trx: %lu", thd->real_id);
 
     (void)wsrep_abort_thd(thd, thd, TRUE);
     ret_code= true;
@@ -2309,23 +2308,25 @@ static int wsrep_create_sp(THD *thd, uchar** buf, size_t* buf_len)
   sp_head *sp = thd->lex->sphead;
   sql_mode_t saved_mode= thd->variables.sql_mode;
   String retstr(64);
-  LEX_CSTRING returns= empty_clex_str;
   retstr.set_charset(system_charset_info);
 
   log_query.set_charset(system_charset_info);
 
-  if (sp->m_handler->type() == TYPE_ENUM_FUNCTION)
+  if (sp->m_type == TYPE_ENUM_FUNCTION)
   {
     sp_returns_type(thd, retstr, sp);
-    returns= retstr.lex_cstring();
   }
-  if (sp->m_handler->
-      show_create_sp(thd, &log_query,
-                     sp->m_explicit_name ? sp->m_db : null_clex_str,
-                     sp->m_name, sp->m_params, returns,
-                     sp->m_body, sp->chistics(),
-                     thd->lex->definer[0],
-                     thd->lex->create_info,
+
+  if (!show_create_sp(thd, &log_query,
+                     sp->m_type,
+                     (sp->m_explicit_name ? sp->m_db.str : NULL),
+                     (sp->m_explicit_name ? sp->m_db.length : 0),
+                     sp->m_name.str, sp->m_name.length,
+                     sp->m_params.str, sp->m_params.length,
+                     retstr.c_ptr(), retstr.length(),
+                     sp->m_body.str, sp->m_body.length,
+                     sp->m_chistics, &(thd->lex->definer->user),
+                     &(thd->lex->definer->host),
                      saved_mode))
   {
     WSREP_WARN("SP create string failed: schema: %s, query: %s",
@@ -2620,8 +2621,8 @@ static int wsrep_create_trigger_query(THD *thd, uchar** buf, size_t* buf_len)
   LEX *lex= thd->lex;
   String stmt_query;
 
-  LEX_CSTRING definer_user;
-  LEX_CSTRING definer_host;
+  LEX_STRING definer_user;
+  LEX_STRING definer_host;
 
   if (!lex->definer)
   {
@@ -2658,7 +2659,7 @@ static int wsrep_create_trigger_query(THD *thd, uchar** buf, size_t* buf_len)
 
   append_definer(thd, &stmt_query, &definer_user, &definer_host);
 
-  LEX_CSTRING stmt_definition;
+  LEX_STRING stmt_definition;
   uint not_used;
   stmt_definition.str= (char*) thd->lex->stmt_definition_begin;
   stmt_definition.length= thd->lex->stmt_definition_end
@@ -2726,7 +2727,6 @@ void wsrep_unlock_rollback()
 
 my_bool wsrep_aborting_thd_contains(THD *thd)
 {
-  mysql_mutex_assert_owner(&LOCK_wsrep_rollback);
   wsrep_aborting_thd_t abortees = wsrep_aborting_thd;
   while (abortees)
   {

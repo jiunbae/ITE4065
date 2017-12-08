@@ -66,7 +66,7 @@
 #define DEFAULT_ALLOC_SIZE 8192
 #define DEFAULT_ALIGN_SIZE 8192
 
-static int delete_tree_element(TREE *,TREE_ELEMENT *, my_bool abort);
+static void delete_tree_element(TREE *,TREE_ELEMENT *);
 static int tree_walk_left_root_right(TREE *,TREE_ELEMENT *,
 				     tree_walk_action,void *);
 static int tree_walk_right_root_left(TREE *,TREE_ELEMENT *,
@@ -136,30 +136,22 @@ void init_tree(TREE *tree, size_t default_alloc_size, size_t memory_limit,
   DBUG_VOID_RETURN;
 }
 
-static int free_tree(TREE *tree, my_bool abort, myf free_flags)
+static void free_tree(TREE *tree, myf free_flags)
 {
-  int error, first_error= 0;
   DBUG_ENTER("free_tree");
   DBUG_PRINT("enter",("tree: %p", tree));
 
   if (tree->root)				/* If initialized */
   {
     if (tree->with_delete)
-    {
-      if ((error= delete_tree_element(tree, tree->root, abort)))
-      {
-        first_error= first_error ? first_error : error;
-        abort= 1;
-      }
-    }
+      delete_tree_element(tree,tree->root);
     else
     {
       if (tree->free)
       {
         if (tree->memory_limit)
           (*tree->free)(NULL, free_init, tree->custom_arg);
-	if ((error= delete_tree_element(tree, tree->root, abort)))
-          first_error= first_error ? first_error : error;
+	delete_tree_element(tree,tree->root);
         if (tree->memory_limit)
           (*tree->free)(NULL, free_end, tree->custom_arg);
       }
@@ -170,61 +162,32 @@ static int free_tree(TREE *tree, my_bool abort, myf free_flags)
   tree->elements_in_tree=0;
   tree->allocated=0;
 
-  DBUG_RETURN(first_error);
+  DBUG_VOID_RETURN;
 }
 
-
-/**
-  Delete tree.
-
-  @param tree     Tree
-  @param abort    0 if normal, 1 if tree->free should not be called.
-
-  @return         0 ok
-                  <> 0  Returns first <> 0 from (tree->free)(*,free_free,*)
-
- @Notes
-   If one (tree->free)(,free_free,) returns <> 0, no future
-   tree->free(*,free_free,*) will be called.
-   Other tree->free operations (free_init, free_end) will be called
-*/
-
-
-int delete_tree(TREE* tree, my_bool abort)
+void delete_tree(TREE* tree)
 {
-  return free_tree(tree, abort, MYF(0)); /* my_free() mem_root if applicable */
+  free_tree(tree, MYF(0)); /* my_free() mem_root if applicable */
 }
 
-int reset_tree(TREE* tree)
+void reset_tree(TREE* tree)
 {
   /* do not free mem_root, just mark blocks as free */
-  return free_tree(tree, 0, MYF(MY_MARK_BLOCKS_FREE));
+  free_tree(tree, MYF(MY_MARK_BLOCKS_FREE));
 }
 
 
-static int delete_tree_element(TREE *tree, TREE_ELEMENT *element,
-                               my_bool abort)
+static void delete_tree_element(TREE *tree, TREE_ELEMENT *element)
 {
-  int error, first_error= 0;
   if (element != &tree->null_element)
   {
-    if ((first_error= delete_tree_element(tree, element->left, abort)))
-      abort= 1;
-    if (!abort && tree->free)
-    {
-      if ((error= (*tree->free)(ELEMENT_KEY(tree,element), free_free,
-                                tree->custom_arg)))
-      {
-        first_error= first_error ? first_error : error;
-        abort= 1;
-      }
-    }
-    if ((error= delete_tree_element(tree, element->right, abort)))
-      first_error= first_error ? first_error : error;
+    delete_tree_element(tree,element->left);
+    if (tree->free)
+      (*tree->free)(ELEMENT_KEY(tree,element), free_free, tree->custom_arg);
+    delete_tree_element(tree,element->right);
     if (tree->with_delete)
       my_free(element);
   }
-  return first_error;
 }
 
 

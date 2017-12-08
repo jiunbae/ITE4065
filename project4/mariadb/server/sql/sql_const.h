@@ -126,7 +126,6 @@
 #define MAX_ACCEPT_RETRY	10	// Test accept this many times
 #define MAX_FIELDS_BEFORE_HASH	32
 #define USER_VARS_HASH_SIZE     16
-#define SEQUENCES_HASH_SIZE     16
 #define TABLE_OPEN_CACHE_MIN    400
 #define TABLE_OPEN_CACHE_DEFAULT 2000
 #define TABLE_DEF_CACHE_DEFAULT 400
@@ -175,11 +174,6 @@
 #define TABLE_ALLOC_BLOCK_SIZE		1024
 #define WARN_ALLOC_BLOCK_SIZE		2048
 #define WARN_ALLOC_PREALLOC_SIZE	1024
-/*
-  Note that if we are using 32K or less, then TCmalloc will use a local
-  heap without locks!
-*/
-#define SHOW_ALLOC_BLOCK_SIZE           (32768-MALLOC_OVERHEAD)
 
 /*
   The following parameters is to decide when to use an extra cache to

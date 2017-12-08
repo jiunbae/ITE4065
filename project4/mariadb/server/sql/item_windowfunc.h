@@ -1,29 +1,13 @@
-/*
-   Copyright (c) 2016,2017 MariaDB
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
-
 #ifndef ITEM_WINDOWFUNC_INCLUDED
 #define ITEM_WINDOWFUNC_INCLUDED
 
+#include "my_global.h"
 #include "item.h"
 
 class Window_spec;
 
 
 int test_if_group_changed(List<Cached_item> &list);
-
 
 /* A wrapper around test_if_group_changed */
 class Group_bound_tracker
@@ -32,10 +16,10 @@ public:
 
   Group_bound_tracker(THD *thd, SQL_I_List<ORDER> *list)
   {
-    for (ORDER *curr = list->first; curr; curr=curr->next)
+    for (ORDER *curr = list->first; curr; curr=curr->next) 
     {
-        Cached_item *tmp= new_Cached_item(thd, curr->item[0], TRUE);
-        group_fields.push_back(tmp);
+      Cached_item *tmp= new_Cached_item(thd, curr->item[0], TRUE);
+      group_fields.push_back(tmp);
     }
   }
 
@@ -301,13 +285,13 @@ class Item_sum_hybrid_simple : public Item_sum,
  public:
   Item_sum_hybrid_simple(THD *thd, Item *arg):
    Item_sum(thd, arg),
-   Type_handler_hybrid_field_type(&type_handler_longlong),
+   Type_handler_hybrid_field_type(MYSQL_TYPE_LONGLONG),
    value(NULL)
   { collation.set(&my_charset_bin); }
 
   Item_sum_hybrid_simple(THD *thd, Item *arg1, Item *arg2):
    Item_sum(thd, arg1, arg2),
-   Type_handler_hybrid_field_type(&type_handler_longlong),
+   Type_handler_hybrid_field_type(MYSQL_TYPE_LONGLONG),
    value(NULL)
   { collation.set(&my_charset_bin); }
 
@@ -319,8 +303,14 @@ class Item_sum_hybrid_simple : public Item_sum,
   my_decimal *val_decimal(my_decimal *);
   void reset_field();
   String *val_str(String *);
-  const Type_handler *type_handler() const
-  { return Type_handler_hybrid_field_type::type_handler(); }
+  /* TODO(cvicentiu) copied from Item_sum_hybrid, what does it do? */
+  bool keep_field_type(void) const { return 1; }
+  enum Item_result result_type() const
+  { return Type_handler_hybrid_field_type::result_type(); }
+  enum Item_result cmp_type() const
+  { return Type_handler_hybrid_field_type::cmp_type(); }
+  enum enum_field_types field_type() const
+  { return Type_handler_hybrid_field_type::field_type(); }
   void update_field();
   Field *create_tmp_field(bool group, TABLE *table);
   void clear()
@@ -523,7 +513,8 @@ class Item_sum_percent_rank: public Item_sum_window_with_row_count
     row_number= 0;
   }
   bool add();
-  const Type_handler *type_handler() const { return &type_handler_double; }
+  enum Item_result result_type () const { return REAL_RESULT; }
+  enum_field_types field_type() const { return MYSQL_TYPE_DOUBLE; }
 
   void fix_length_and_dec()
   {
@@ -573,9 +564,6 @@ class Item_sum_cume_dist: public Item_sum_window_with_row_count
   Item_sum_cume_dist(THD *thd) : Item_sum_window_with_row_count(thd),
                                  current_row_count_(0) {}
 
-  Item_sum_cume_dist(THD *thd, Item *arg) : Item_sum_window_with_row_count(thd,arg),
-                                 current_row_count_(0) {}
-
   double val_real()
   {
     if (get_row_count() == 0)
@@ -611,7 +599,8 @@ class Item_sum_cume_dist: public Item_sum_window_with_row_count
   }
 
   void update_field() {}
-  const Type_handler *type_handler() const { return &type_handler_double; }
+  enum Item_result result_type () const { return REAL_RESULT; }
+  enum_field_types field_type() const { return MYSQL_TYPE_DOUBLE; }
 
   void fix_length_and_dec()
   {
@@ -621,11 +610,6 @@ class Item_sum_cume_dist: public Item_sum_window_with_row_count
   
   Item *get_copy(THD *thd, MEM_ROOT *mem_root)
   { return get_item_copy<Item_sum_cume_dist>(thd, mem_root, this); }
-
-  ulonglong get_row_number()
-  {
-    return current_row_count_ ;
-  }
 
  private:
   ulonglong current_row_count_;
@@ -692,7 +676,8 @@ class Item_sum_ntile : public Item_sum_window_with_row_count
 
   void update_field() {}
 
-  const Type_handler *type_handler() const { return &type_handler_longlong; }
+  enum Item_result result_type () const { return INT_RESULT; }
+  enum_field_types field_type() const { return MYSQL_TYPE_LONGLONG; }
   
   Item *get_copy(THD *thd, MEM_ROOT *mem_root)
   { return get_item_copy<Item_sum_ntile>(thd, mem_root, this); }
@@ -702,288 +687,17 @@ class Item_sum_ntile : public Item_sum_window_with_row_count
   ulong current_row_count_;
 };
 
-class Item_sum_percentile_disc : public Item_sum_cume_dist,
-                                 public Type_handler_hybrid_field_type
-{
-public:
-  Item_sum_percentile_disc(THD *thd, Item* arg) : Item_sum_cume_dist(thd, arg),
-                           Type_handler_hybrid_field_type(&type_handler_longlong),
-                           value(NULL), val_calculated(FALSE), first_call(TRUE),
-                           prev_value(0), order_item(NULL){}
-
-  double val_real()
-  {
-    if (get_row_count() == 0 || get_arg(0)->is_null())
-    {
-      null_value= true;
-      return 0;
-    }
-    null_value= false;
-    return value->val_real();
-  }
-
-  longlong val_int()
-  {
-    if (get_row_count() == 0 || get_arg(0)->is_null())
-    {
-      null_value= true;
-      return 0;
-    }
-    null_value= false;
-    return value->val_int();
-  }
-
-  my_decimal* val_decimal(my_decimal* dec)
-  {
-    if (get_row_count() == 0 || get_arg(0)->is_null())
-    {
-      null_value= true;
-      return 0;
-    }
-    null_value= false;
-    return value->val_decimal(dec);
-  }
-
-  String* val_str(String *str)
-  {
-    if (get_row_count() == 0 || get_arg(0)->is_null())
-    {
-      null_value= true;
-      return 0;
-    }
-    null_value= false;
-    return value->val_str(str);
-  }
-
-  bool add()
-  {
-    Item *arg= get_arg(0);
-    if (arg->is_null())
-      return false;
-
-    if (first_call)
-    {
-      prev_value= arg->val_real();
-      if (prev_value > 1 || prev_value < 0)
-      {
-        my_error(ER_ARGUMENT_OUT_OF_RANGE, MYF(0), func_name());
-        return true;
-      }
-      first_call= false;
-    }
-
-    double arg_val= arg->val_real();
-
-    if (prev_value != arg_val)
-    {
-      my_error(ER_ARGUMENT_NOT_CONSTANT, MYF(0), func_name());
-      return true;
-    }
-
-    if (val_calculated)
-      return false;
-
-    value->store(order_item);
-    value->cache_value();
-    if (value->null_value)
-      return false;
-
-    Item_sum_cume_dist::add();
-    double val= Item_sum_cume_dist::val_real();
-
-    if (val >= prev_value && !val_calculated)
-      val_calculated= true;
-    return false;
-  }
-
-  enum Sumfunctype sum_func() const
-  {
-    return PERCENTILE_DISC_FUNC;
-  }
-
-  void clear()
-  {
-    val_calculated= false;
-    first_call= true;
-    value->clear();
-    Item_sum_cume_dist::clear();
-  }
-
-  const char*func_name() const
-  {
-    return "percentile_disc";
-  }
-
-  void update_field() {}
-  void set_type_handler(Window_spec *window_spec);
-  const Type_handler *type_handler() const
-  {return Type_handler_hybrid_field_type::type_handler();}
-
-  void fix_length_and_dec()
-  {
-    decimals = 10;  // TODO-cvicentiu find out how many decimals the standard
-                    // requires.
-  }
-
-  Item *get_copy(THD *thd, MEM_ROOT *mem_root)
-  { return get_item_copy<Item_sum_percentile_disc>(thd, mem_root, this); }
-  void setup_window_func(THD *thd, Window_spec *window_spec);
-  void setup_hybrid(THD *thd, Item *item);
-  bool fix_fields(THD *thd, Item **ref);
-
-private:
-  Item_cache *value;
-  bool val_calculated;
-  bool first_call;
-  double prev_value;
-  Item *order_item;
-};
-
-class Item_sum_percentile_cont : public Item_sum_cume_dist,
-                                 public Type_handler_hybrid_field_type
-{
-public:
-  Item_sum_percentile_cont(THD *thd, Item* arg) : Item_sum_cume_dist(thd, arg),
-                           Type_handler_hybrid_field_type(&type_handler_double),
-                           floor_value(NULL), ceil_value(NULL), first_call(TRUE),prev_value(0),
-                           ceil_val_calculated(FALSE), floor_val_calculated(FALSE), order_item(NULL){}
-
-  double val_real()
-  {
-    if (get_row_count() == 0 || get_arg(0)->is_null())
-    {
-      null_value= true;
-      return 0;
-    }
-    null_value= false;
-    double val= 1 + prev_value * (get_row_count()-1);
-
-    /*
-      Applying the formula to get the value
-      If (CRN = FRN = RN) then the result is (value of expression from row at RN)
-      Otherwise the result is
-      (CRN - RN) * (value of expression for row at FRN) +
-      (RN - FRN) * (value of expression for row at CRN)
-    */
-
-    if(ceil(val) == floor(val))
-      return floor_value->val_real();
-
-    double ret_val=  ((val - floor(val)) * ceil_value->val_real()) +
-                  ((ceil(val) - val) * floor_value->val_real());
-
-    return ret_val;
-  }
-
-  bool add()
-  {
-    Item *arg= get_arg(0);
-    if (arg->is_null())
-      return false;
-
-    if (first_call)
-    {
-      first_call= false;
-      prev_value= arg->val_real();
-      if (prev_value > 1 || prev_value < 0)
-      {
-        my_error(ER_ARGUMENT_OUT_OF_RANGE, MYF(0), func_name());
-        return true;
-      }
-    }
-
-    double arg_val= arg->val_real();
-    if (prev_value != arg_val)
-    {
-      my_error(ER_ARGUMENT_NOT_CONSTANT, MYF(0), func_name());
-      return true;
-    }
-
-    if (!floor_val_calculated)
-    {
-      floor_value->store(order_item);
-      floor_value->cache_value();
-      if (floor_value->null_value)
-        return false;
-    }
-    if (floor_val_calculated && !ceil_val_calculated)
-    {
-      ceil_value->store(order_item);
-      ceil_value->cache_value();
-      if (ceil_value->null_value)
-        return false;
-    }
-
-    Item_sum_cume_dist::add();
-    double val= 1 + prev_value * (get_row_count()-1);
-
-    if (!floor_val_calculated && get_row_number() == floor(val))
-      floor_val_calculated= true;
-
-    if (!ceil_val_calculated && get_row_number() == ceil(val))
-      ceil_val_calculated= true;
-    return false;
-  }
-
-  enum Sumfunctype sum_func() const
-  {
-    return PERCENTILE_CONT_FUNC;
-  }
-
-  void clear()
-  {
-    first_call= true;
-    floor_value->clear();
-    ceil_value->clear();
-    floor_val_calculated= false;
-    ceil_val_calculated= false;
-    Item_sum_cume_dist::clear();
-  }
-
-  const char*func_name() const
-  {
-    return "percentile_cont";
-  }
-  void update_field() {}
-  void set_type_handler(Window_spec *window_spec);
-  const Type_handler *type_handler() const
-  {return Type_handler_hybrid_field_type::type_handler();}
-
-  void fix_length_and_dec()
-  {
-    decimals = 10;  // TODO-cvicentiu find out how many decimals the standard
-                    // requires.
-  }
-
-  Item *get_copy(THD *thd, MEM_ROOT *mem_root)
-  { return get_item_copy<Item_sum_percentile_cont>(thd, mem_root, this); }
-  void setup_window_func(THD *thd, Window_spec *window_spec);
-  void setup_hybrid(THD *thd, Item *item);
-  bool fix_fields(THD *thd, Item **ref);
-
-private:
-  Item_cache *floor_value;
-  Item_cache *ceil_value;
-  bool first_call;
-  double prev_value;
-  bool ceil_val_calculated;
-  bool floor_val_calculated;
-  Item *order_item;
-};
-
-
-
 
 class Item_window_func : public Item_func_or_sum
 {
   /* Window function parameters as we've got them from the parser */
 public:
-  LEX_CSTRING *window_name;
+  LEX_STRING *window_name;
 public:
   Window_spec *window_spec;
   
 public:
-  Item_window_func(THD *thd, Item_sum *win_func, LEX_CSTRING *win_name)
+  Item_window_func(THD *thd, Item_sum *win_func, LEX_STRING *win_name)
     : Item_func_or_sum(thd, (Item *) win_func),
       window_name(win_name), window_spec(NULL), 
       force_return_blank(true),
@@ -1027,8 +741,6 @@ public:
     case Item_sum::PERCENT_RANK_FUNC:
     case Item_sum::CUME_DIST_FUNC:
     case Item_sum::NTILE_FUNC:
-    case Item_sum::PERCENTILE_CONT_FUNC:
-    case Item_sum::PERCENTILE_DISC_FUNC:
       return true;
     default: 
       return false;
@@ -1055,8 +767,6 @@ public:
     case Item_sum::PERCENT_RANK_FUNC:
     case Item_sum::CUME_DIST_FUNC:
     case Item_sum::NTILE_FUNC:
-    case Item_sum::PERCENTILE_CONT_FUNC:
-    case Item_sum::PERCENTILE_DISC_FUNC:
       return true;
     default:
       return false;
@@ -1080,39 +790,11 @@ public:
     case Item_sum::DENSE_RANK_FUNC:
     case Item_sum::PERCENT_RANK_FUNC:
     case Item_sum::CUME_DIST_FUNC:
-    case Item_sum::PERCENTILE_CONT_FUNC:
-    case Item_sum::PERCENTILE_DISC_FUNC:
       return true;
     default: 
       return false;
     }
   }  
-
-  bool only_single_element_order_list() const
-  {
-    switch (window_func()->sum_func()){
-    case Item_sum::PERCENTILE_CONT_FUNC:
-    case Item_sum::PERCENTILE_DISC_FUNC:
-      return true;
-    default:
-      return false;
-    }
-  }
-
-  void setting_handler_for_percentile_functions(Item_result rtype) const
-  {
-    switch (window_func()->sum_func()){
-    case Item_sum::PERCENTILE_DISC_FUNC:
-         ((Item_sum_percentile_disc* ) window_func())->set_handler_by_cmp_type(rtype);
-         break;
-    default:
-      return;
-    }
-  }
-
-  bool check_result_type_of_order_item();
-
-
 
   /*
     Computation functions.
@@ -1120,9 +802,9 @@ public:
   */
   void setup_partition_border_check(THD *thd);
 
-  const Type_handler *type_handler() const
-  {
-    return ((Item_sum *) args[0])->type_handler();
+  enum_field_types field_type() const
+  { 
+    return ((Item_sum *) args[0])->field_type(); 
   }
   enum Item::Type type() const { return Item::WINDOW_FUNC_ITEM; }
 

@@ -20,7 +20,8 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
+#include <my_sys.h>
 #include <m_string.h>
 #include <m_ctype.h>
 #include <mysql_com.h>
@@ -130,61 +131,6 @@ bool String::set_int(longlong num, bool unsigned_flag, CHARSET_INFO *cs)
   str_charset=cs;
   return FALSE;
 }
-
-
-// Convert a number into its HEX representation
-bool String::set_hex(ulonglong num)
-{
-  char *n_end;
-  if (alloc(65) || !(n_end= longlong2str(num, Ptr, 16)))
-    return true;
-  length((uint32) (n_end - Ptr));
-  set_charset(&my_charset_latin1);
-  return false;
-}
-
-
-/**
-  Append a hex representation of the byte "value" into "to".
-  Note:
-    "to" is incremented for the caller by two bytes. It's passed by reference!
-    So it resembles a macros, hence capital letters in the name.
-*/
-static inline void APPEND_HEX(char *&to, uchar value)
-{
-  *to++= _dig_vec_upper[((uchar) value) >> 4];
-  *to++= _dig_vec_upper[((uchar) value) & 0x0F];
-}
-
-
-void String::qs_append_hex(const char *str, uint32 len)
-{
-  const char *str_end= str + len;
-  for (char *to= Ptr + str_length ; str < str_end; str++)
-    APPEND_HEX(to, (uchar) *str);
-  str_length+= len * 2;
-}
-
-
-// Convert a string to its HEX representation
-bool String::set_hex(const char *str, uint32 len)
-{
-  /*
-    Safety: cut the source string if "len" is too large.
-    Note, alloc() can allocate some more space than requested, due to:
-    - ALIGN_SIZE
-    - one extra byte for a null terminator
-    So cut the source string to 0x7FFFFFF0 rather than 0x7FFFFFFE.
-  */
-  set_if_smaller(len, 0x7FFFFFF0);
-  if (alloc(len * 2))
-    return true;
-  length(0);
-  qs_append_hex(str, len);
-  set_charset(&my_charset_latin1);
-  return false;
-}
-
 
 bool String::set_real(double num,uint decimals, CHARSET_INFO *cs)
 {
@@ -563,7 +509,7 @@ bool String::append_ulonglong(ulonglong val)
   with character set recoding
 */
 
-bool String::append(const char *s, uint arg_length, CHARSET_INFO *cs)
+bool String::append(const char *s,uint32 arg_length, CHARSET_INFO *cs)
 {
   uint32 offset;
   
@@ -1027,7 +973,8 @@ my_copy_with_hex_escaping(CHARSET_INFO *cs,
         break; /* purecov: inspected */
       *dst++= '\\';
       *dst++= 'x';
-      APPEND_HEX(dst, (uchar) *src);
+      *dst++= _dig_vec_upper[((unsigned char) *src) >> 4];
+      *dst++= _dig_vec_upper[((unsigned char) *src) & 15];
       src++;
       dstlen-= 4;
     }
@@ -1212,7 +1159,8 @@ uint convert_to_printable(char *to, size_t to_len,
         break;
       *t++= '\\';
       *t++= 'x';
-      APPEND_HEX(t, *f);
+      *t++= _dig_vec_upper[((unsigned char) *f) >> 4];
+      *t++= _dig_vec_upper[((unsigned char) *f) & 0x0F];
     }
     if (t_end - t >= 3) // '...'
       dots= t;

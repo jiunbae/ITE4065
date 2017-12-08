@@ -21,14 +21,13 @@
 #endif
 
 #define MYSQL_SERVER 1
-#include <my_global.h>
 #include "sql_plugin.h"
-#include "myisamdef.h"
 #include "sql_priv.h"
 #include "key.h"                                // key_copy
 #include <m_ctype.h>
 #include <my_bit.h>
 #include "ha_myisam.h"
+#include "myisamdef.h"
 #include "rt_index.h"
 #include "sql_table.h"                          // tablename_to_filename
 #include "sql_class.h"                          // THD
@@ -697,8 +696,7 @@ ha_myisam::ha_myisam(handlerton *hton, TABLE_SHARE *table_arg)
                   HA_DUPLICATE_POS | HA_CAN_INDEX_BLOBS | HA_AUTO_PART_KEY |
                   HA_FILE_BASED | HA_CAN_GEOMETRY | HA_NO_TRANSACTIONS |
                   HA_CAN_INSERT_DELAYED | HA_CAN_BIT_FIELD | HA_CAN_RTREEKEYS |
-                  HA_HAS_RECORDS | HA_STATS_RECORDS_IS_EXACT | HA_CAN_REPAIR |
-                  HA_CAN_TABLES_WITHOUT_ROLLBACK),
+                  HA_HAS_RECORDS | HA_STATS_RECORDS_IS_EXACT | HA_CAN_REPAIR),
    can_enable_indexes(1)
 {}
 
@@ -1702,9 +1700,8 @@ void ha_myisam::start_bulk_insert(ha_rows rows, uint flags)
   which have been activated by start_bulk_insert().
 
   SYNOPSIS
-    end_bulk_insert(fatal_error)
-    abort         0 normal end, store everything
-                  1 abort quickly. No need to flush/write anything. Table will be deleted
+    end_bulk_insert()
+    no arguments
 
   RETURN
     0     OK
@@ -1713,20 +1710,10 @@ void ha_myisam::start_bulk_insert(ha_rows rows, uint flags)
 
 int ha_myisam::end_bulk_insert()
 {
-  int first_error, error;
-  my_bool abort= file->s->deleting;
   DBUG_ENTER("ha_myisam::end_bulk_insert");
-
-  if ((first_error= mi_end_bulk_insert(file, abort)))
-    abort= 1;
-
-  if ((error= mi_extra(file, HA_EXTRA_NO_CACHE, 0)))
-  {
-    first_error= first_error ? first_error : error;
-    abort= 1;
-  }
-
-  if (!abort)
+  mi_end_bulk_insert(file);
+  int err=mi_extra(file, HA_EXTRA_NO_CACHE, 0);
+  if (!err && !file->s->deleting)
   {
     if (can_enable_indexes)
     {
@@ -1737,17 +1724,16 @@ int ha_myisam::end_bulk_insert()
         setting the indexes as active and  trying to recreate them. 
      */
    
-      if (((first_error= enable_indexes(HA_KEY_SWITCH_NONUNIQ_SAVE)) != 0) && 
+      if (((err= enable_indexes(HA_KEY_SWITCH_NONUNIQ_SAVE)) != 0) && 
           table->in_use->killed)
       {
         delete_all_rows();
         /* not crashed, despite being killed during repair */
         file->s->state.changed&= ~(STATE_CRASHED|STATE_CRASHED_ON_REPAIR);
       }
-    }
+    } 
   }
-  DBUG_PRINT("exit", ("first_error: %d", first_error));
-  DBUG_RETURN(first_error);
+  DBUG_RETURN(err);
 }
 
 
@@ -1766,7 +1752,7 @@ bool ha_myisam::check_and_repair(THD *thd)
   sql_print_warning("Checking table:   '%s'",table->s->path.str);
 
   const CSET_STRING query_backup= thd->query_string;
-  thd->set_query((char*) table->s->table_name.str,
+  thd->set_query(table->s->table_name.str,
                  (uint) table->s->table_name.length, system_charset_info);
 
   if ((marked_crashed= mi_is_crashed(file)) || check(thd, &check_opt))
@@ -1804,7 +1790,7 @@ bool ha_myisam::is_crashed() const
 	  (my_disable_locking && file->s->state.open_count));
 }
 
-int ha_myisam::update_row(const uchar *old_data, const uchar *new_data)
+int ha_myisam::update_row(const uchar *old_data, uchar *new_data)
 {
   return mi_update(file,old_data,new_data);
 }
@@ -2350,7 +2336,7 @@ ha_myisam::check_if_supported_inplace_alter(TABLE *new_table,
           old_key->flags != new_key->flags ||
           old_key->user_defined_key_parts != new_key->user_defined_key_parts ||
           old_key->algorithm != new_key->algorithm ||
-          strcmp(old_key->name.str, new_key->name.str))
+          strcmp(old_key->name, new_key->name))
         DBUG_RETURN(HA_ALTER_INPLACE_NOT_SUPPORTED);
 
       for (uint j= 0; j < old_key->user_defined_key_parts; j++)
@@ -2613,7 +2599,7 @@ maria_declare_plugin_end;
     @retval FALSE An error occurred
 */
 
-my_bool ha_myisam::register_query_cache_table(THD *thd, const char *table_name,
+my_bool ha_myisam::register_query_cache_table(THD *thd, char *table_name,
                                               uint table_name_len,
                                               qc_engine_callback
                                               *engine_callback,

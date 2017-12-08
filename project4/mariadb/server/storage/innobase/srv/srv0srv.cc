@@ -150,9 +150,19 @@ my_bool	srv_read_only_mode;
 /** store to its own file each table created by an user; data
 dictionary tables are in the system tablespace 0 */
 my_bool	srv_file_per_table;
+/** The file format to use on new *.ibd files. */
+ulint	srv_file_format;
+/** Whether to check file format during startup.  A value of
+UNIV_FORMAT_MAX + 1 means no checking ie. FALSE.  The default is to
+set it to the highest format we support. */
+ulint	srv_max_file_format_at_startup = UNIV_FORMAT_MAX;
 /** Set if InnoDB operates in read-only mode or innodb-force-recovery
 is greater than SRV_FORCE_NO_TRX_UNDO. */
 my_bool	high_level_read_only;
+
+#if UNIV_FORMAT_A
+# error "UNIV_FORMAT_A must be 0!"
+#endif
 
 /** Place locks to records only i.e. do not use next-key locking except
 on duplicate key checking and foreign key checking */
@@ -168,10 +178,17 @@ use simulated aio we build below with threads.
 Currently we support native aio on windows and linux */
 my_bool	srv_use_native_aio;
 my_bool	srv_numa_interleave;
+/** innodb_use_trim; whether to use fallocate(PUNCH_HOLE) with
+page_compression */
+my_bool	srv_use_trim;
 /** copy of innodb_use_atomic_writes; @see innobase_init() */
 my_bool	srv_use_atomic_writes;
 /** innodb_compression_algorithm; used with page compression */
 ulong	innodb_compression_algorithm;
+/** innodb_mtflush_threads; number of threads used for multi-threaded flush */
+long srv_mtflush_threads;
+/** innodb_use_mtflush; whether to use multi threaded flush. */
+my_bool	srv_use_mtflush;
 
 #ifdef UNIV_DEBUG
 /** Used by SET GLOBAL innodb_master_thread_disabled_debug = X. */
@@ -519,6 +536,11 @@ UNIV_INTERN ulong srv_buf_dump_status_frequency;
 #define srv_sys_mutex_exit() do {			\
 	mutex_exit(&srv_sys.mutex);			\
 } while (0)
+
+#define fetch_lock_wait_timeout(trx)			\
+	((trx)->lock.allowed_to_wait			\
+	 ? thd_lock_wait_timeout((trx)->mysql_thd)	\
+	 : 0)
 
 /*
 	IMPLEMENTATION OF THE SERVER MAIN PROGRAM

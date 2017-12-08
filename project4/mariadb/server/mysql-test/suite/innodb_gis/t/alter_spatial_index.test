@@ -312,12 +312,8 @@ ALTER TABLE tab DROP INDEX idx2;
 --disable_info
 
 # Check spatial index on temp tables
---error ER_ILLEGAL_PARAMETER_DATA_TYPES2_FOR_OPERATION
 SET STATEMENT sql_mode = 'NO_ENGINE_SUBSTITUTION' FOR
 CREATE TEMPORARY TABLE temp_tab AS SELECT * FROM tab where c1 = c2;
-
-SET STATEMENT sql_mode = 'NO_ENGINE_SUBSTITUTION' FOR
-CREATE TEMPORARY TABLE temp_tab AS SELECT * FROM tab;
 
 INSERT INTO temp_tab SELECT * FROM tab;
 
@@ -476,24 +472,15 @@ ALTER TABLE tab ADD INDEX idx6(c4(10)) USING BTREE;
 
 ALTER TABLE tab MODIFY COLUMN c2 GEOMETRY NOT NULL;
 
-ALTER TABLE tab MODIFY COLUMN c3 POLYGON NOT NULL;
+# --error ER_CANT_CREATE_GEOMETRY_OBJECT
+# ALTER TABLE tab MODIFY COLUMN c3 POLYGON NOT NULL;
 
-ALTER TABLE tab add COLUMN c7 POINT NOT NULL;
---disable_info
+# --error ER_INVALID_USE_OF_NULL
+# ALTER TABLE tab add COLUMN c7 POINT NOT NULL;
 
-# instant add, supported
-ALTER TABLE tab add COLUMN c8 POINT NOT NULL, ALGORITHM = INPLACE, LOCK=NONE;
-SELECT HEX(c8) FROM tab;
-BEGIN;
-INSERT INTO tab SELECT 0,c2,c3,c4,c5,
-ST_GeomFromText('POINT(67 89)'),ST_GeomFromText('POINT(67 89)')
-FROM tab LIMIT 1;
-SELECT HEX(c8) FROM tab;
-ROLLBACK;
-
-# not instant, not supported
 --error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
-ALTER TABLE tab add COLUMN c9 POINT NOT NULL AFTER c5, ALGORITHM = INPLACE, LOCK=NONE;
+ALTER TABLE tab add COLUMN c8 POINT NOT NULL, ALGORITHM = INPLACE, LOCK=NONE;
+--disable_info
 
 SHOW CREATE TABLE tab;
 
@@ -753,16 +740,16 @@ ALTER TABLE t1 ADD SPATIAL INDEX(p);
 ALTER TABLE t1 FORCE, LOCK=NONE;
 DROP TABLE t1;
 
-create table t1 (p point not null default if(unix_timestamp()>10,POINT(1,1),LineString(Point(0,0),Point(1,1)))) ENGINE=innodb;
+create table t1 (p point not null default if(unix_timestamp()>10,POINT(1,1),0)) ENGINE=innodb;
 set timestamp=10;
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_CANT_CREATE_GEOMETRY_OBJECT
 insert into t1 values(default);
 drop table t1;
 SET timestamp=default;
 
-create table t1 (p point not null default if(unix_timestamp()>10,POINT(1,1),LineString(Point(0,0),Point(1,1)))) ENGINE=innodb;
+create table t1 (p point not null default if(unix_timestamp()>10,POINT(1,1),0)) ENGINE=innodb;
 set timestamp=10;
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_CANT_CREATE_GEOMETRY_OBJECT
 alter table t1 add column i int;
 drop table t1;
 SET timestamp=default;

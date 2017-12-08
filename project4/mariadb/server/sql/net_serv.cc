@@ -35,7 +35,7 @@
   embedded library
  */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include <mysql.h>
 #include <mysql_com.h>
 #include <mysqld_error.h>
@@ -45,7 +45,12 @@
 #include <violite.h>
 #include <signal.h>
 #include "probes_mysql.h"
-#include "proxy_protocol.h"
+
+#ifdef EMBEDDED_LIBRARY
+#undef MYSQL_SERVER
+#undef MYSQL_CLIENT
+#define MYSQL_CLIENT
+#endif /*EMBEDDED_LIBRARY */
 
 /*
   to reduce the number of ifdef's in the code
@@ -58,11 +63,8 @@ static void inline EXTRA_DEBUG_fprintf(...) {}
 #ifndef MYSQL_SERVER
 static int inline EXTRA_DEBUG_fflush(...) { return 0; }
 #endif
-#endif /* EXTRA_DEBUG */
-
+#endif
 #ifdef MYSQL_SERVER
-#include <sql_class.h>
-#include <sql_connect.h>
 #define MYSQL_SERVER_my_error my_error
 #else
 static void inline MYSQL_SERVER_my_error(...) {}
@@ -116,6 +118,7 @@ extern my_bool thd_net_is_killed();
 #define thd_net_is_killed() 0
 #endif
 
+#define TEST_BLOCKING		8
 
 static my_bool net_write_buff(NET *, const uchar *, ulong);
 
@@ -826,70 +829,6 @@ static my_bool my_net_skip_rest(NET *net, uint32 remain, thr_alarm_t *alarmed,
 
 
 /**
-  Try to parse and process proxy protocol header.
-
-  This function is called in case MySQL packet header cannot be parsed.
-  It checks if proxy header was sent, and that it was send from allowed remote
-  host, as defined by proxy-protocol-networks parameter.
-
-  If proxy header is parsed, then THD and ACL structures and changed to indicate
-  the new peer address and port.
-
-  Note, that proxy header can only be sent either when the connection is established,
-  or as the client reply packet to
-*/
-#undef IGNORE                   /* for Windows */
-typedef enum { RETRY, ABORT, IGNORE} handle_proxy_header_result;
-static handle_proxy_header_result handle_proxy_header(NET *net)
-{
-#if !defined(MYSQL_SERVER) || defined(EMBEDDED_LIBRARY)
-  return IGNORE;
-#else
-  THD *thd= (THD *)net->thd;
-
-  if (!has_proxy_protocol_header(net) || !thd ||
-      thd->get_command() != COM_CONNECT)
-    return IGNORE;
-
-  /*
-    Proxy information found in the first 4 bytes received so far.
-    Read and parse proxy header , change peer ip address and port in THD.
-  */
-  proxy_peer_info peer_info;
-
-  if (!thd->net.vio)
-  {
-    DBUG_ASSERT(0);
-    return ABORT;
-  }
-
-  if (!is_proxy_protocol_allowed((sockaddr *)&(thd->net.vio->remote)))
-  {
-     /* proxy-protocol-networks variable needs to be set to allow this remote address */
-     my_printf_error(ER_HOST_NOT_PRIVILEGED, "Proxy header is not accepted from %s",
-       MYF(0), thd->main_security_ctx.ip);
-     return ABORT;
-  }
-
-  if (parse_proxy_protocol_header(net, &peer_info))
-  {
-     /* Failed to parse proxy header*/
-     my_printf_error(ER_UNKNOWN_ERROR, "Failed to parse proxy header", MYF(0));
-     return ABORT;
-  }
-
-  if (peer_info.is_local_command)
-    /* proxy header indicates LOCAL connection, no action necessary */
-    return RETRY;
-  /* Change peer address in THD and ACL structures.*/
-  uint host_errors;
-  return (handle_proxy_header_result)thd_set_peer_addr(thd,
-                         &(peer_info.peer_addr), NULL, peer_info.port,
-                         false, &host_errors);
-#endif
-}
-
-/**
   Reads one packet to net->buff + net->where_b.
   Long packets are handled by my_net_read().
   This function reallocates the net->buff buffer if necessary.
@@ -911,9 +850,6 @@ my_real_read(NET *net, size_t *complen,
 #ifndef NO_ALARM
   ALARM alarm_buff;
 #endif
-
-retry:
-
   my_bool net_blocking=vio_is_blocking(net->vio);
   uint32 remain= (net->compress ? NET_HEADER_SIZE+COMP_HEADER_SIZE :
 		  NET_HEADER_SIZE);
@@ -1145,17 +1081,6 @@ end:
 
 packets_out_of_order:
   {
-    switch (handle_proxy_header(net)) {
-    case ABORT:
-        /* error happened, message is already written. */
-        len= packet_error;
-        goto end; 
-    case RETRY:
-        goto retry;
-    case IGNORE:
-        break;
-    }
-
     DBUG_PRINT("error",
                ("Packets out of order (Found: %d, expected %u)",
                 (int) net->buff[net->where_b + 3],
@@ -1246,7 +1171,6 @@ my_net_read_packet_reallen(NET *net, my_bool read_from_server, ulong* reallen)
 	len+= total_length;
       net->where_b = save_pos;
     }
-
     net->read_pos = net->buff + net->where_b;
     if (len != packet_error)
     {

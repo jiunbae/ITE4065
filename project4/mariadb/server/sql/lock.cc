@@ -70,7 +70,7 @@
   in case external_lock() fails.
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "debug_sync.h"
 #include "lock.h"
@@ -261,7 +261,7 @@ static void track_table_access(THD *thd, TABLE **tables, size_t count)
 
       if (t)
         tst->add_trx_state(thd,  t->reginfo.lock_type,
-                           t->file->has_transaction_manager());
+                           t->file->has_transactions());
     }
   }
 }
@@ -421,11 +421,8 @@ void mysql_unlock_tables(THD *thd, MYSQL_LOCK *sql_lock)
 
 void mysql_unlock_tables(THD *thd, MYSQL_LOCK *sql_lock, bool free_lock)
 {
-  bool errors= thd->is_error();
-  PSI_stage_info org_stage;
   DBUG_ENTER("mysql_unlock_tables");
-
-  thd->backup_stage(&org_stage);
+  bool errors= thd->is_error();
   THD_STAGE_INFO(thd, stage_unlocking_tables);
 
   if (sql_lock->table_count)
@@ -436,7 +433,6 @@ void mysql_unlock_tables(THD *thd, MYSQL_LOCK *sql_lock, bool free_lock)
     my_free(sql_lock);
   if (!errors)
     thd->clear_error();
-  THD_STAGE_INFO(thd, org_stage);
   DBUG_VOID_RETURN;
 }
 
@@ -446,10 +442,10 @@ void mysql_unlock_tables(THD *thd, MYSQL_LOCK *sql_lock, bool free_lock)
   This will work even if get_lock_data fails (next unlock will free all)
 */
 
-void mysql_unlock_some_tables(THD *thd, TABLE **table,uint count, uint flag)
+void mysql_unlock_some_tables(THD *thd, TABLE **table,uint count)
 {
   MYSQL_LOCK *sql_lock=
-    get_lock_data(thd, table, count, GET_LOCK_UNLOCK | GET_LOCK_ON_THD | flag);
+    get_lock_data(thd, table, count, GET_LOCK_UNLOCK | GET_LOCK_ON_THD);
   if (sql_lock)
     mysql_unlock_tables(thd, sql_lock, 0);
 }
@@ -546,7 +542,7 @@ void mysql_lock_remove(THD *thd, MYSQL_LOCK *locked,TABLE *table)
         DBUG_ASSERT(table->lock_position == i);
 
         /* Unlock the table. */
-        mysql_unlock_some_tables(thd, &table, /* table count */ 1, 0);
+        mysql_unlock_some_tables(thd, &table, /* table count */ 1);
 
         /* Decrement table_count in advance, making below expressions easier */
         old_tables= --locked->table_count;
@@ -740,7 +736,6 @@ static int unlock_external(THD *thd, TABLE **table,uint count)
   @param flags		    One of:
            - GET_LOCK_UNLOCK      : If we should send TL_IGNORE to store lock
            - GET_LOCK_STORE_LOCKS : Store lock info in TABLE
-           - GET_LOCK_SKIP_SEQUENCES : Ignore sequences (for temporary unlock)
 */
 
 MYSQL_LOCK *get_lock_data(THD *thd, TABLE **table_ptr, uint count, uint flags)
@@ -758,8 +753,7 @@ MYSQL_LOCK *get_lock_data(THD *thd, TABLE **table_ptr, uint count, uint flags)
     TABLE *t= table_ptr[i];
     
     if (t->s->tmp_table != NON_TRANSACTIONAL_TMP_TABLE && 
-        t->s->tmp_table != INTERNAL_TMP_TABLE &&
-        (!(flags & GET_LOCK_SKIP_SEQUENCES) || t->s->sequence == 0))
+        t->s->tmp_table != INTERNAL_TMP_TABLE)
     {
       lock_count+= t->file->lock_count();
       table_count++;
@@ -790,8 +784,7 @@ MYSQL_LOCK *get_lock_data(THD *thd, TABLE **table_ptr, uint count, uint flags)
     THR_LOCK_DATA **locks_start;
     table= table_ptr[i];
     if (table->s->tmp_table == NON_TRANSACTIONAL_TMP_TABLE ||
-        table->s->tmp_table == INTERNAL_TMP_TABLE ||
-        ((flags & GET_LOCK_SKIP_SEQUENCES) && table->s->sequence))
+        table->s->tmp_table == INTERNAL_TMP_TABLE) 
       continue;
     lock_type= table->reginfo.lock_type;
     DBUG_ASSERT(lock_type != TL_WRITE_DEFAULT && lock_type != TL_READ_DEFAULT);
@@ -915,7 +908,7 @@ bool lock_object_name(THD *thd, MDL_key::enum_mdl_namespace mdl_type,
   MDL_request schema_request;
   MDL_request mdl_request;
 
-  DBUG_SLOW_ASSERT(ok_for_lower_case_names(db));
+  DBUG_ASSERT(ok_for_lower_case_names(db));
 
   if (thd->locked_tables_mode)
   {

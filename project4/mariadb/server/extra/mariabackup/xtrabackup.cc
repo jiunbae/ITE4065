@@ -43,7 +43,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 //#define XTRABACKUP_TARGET_IS_PLUGIN
 
-#include <my_global.h>
 #include <my_config.h>
 #include <unireg.h>
 #include <mysql_version.h>
@@ -1556,6 +1555,9 @@ innodb_init_param(void)
 	}
 
 	srv_adaptive_flushing = FALSE;
+	srv_file_format = 1; /* Barracuda */
+	srv_max_file_format_at_startup = UNIV_FORMAT_MIN; /* on */
+	/* --------------------------------------------------*/
 
 	srv_file_flush_method_str = innobase_unix_file_flush_method;
 
@@ -2836,7 +2838,7 @@ static dberr_t enumerate_ibd_files(process_single_tablespace_func_t callback)
 				/* We found a symlink or a file */
 				if (strlen(fileinfo.name) > 4) {
 					bool is_isl= false;
-					if (ends_with(fileinfo.name, ".ibd") || ((is_isl = ends_with(fileinfo.name, ".isl"))))
+					if (ends_with(fileinfo.name, ".ibd") || ((is_isl = ends_with(fileinfo.name, ".ibd"))))
 						(*callback)(dbinfo.name, fileinfo.name, is_isl);
 				}
 			}

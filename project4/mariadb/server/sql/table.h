@@ -17,6 +17,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include "my_global.h"                          /* NO_EMBEDDED_ACCESS_CHECKS */
 #include "sql_plist.h"
 #include "sql_list.h"                           /* Sql_alloc */
 #include "mdl.h"
@@ -54,7 +55,6 @@ struct TDC_element;
 class Virtual_column_info;
 class Table_triggers_list;
 class TMP_TABLE_PARAM;
-class SEQUENCE;
 
 /*
   Used to identify NESTED_JOIN structures within a join (applicable only to
@@ -449,15 +449,15 @@ enum enum_table_category
 };
 typedef enum enum_table_category TABLE_CATEGORY;
 
-TABLE_CATEGORY get_table_category(const LEX_CSTRING *db,
-                                  const LEX_CSTRING *name);
+TABLE_CATEGORY get_table_category(const LEX_STRING *db,
+                                  const LEX_STRING *name);
 
 
 typedef struct st_table_field_type
 {
-  LEX_CSTRING name;
-  LEX_CSTRING type;
-  LEX_CSTRING cset;
+  LEX_STRING name;
+  LEX_STRING type;
+  LEX_STRING cset;
 } TABLE_FIELD_TYPE;
 
 
@@ -601,7 +601,7 @@ struct TABLE_SHARE
   TABLE_STATISTICS_CB stats_cb;
 
   uchar	*default_values;		/* row with default values */
-  LEX_CSTRING comment;			/* Comment about table */
+  LEX_STRING comment;			/* Comment about table */
   CHARSET_INFO *table_charset;		/* Default charset of string fields */
 
   MY_BITMAP *check_set;                 /* Fields used by check constrant */
@@ -616,12 +616,12 @@ struct TABLE_SHARE
     should correspond to each other.
     To ensure this one can use set_table_cache() methods.
   */
-  LEX_CSTRING table_cache_key;
-  LEX_CSTRING db;                        /* Pointer to db */
-  LEX_CSTRING table_name;                /* Table name (for open) */
-  LEX_CSTRING path;                	/* Path to .frm file (from datadir) */
-  LEX_CSTRING normalized_path;		/* unpack_filename(path) */
-  LEX_CSTRING connect_string;
+  LEX_STRING table_cache_key;
+  LEX_STRING db;                        /* Pointer to db */
+  LEX_STRING table_name;                /* Table name (for open) */
+  LEX_STRING path;                	/* Path to .frm file (from datadir) */
+  LEX_STRING normalized_path;		/* unpack_filename(path) */
+  LEX_STRING connect_string;
 
   /* 
      Set of keys in use, implemented as a Bitmap.
@@ -643,7 +643,6 @@ struct TABLE_SHARE
            db_plugin ? plugin_hton(db_plugin) : NULL;
   }
   enum row_type row_type;		/* How rows are stored */
-  enum Table_type table_type;
   enum tmp_table_type tmp_table;
 
   /** Transactional or not. */
@@ -694,8 +693,7 @@ struct TABLE_SHARE
   bool use_ext_keys;                    /* Extended keys can be used */
   bool null_field_first;
   bool system;                          /* Set if system table (one record) */
-  bool not_usable_by_query_cache;
-  bool no_replicate;
+  bool crypted;                         /* If .frm file is crypted */
   bool crashed;
   bool is_view;
   bool can_cmp_whole_record;
@@ -704,8 +702,6 @@ struct TABLE_SHARE
   bool vcols_need_refixing;
   bool check_set_initialized;
   bool has_update_default_function;
-  bool can_do_row_logging;              /* 1 if table supports RBR */
-
   ulong table_map_id;                   /* for row-based replication */
 
   /*
@@ -721,8 +717,13 @@ struct TABLE_SHARE
   */
   const File_parser *view_def;
 
-  /* For sequence tables, the current sequence state */
-  SEQUENCE *sequence;
+  /*
+    Cache for row-based replication table share checks that does not
+    need to be repeated. Possible values are: -1 when cache value is
+    not calculated yet, 0 when table *shall not* be replicated, 1 when
+    table *may* be replicated.
+  */
+  int cached_row_logging_check;
 
   /* Name of the tablespace used for this table */
   char *tablespace;
@@ -1250,6 +1251,7 @@ public:
     If set, indicate that the table is not replicated by the server.
   */
   bool locked_by_logger;
+  bool no_replicate;
   bool locked_by_name;
   bool fulltext_searched;
   bool no_cache;
@@ -1299,11 +1301,10 @@ public:
   bool stats_is_read;     /* Persistent statistics is read for the table */
   bool histograms_are_read;
   MDL_ticket *mdl_ticket;
-  List<Field> splitting_fields;
 
   void init(THD *thd, TABLE_LIST *tl);
   bool fill_item_list(List<Item> *item_list) const;
-  void reset_item_list(List<Item> *item_list, uint skip) const;
+  void reset_item_list(List<Item> *item_list) const;
   void clear_column_bitmaps(void);
   void prepare_for_position(void);
   MY_BITMAP *prepare_for_keyread(uint index, MY_BITMAP *map);
@@ -1440,8 +1441,6 @@ public:
                                       TABLE *tmp_table,
                                       TMP_TABLE_PARAM *tmp_table_param,
                                       bool with_cleanup);
-  Field *find_field_by_name(LEX_CSTRING *str) const;
-  bool export_structure(THD *thd, class Row_definition_list *defs);
 };
 
 
@@ -1488,16 +1487,16 @@ enum enum_fk_option { FK_OPTION_UNDEF, FK_OPTION_RESTRICT, FK_OPTION_CASCADE,
 
 typedef struct st_foreign_key_info
 {
-  LEX_CSTRING *foreign_id;
-  LEX_CSTRING *foreign_db;
-  LEX_CSTRING *foreign_table;
-  LEX_CSTRING *referenced_db;
-  LEX_CSTRING *referenced_table;
+  LEX_STRING *foreign_id;
+  LEX_STRING *foreign_db;
+  LEX_STRING *foreign_table;
+  LEX_STRING *referenced_db;
+  LEX_STRING *referenced_table;
   enum_fk_option update_method;
   enum_fk_option delete_method;
-  LEX_CSTRING *referenced_key_name;
-  List<LEX_CSTRING> foreign_fields;
-  List<LEX_CSTRING> referenced_fields;
+  LEX_STRING *referenced_key_name;
+  List<LEX_STRING> foreign_fields;
+  List<LEX_STRING> referenced_fields;
 } FOREIGN_KEY_INFO;
 
 LEX_CSTRING *fk_option_name(enum_fk_option opt);
@@ -1560,8 +1559,7 @@ typedef struct st_schema_table
   /* Handle fileds for old SHOW */
   int (*old_format) (THD *thd, struct st_schema_table *schema_table);
   int (*process_table) (THD *thd, TABLE_LIST *tables, TABLE *table,
-                        bool res, const LEX_CSTRING *db_name,
-                        const LEX_CSTRING *table_name);
+                        bool res, LEX_STRING *db_name, LEX_STRING *table_name);
   int idx_field1, idx_field2; 
   bool hidden;
   uint i_s_requested_object;  /* the object we need to open(TABLE | VIEW) */
@@ -1621,6 +1619,10 @@ class IS_table_read_plan;
 #define JOIN_TYPE_RIGHT	2U
 #define JOIN_TYPE_OUTER 4U	/* Marker that this is an outer join */
 
+#define VIEW_SUID_INVOKER               0
+#define VIEW_SUID_DEFINER               1
+#define VIEW_SUID_DEFAULT               2
+
 /* view WITH CHECK OPTION parameter options */
 #define VIEW_CHECK_NONE       0
 #define VIEW_CHECK_LOCAL      1
@@ -1634,16 +1636,16 @@ class IS_table_read_plan;
 /** The threshold size a blob field buffer before it is freed */
 #define MAX_TDC_BLOB_SIZE 65536
 
-class select_unit;
+class select_union;
 class TMP_TABLE_PARAM;
 
 Item *create_view_field(THD *thd, TABLE_LIST *view, Item **field_ref,
-                        LEX_CSTRING *name);
+                        const char *name);
 
 struct Field_translator
 {
   Item *item;
-  LEX_CSTRING name;
+  const char *name;
 };
 
 
@@ -1670,7 +1672,7 @@ public:
 public:
   Natural_join_column(Field_translator *field_param, TABLE_LIST *tab);
   Natural_join_column(Item_field *field_param, TABLE_LIST *tab);
-  LEX_CSTRING *name();
+  const char *name();
   Item *create_item(THD *thd);
   Field *field();
   const char *table_name();
@@ -1791,8 +1793,8 @@ struct TABLE_LIST
   TABLE_LIST *next_local;
   /* link in a global list of all queries tables */
   TABLE_LIST *next_global, **prev_global;
-  const char	*db, *alias, *table_name, *schema_table_name;
-  const char    *option;                /* Used by cache index  */
+  char		*db, *alias, *table_name, *schema_table_name;
+  char          *option;                /* Used by cache index  */
   Item		*on_expr;		/* Used with outer join */
 
   Item          *sj_on_expr;
@@ -1867,7 +1869,7 @@ struct TABLE_LIST
     select_result for derived table to pass it from table creation to table
     filling procedure
   */
-  select_unit  *derived_result;
+  select_union  *derived_result;
   /* Stub used for materialized derived tables. */
   table_map	map;                    /* ID bit of table (1,2,4,8,16...) */
   table_map get_map()
@@ -1983,12 +1985,12 @@ struct TABLE_LIST
   Item          *where;                 /* VIEW WHERE clause condition */
   Item          *check_option;          /* WITH CHECK OPTION condition */
   LEX_STRING	select_stmt;		/* text of (CREATE/SELECT) statement */
-  LEX_CSTRING	md5;			/* md5 of query text */
-  LEX_CSTRING	source;			/* source of CREATE VIEW */
-  LEX_CSTRING	view_db;		/* saved view database */
-  LEX_CSTRING	view_name;		/* saved view name */
+  LEX_STRING	md5;			/* md5 of query text */
+  LEX_STRING	source;			/* source of CREATE VIEW */
+  LEX_STRING	view_db;		/* saved view database */
+  LEX_STRING	view_name;		/* saved view name */
   LEX_STRING	timestamp;		/* GMT time stamp of last operation */
-  LEX_USER      definer;                /* definer of view */
+  st_lex_user   definer;                /* definer of view */
   ulonglong	file_version;		/* version of file's field set */
   ulonglong	mariadb_version;	/* version of server on creation */
   ulonglong     updatable_view;         /* VIEW can be updated */
@@ -2055,8 +2057,8 @@ struct TABLE_LIST
   bool          where_processed;
   /* TRUE <=> VIEW CHECK OPTION expression has been processed */
   bool          check_option_processed;
-  /* TABLE_TYPE_UNKNOWN if any type is acceptable */
-  Table_type    required_type;
+  /* FRMTYPE_ERROR if any type is acceptable */
+  enum frm_type_enum required_type;
   handlerton	*db_type;		/* table_type for handler */
   char		timestamp_buffer[20];	/* buffer for timestamp (19+1) */
   /*
@@ -2077,6 +2079,9 @@ struct TABLE_LIST
     /* Don't associate a table share. */
     OPEN_STUB
   } open_strategy;
+  /* For transactional locking. */
+  int           lock_timeout;           /* NOWAIT or WAIT [X]               */
+  bool          lock_transactional;     /* If transactional lock requested. */
   /** TRUE if an alias for this table was specified in the SQL. */
   bool          is_alias;
   /** TRUE if the table is referred to in the statement using a fully
@@ -2092,7 +2097,6 @@ struct TABLE_LIST
   bool          merged_for_insert;
   /* TRUE <=> don't prepare this derived table/view as it should be merged.*/
   bool          skip_prepare_derived;
-  bool          sequence;  /* Part of NEXTVAL/CURVAL/LASTVAL */
 
   /*
     Items created by create_view_field and collected to change them in case
@@ -2117,8 +2121,8 @@ struct TABLE_LIST
     These attributes MUST NOT be used for any purposes but the parsing.
   */
 
-  LEX_CSTRING view_client_cs_name;
-  LEX_CSTRING view_connection_cl_name;
+  LEX_STRING view_client_cs_name;
+  LEX_STRING view_connection_cl_name;
 
   /*
     View definition (SELECT-statement) in the UTF-form.
@@ -2168,7 +2172,7 @@ struct TABLE_LIST
   List<String> *partition_names;
 #endif /* WITH_PARTITION_STORAGE_ENGINE */
 
-  void calc_md5(const char *buffer);
+  void calc_md5(char *buffer);
   int view_check_option(THD *thd, bool ignore_failure);
   bool create_field_translation(THD *thd);
   bool setup_underlying(THD *thd);
@@ -2351,7 +2355,7 @@ struct TABLE_LIST
      @brief Returns the name of the database that the referenced table belongs
      to.
   */
-  const char *get_db_name() const { return view != NULL ? view_db.str : db; }
+  char *get_db_name() const { return view != NULL ? view_db.str : db; }
 
   /**
      @brief Returns the name of the table that this TABLE_LIST represents.
@@ -2359,7 +2363,7 @@ struct TABLE_LIST
      @details The unqualified table name or view name for a table or view,
      respectively.
    */
-  const char *get_table_name() const { return view != NULL ? view_name.str : table_name; }
+  char *get_table_name() const { return view != NULL ? view_name.str : table_name; }
   bool is_active_sjm();
   bool is_jtbm() { return MY_TEST(jtbm_subselect != NULL); }
   st_select_lex_unit *get_unit();
@@ -2413,7 +2417,7 @@ public:
   virtual void set(TABLE_LIST *)= 0;
   virtual void next()= 0;
   virtual bool end_of_fields()= 0;              /* Return 1 at end of list */
-  virtual LEX_CSTRING *name()= 0;
+  virtual const char *name()= 0;
   virtual Item *create_item(THD *)= 0;
   virtual Field *field()= 0;
 };
@@ -2433,7 +2437,7 @@ public:
   void set_table(TABLE *table) { ptr= table->field; }
   void next() { ptr++; }
   bool end_of_fields() { return *ptr == 0; }
-  LEX_CSTRING *name();
+  const char *name();
   Item *create_item(THD *thd);
   Field *field() { return *ptr; }
 };
@@ -2450,7 +2454,7 @@ public:
   void set(TABLE_LIST *table);
   void next() { ptr++; }
   bool end_of_fields() { return ptr == array_end; }
-  LEX_CSTRING *name();
+  const char *name();
   Item *create_item(THD *thd);
   Item **item_ptr() {return &ptr->item; }
   Field *field() { return 0; }
@@ -2474,7 +2478,7 @@ public:
   void set(TABLE_LIST *table);
   void next();
   bool end_of_fields() { return !cur_column_ref; }
-  LEX_CSTRING *name() { return cur_column_ref->name(); }
+  const char *name() { return cur_column_ref->name(); }
   Item *create_item(THD *thd) { return cur_column_ref->create_item(thd); }
   Field *field() { return cur_column_ref->field(); }
   Natural_join_column *column_ref() { return cur_column_ref; }
@@ -2511,7 +2515,7 @@ public:
   void next();
   bool end_of_fields()
   { return (table_ref == last_leaf && field_it->end_of_fields()); }
-  LEX_CSTRING *name() { return field_it->name(); }
+  const char *name() { return field_it->name(); }
   const char *get_table_name();
   const char *get_db_name();
   GRANT_INFO *grant();
@@ -2605,7 +2609,7 @@ static inline void tmp_restore_column_map(MY_BITMAP *bitmap,
 static inline my_bitmap_map *dbug_tmp_use_all_columns(TABLE *table,
                                                       MY_BITMAP *bitmap)
 {
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   return tmp_use_all_columns(table, bitmap);
 #else
   return 0;
@@ -2615,7 +2619,7 @@ static inline my_bitmap_map *dbug_tmp_use_all_columns(TABLE *table,
 static inline void dbug_tmp_restore_column_map(MY_BITMAP *bitmap,
                                                my_bitmap_map *old)
 {
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   tmp_restore_column_map(bitmap, old);
 #endif
 }
@@ -2630,7 +2634,7 @@ static inline void dbug_tmp_use_all_columns(TABLE *table,
                                             MY_BITMAP *read_set,
                                             MY_BITMAP *write_set)
 {
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   save[0]= read_set->bitmap;
   save[1]= write_set->bitmap;
   (void) tmp_use_all_columns(table, read_set);
@@ -2643,7 +2647,7 @@ static inline void dbug_tmp_restore_column_maps(MY_BITMAP *read_set,
                                                 MY_BITMAP *write_set,
                                                 my_bitmap_map **old)
 {
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   tmp_restore_column_map(read_set, old[0]);
   tmp_restore_column_map(write_set, old[1]);
 #endif
@@ -2692,7 +2696,7 @@ int rename_file_ext(const char * from,const char * to,const char * ext);
 char *get_field(MEM_ROOT *mem, Field *field);
 bool get_field(MEM_ROOT *mem, Field *field, class String *res);
 
-bool validate_comment_length(THD *thd, LEX_CSTRING *comment, size_t max_len,
+bool validate_comment_length(THD *thd, LEX_STRING *comment, size_t max_len,
                              uint err_code, const char *name);
 
 int closefrm(TABLE *table);
@@ -2702,7 +2706,7 @@ ulong get_form_pos(File file, uchar *head, TYPELIB *save_names);
 void append_unescaped(String *res, const char *pos, uint length);
 void prepare_frm_header(THD *thd, uint reclength, uchar *fileinfo,
                         HA_CREATE_INFO *create_info, uint keys, KEY *key_info);
-const char *fn_frm_ext(const char *name);
+char *fn_rext(char *name);
 
 /* Check that the integer is in the internal */
 static inline int set_zone(int nr,int min_zone,int max_zone)
@@ -2715,14 +2719,14 @@ static inline int set_zone(int nr,int min_zone,int max_zone)
 }
 
 /* performance schema */
-extern LEX_CSTRING PERFORMANCE_SCHEMA_DB_NAME;
+extern LEX_STRING PERFORMANCE_SCHEMA_DB_NAME;
 
-extern LEX_CSTRING GENERAL_LOG_NAME;
-extern LEX_CSTRING SLOW_LOG_NAME;
+extern LEX_STRING GENERAL_LOG_NAME;
+extern LEX_STRING SLOW_LOG_NAME;
 
 /* information schema */
-extern LEX_CSTRING INFORMATION_SCHEMA_NAME;
-extern LEX_CSTRING MYSQL_SCHEMA_NAME;
+extern LEX_STRING INFORMATION_SCHEMA_NAME;
+extern LEX_STRING MYSQL_SCHEMA_NAME;
 
 inline bool is_infoschema_db(const char *name, size_t len)
 {
@@ -2737,6 +2741,7 @@ inline bool is_infoschema_db(const char *name)
                         INFORMATION_SCHEMA_NAME.str, name);
 }
 
+TYPELIB *typelib(MEM_ROOT *mem_root, List<String> &strings);
 
 inline void mark_as_null_row(TABLE *table)
 {

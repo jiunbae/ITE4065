@@ -29,7 +29,7 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 /*
   It is necessary to include set_var.h instead of item.h because there
@@ -45,7 +45,7 @@
 
 double get_post_group_estimate(JOIN* join, double join_op_rows);
 
-LEX_CSTRING exists_outer_expr_name= { STRING_WITH_LEN("<exists outer expr>") };
+const char *exists_outer_expr_name= "<exists outer expr>";
 
 int check_and_do_in_subquery_rewrites(JOIN *join);
 
@@ -116,10 +116,9 @@ void Item_subselect::init(st_select_lex *select_lex,
       do not take into account expression inside aggregate functions because
       they can access original table fields
     */
-    parsing_place= (outer_select->in_sum_expr ?
-                    NO_MATTER :
-                    outer_select->parsing_place);
-    if (unit->is_unit_op() && unit->first_select()->next_select())
+    parsing_place= (outer_select->in_sum_expr ? NO_MATTER
+                                              : outer_select->parsing_place);
+    if (unit->is_union())
       engine= new subselect_union_engine(unit, result, this);
     else
       engine= new subselect_single_select_engine(select_lex, result, this);
@@ -265,13 +264,6 @@ bool Item_subselect::fix_fields(THD *thd_param, Item **ref)
   if (check_stack_overrun(thd, STACK_MIN_SIZE, (uchar*)&res))
     return TRUE;
   
-  for (SELECT_LEX *sl= unit->first_select(); sl; sl= sl->next_select())
-  {
-    if (sl->tvc)
-    {
-      wrap_tvc_in_derived_table(thd, sl);
-    }
-  }
   
   if (!(res= engine->prepare(thd)))
   {
@@ -298,6 +290,7 @@ bool Item_subselect::fix_fields(THD *thd_param, Item **ref)
 
       (*ref)= substitution;
       substitution->name= name;
+      substitution->name_length= name_length;
       if (have_to_be_excluded)
 	engine->exclude();
       substitution= 0;
@@ -460,8 +453,7 @@ bool Item_subselect::mark_as_dependent(THD *thd, st_select_lex *select,
       OUTER_REF_TABLE_BIT.
 */
 
-void Item_subselect::fix_after_pullout(st_select_lex *new_parent,
-                                       Item **ref, bool merge)
+void Item_subselect::fix_after_pullout(st_select_lex *new_parent, Item **ref)
 {
   recalc_used_tables(new_parent, TRUE);
   parent_select= new_parent;
@@ -959,7 +951,7 @@ void Item_subselect::print(String *str, enum_query_type query_type)
 {
   if (query_type & QT_ITEM_SUBSELECT_ID_ONLY)
   {
-    str->append(STRING_WITH_LEN("(subquery#"));
+    str->append("(subquery#");
     if (unit && unit->first_select())
     {
       char buf[64];
@@ -1074,7 +1066,7 @@ void Item_maxmin_subselect::no_rows_in_result()
   */
   if (parsing_place != SELECT_LIST || const_item())
     return;
-  value= (new (thd->mem_root) Item_null(thd))->get_cache(thd);
+  value= Item_cache::get_cache(thd, new (thd->mem_root) Item_null(thd));
   null_value= 0;
   was_values= 0;
   make_const();
@@ -1092,7 +1084,7 @@ void Item_singlerow_subselect::no_rows_in_result()
   */
   if (parsing_place != SELECT_LIST || const_item())
     return;
-  value= (new (thd->mem_root) Item_null(thd))->get_cache(thd);
+  value= Item_cache::get_cache(thd, new (thd->mem_root) Item_null(thd));
   reset();
   make_const();
 }
@@ -1134,7 +1126,7 @@ Item_singlerow_subselect::select_transformer(JOIN *join)
   SELECT_LEX *select_lex= join->select_lex;
   Query_arena *arena= thd->stmt_arena;
 
-  if (!select_lex->master_unit()->is_unit_op() &&
+  if (!select_lex->master_unit()->is_union() &&
       !select_lex->table_list.elements &&
       select_lex->item_list.elements == 1 &&
       !select_lex->item_list.head()->with_sum_func &&
@@ -1169,8 +1161,7 @@ Item_singlerow_subselect::select_transformer(JOIN *join)
     /*
       as far as we moved content to upper level we have to fix dependences & Co
     */
-    substitution->fix_after_pullout(select_lex->outer_select(),
-                                    &substitution, TRUE);
+    substitution->fix_after_pullout(select_lex->outer_select(), &substitution);
   }
   DBUG_RETURN(false);
 }
@@ -1182,9 +1173,23 @@ void Item_singlerow_subselect::store(uint i, Item *item)
   row[i]->cache_value();
 }
 
-const Type_handler *Item_singlerow_subselect::type_handler() const
+enum Item_result Item_singlerow_subselect::result_type() const
 {
-  return engine->type_handler();
+  return engine->type();
+}
+
+enum Item_result Item_singlerow_subselect::cmp_type() const
+{
+  return engine->cmptype();
+}
+
+/* 
+ Don't rely on the result type to calculate field type. 
+ Ask the engine instead.
+*/
+enum_field_types Item_singlerow_subselect::field_type() const
+{
+  return engine->field_type();
 }
 
 void Item_singlerow_subselect::fix_length_and_dec()
@@ -1255,7 +1260,7 @@ Item* Item_singlerow_subselect::expr_cache_insert_transformer(THD *tmp_thd,
 }
 
 
-uint Item_singlerow_subselect::cols() const
+uint Item_singlerow_subselect::cols()
 {
   return engine->cols();
 }
@@ -1821,7 +1826,7 @@ Item_in_subselect::single_value_transformer(JOIN *join)
   if (!(join_having || select_lex->with_sum_func ||
         select_lex->group_list.elements) &&
       select_lex->table_list.elements == 0 &&
-      !select_lex->master_unit()->is_unit_op())
+      !select_lex->master_unit()->is_union())
   {
     Item *where_item= (Item*) select_lex->item_list.head();
     /*
@@ -1881,8 +1886,8 @@ Item_in_subselect::single_value_transformer(JOIN *join)
     */
     expr= new (thd->mem_root) Item_direct_ref(thd, &select_lex->context,
                               (Item**)optimizer->get_cache(),
-                              "<no matter>",
-			      &in_left_expr_name);
+			      (char *)"<no matter>",
+			      (char *)in_left_expr_name);
   }
 
   DBUG_RETURN(false);
@@ -2105,8 +2110,6 @@ Item_in_subselect::create_single_in_to_exists_cond(JOIN *join,
   if (join_having || select_lex->with_sum_func ||
       select_lex->group_list.elements)
   {
-    const char *tmp= this->full_name();
-    LEX_CSTRING field_name= {tmp, safe_strlen(tmp)};
     Item *item= func->create(thd, expr,
                              new (thd->mem_root) Item_ref_null_helper(
                                                       thd,
@@ -2115,7 +2118,7 @@ Item_in_subselect::create_single_in_to_exists_cond(JOIN *join,
                                                       &select_lex->
                                                       ref_pointer_array[0],  
                                                       (char *)"<ref>",
-                                                      &field_name));
+                                                      this->full_name()));
     if (!abort_on_null && left_expr->maybe_null)
     {
       /* 
@@ -2127,7 +2130,7 @@ Item_in_subselect::create_single_in_to_exists_cond(JOIN *join,
     }
 
     if (!join_having)
-      item->name= in_having_cond;
+      item->name= (char*) in_having_cond;
     if (fix_having(item, select_lex))
       DBUG_RETURN(true);
     *having_item= item;
@@ -2152,7 +2155,7 @@ Item_in_subselect::create_single_in_to_exists_cond(JOIN *join,
                                                             get_cond_guard(0))))
             DBUG_RETURN(true);
         }
-        having->name= in_having_cond;
+        having->name= (char*) in_having_cond;
         if (fix_having(having, select_lex))
           DBUG_RETURN(true);
         *having_item= having;
@@ -2177,16 +2180,15 @@ Item_in_subselect::create_single_in_to_exists_cond(JOIN *join,
         single_value_transformer but there is no corresponding action in
         row_value_transformer?
       */
-      item->name= in_additional_cond;
+      item->name= (char *) in_additional_cond;
       if (!item->fixed && item->fix_fields(thd, 0))
         DBUG_RETURN(true);
       *where_item= item;
     }
     else
     {
-      if (select_lex->master_unit()->is_unit_op())
+      if (select_lex->master_unit()->is_union())
       {
-        LEX_CSTRING field_name= {STRING_WITH_LEN("<result>") };
         Item *new_having=
           func->create(thd, expr,
                        new (thd->mem_root) Item_ref_null_helper(thd,
@@ -2194,7 +2196,7 @@ Item_in_subselect::create_single_in_to_exists_cond(JOIN *join,
                                                   this,
                                                   &select_lex->ref_pointer_array[0],
                                                   (char *)"<no matter>",
-                                                  &field_name));
+                                                  (char *)"<result>"));
         if (!abort_on_null && left_expr->maybe_null)
         {
           disable_cond_guard_for_const_null_left_expr(0);
@@ -2203,7 +2205,7 @@ Item_in_subselect::create_single_in_to_exists_cond(JOIN *join,
             DBUG_RETURN(true);
         }
 
-        new_having->name= in_having_cond;
+        new_having->name= (char*) in_having_cond;
         if (fix_having(new_having, select_lex))
           DBUG_RETURN(true);
         *having_item= new_having;
@@ -2350,7 +2352,7 @@ Item_in_subselect::create_row_in_to_exists_cond(JOIN * join,
   bool is_having_used= (join_having || select_lex->with_sum_func ||
                         select_lex->group_list.first ||
                         !select_lex->table_list.elements);
-  LEX_CSTRING list_ref= { STRING_WITH_LEN("<list ref>")};
+
   DBUG_ENTER("Item_in_subselect::create_row_in_to_exists_cond");
   DBUG_ASSERT(thd == join->thd);
 
@@ -2372,7 +2374,6 @@ Item_in_subselect::create_row_in_to_exists_cond(JOIN * join,
       if (select_lex->ref_pointer_array[i]->
           check_cols(left_expr->element_index(i)->cols()))
         DBUG_RETURN(true);
-
       Item *item_eq=
         new (thd->mem_root)
         Item_func_eq(thd, new (thd->mem_root)
@@ -2380,12 +2381,12 @@ Item_in_subselect::create_row_in_to_exists_cond(JOIN * join,
                                      (*optimizer->get_cache())->
                                      addr(i),
                                      (char *)"<no matter>",
-                                     &in_left_expr_name),
+                                     (char *)in_left_expr_name),
                      new (thd->mem_root)
                      Item_ref(thd, &select_lex->context,
                               &select_lex->ref_pointer_array[i],
                               (char *)"<no matter>",
-                              &list_ref));
+                              (char *)"<list ref>"));
       Item *item_isnull=
         new (thd->mem_root)
         Item_func_isnull(thd,
@@ -2393,7 +2394,7 @@ Item_in_subselect::create_row_in_to_exists_cond(JOIN * join,
                          Item_ref(thd, &select_lex->context,
                                   &select_lex->ref_pointer_array[i],
                                   (char *)"<no matter>",
-                                  &list_ref));
+                                  (char *)"<list ref>"));
       Item *col_item= new (thd->mem_root)
         Item_cond_or(thd, item_eq, item_isnull);
       if (!abort_on_null && left_expr->element_index(i)->maybe_null &&
@@ -2414,7 +2415,7 @@ Item_in_subselect::create_row_in_to_exists_cond(JOIN * join,
                                        &select_lex->
                                        ref_pointer_array[i],
                                        (char *)"<no matter>",
-                                       &list_ref));
+                                       (char *)"<list ref>"));
       if (!abort_on_null && left_expr->element_index(i)->maybe_null &&
           get_cond_guard(i) )
       {
@@ -2449,13 +2450,13 @@ Item_in_subselect::create_row_in_to_exists_cond(JOIN * join,
                                      (*optimizer->get_cache())->
                                      addr(i),
                                      (char *)"<no matter>",
-                                     &in_left_expr_name),
+                                     (char *)in_left_expr_name),
                      new (thd->mem_root)
                      Item_direct_ref(thd, &select_lex->context,
                                      &select_lex->
                                      ref_pointer_array[i],
                                      (char *)"<no matter>",
-                                     &list_ref));
+                                     (char *)"<list ref>"));
       if (!abort_on_null && select_lex->ref_pointer_array[i]->maybe_null)
       {
         Item *having_col_item=
@@ -2465,7 +2466,8 @@ Item_in_subselect::create_row_in_to_exists_cond(JOIN * join,
                                 Item_ref(thd, &select_lex->context, 
                                          &select_lex->ref_pointer_array[i],
                                          (char *)"<no matter>",
-                                         &list_ref));
+                                         (char *)"<list ref>"));
+        
         
         item_isnull= new (thd->mem_root)
           Item_func_isnull(thd,
@@ -2474,7 +2476,7 @@ Item_in_subselect::create_row_in_to_exists_cond(JOIN * join,
                                            &select_lex->
                                            ref_pointer_array[i],
                                            (char *)"<no matter>",
-                                           &list_ref));
+                                           (char *)"<list ref>"));
         item= new (thd->mem_root) Item_cond_or(thd, item, item_isnull);
         if (left_expr->element_index(i)->maybe_null && get_cond_guard(i))
         {
@@ -2509,7 +2511,7 @@ Item_in_subselect::create_row_in_to_exists_cond(JOIN * join,
   if (*having_item)
   {
     if (!join_having)
-      (*having_item)->name= in_having_cond;
+      (*having_item)->name= (char*) in_having_cond;
     if (fix_having(*having_item, select_lex))
       DBUG_RETURN(true);
     (*having_item)->top_level_item();
@@ -2947,7 +2949,7 @@ bool Item_exists_subselect::exists2in_processor(void *opt_arg)
           goto out;
         }
       }
-      outer_exp->fix_after_pullout(unit->outer_select(), &outer_exp, FALSE);
+      outer_exp->fix_after_pullout(unit->outer_select(), &outer_exp);
       outer_exp->update_used_tables();
       outer.push_back(outer_exp, thd->mem_root);
     }
@@ -3006,7 +3008,7 @@ bool Item_exists_subselect::exists2in_processor(void *opt_arg)
       Item_direct_ref(thd, &first_select->context,
                       (Item**)optimizer->get_cache(),
                       (char *)"<no matter>",
-                      &in_left_expr_name);
+                      (char *)in_left_expr_name);
     if (in_subs->fix_fields(thd, optimizer->arguments() + 1))
     {
       res= TRUE;
@@ -3077,7 +3079,7 @@ bool Item_exists_subselect::exists2in_processor(void *opt_arg)
                                                               &unit->outer_select()->context,
                                                               optimizer->arguments(),
                                                               (char *)"<no matter>",
-                                                              &exists_outer_expr_name)),
+                                                              (char *)exists_outer_expr_name)),
                           optimizer) :
             (Item *)optimizer);
     }
@@ -3101,7 +3103,7 @@ bool Item_exists_subselect::exists2in_processor(void *opt_arg)
                                                            &unit->outer_select()->context,
                                                            optimizer->arguments()[0]->addr(i),
                                                            (char *)"<no matter>",
-                                                           &exists_outer_expr_name)),
+                                                           (char *)exists_outer_expr_name)),
                        thd->mem_root);
         }
       }
@@ -3290,7 +3292,7 @@ bool Item_in_subselect::fix_fields(THD *thd_arg, Item **ref)
   {
     outer_cols_num= left_expr->cols();
 
-    if (unit->is_unit_op())
+    if (unit->is_union())
       inner_cols= &(unit->types);
     else
       inner_cols= &(unit->first_select()->item_list);
@@ -3328,11 +3330,10 @@ err:
 }
 
 
-void Item_in_subselect::fix_after_pullout(st_select_lex *new_parent,
-                                          Item **ref, bool merge)
+void Item_in_subselect::fix_after_pullout(st_select_lex *new_parent, Item **ref)
 {
-  left_expr->fix_after_pullout(new_parent, &left_expr, merge);
-  Item_subselect::fix_after_pullout(new_parent, ref, merge);
+  left_expr->fix_after_pullout(new_parent, &left_expr);
+  Item_subselect::fix_after_pullout(new_parent, ref);
   used_tables_cache |= left_expr->used_tables();
 }
 
@@ -3712,21 +3713,24 @@ void subselect_engine::set_row(List<Item> &item_list, Item_cache **row)
 {
   Item *sel_item;
   List_iterator_fast<Item> li(item_list);
-  set_handler(&type_handler_varchar);
+  cmp_type= res_type= STRING_RESULT;
+  res_field_type= MYSQL_TYPE_VAR_STRING;
   for (uint i= 0; (sel_item= li++); i++)
   {
     item->max_length= sel_item->max_length;
-    set_handler(sel_item->type_handler());
+    res_type= sel_item->result_type();
+    cmp_type= sel_item->cmp_type();
+    res_field_type= sel_item->field_type();
     item->decimals= sel_item->decimals;
     item->unsigned_flag= sel_item->unsigned_flag;
     maybe_null= sel_item->maybe_null;
-    if (!(row[i]= sel_item->get_cache(thd)))
+    if (!(row[i]= Item_cache::get_cache(thd, sel_item, sel_item->cmp_type())))
       return;
     row[i]->setup(thd, sel_item);
  //psergey-backport-timours:   row[i]->store(sel_item);
   }
   if (item_list.elements > 1)
-    set_handler(&type_handler_row);
+    cmp_type= res_type= ROW_RESULT;
 }
 
 void subselect_single_select_engine::fix_length_and_dec(Item_cache **row)
@@ -3847,8 +3851,8 @@ int subselect_single_select_engine::exec()
             {
               /* Change the access method to full table scan */
               tab->save_read_first_record= tab->read_first_record;
-              tab->save_read_record= tab->read_record.read_record_func;
-              tab->read_record.read_record_func= rr_sequential;
+              tab->save_read_record= tab->read_record.read_record;
+              tab->read_record.read_record= rr_sequential;
               tab->read_first_record= read_first_record_seq;
               tab->read_record.record= tab->table->record[0];
               tab->read_record.thd= join->thd;
@@ -3870,8 +3874,8 @@ int subselect_single_select_engine::exec()
       JOIN_TAB *tab= *ptab;
       tab->read_record.record= 0;
       tab->read_record.ref_length= 0;
-      tab->read_first_record= tab->save_read_first_record;
-      tab->read_record.read_record_func= tab->save_read_record;
+      tab->read_first_record= tab->save_read_first_record; 
+      tab->read_record.read_record= tab->save_read_record;
     }
     executed= 1;
     if (!(uncacheable() & ~UNCACHEABLE_EXPLAIN) &&
@@ -4289,7 +4293,7 @@ int subselect_indexsubquery_engine::exec()
 }
 
 
-uint subselect_single_select_engine::cols() const
+uint subselect_single_select_engine::cols()
 {
   //psergey-sj-backport: the following assert was gone in 6.0:
   //DBUG_ASSERT(select_lex->join != 0); // should be called after fix_fields()
@@ -4298,7 +4302,7 @@ uint subselect_single_select_engine::cols() const
 }
 
 
-uint subselect_union_engine::cols() const
+uint subselect_union_engine::cols()
 {
   DBUG_ASSERT(unit->is_prepared());  // should be called after fix_fields()
   return unit->types.elements;
@@ -4379,6 +4383,7 @@ void subselect_union_engine::print(String *str, enum_query_type query_type)
 void subselect_uniquesubquery_engine::print(String *str,
                                             enum_query_type query_type)
 {
+  char *table_name= tab->table->s->table_name.str;
   str->append(STRING_WITH_LEN("<primary_index_lookup>("));
   tab->ref.items[0]->print(str, query_type);
   str->append(STRING_WITH_LEN(" in "));
@@ -4391,10 +4396,10 @@ void subselect_uniquesubquery_engine::print(String *str,
     str->append(STRING_WITH_LEN("<temporary table>"));
   }
   else
-    str->append(&tab->table->s->table_name);
+    str->append(table_name, tab->table->s->table_name.length);
   KEY *key_info= tab->table->key_info+ tab->ref.key;
   str->append(STRING_WITH_LEN(" on "));
-  str->append(&key_info->name);
+  str->append(key_info->name);
   if (cond)
   {
     str->append(STRING_WITH_LEN(" where "));
@@ -4415,9 +4420,9 @@ void subselect_uniquesubquery_engine::print(String *str)
   for (uint i= 0; i < key_info->user_defined_key_parts; i++)
     tab->ref.items[i]->print(str);
   str->append(STRING_WITH_LEN(" in "));
-  str->append(&tab->table->s->table_name);
+  str->append(tab->table->s->table_name.str, tab->table->s->table_name.length);
   str->append(STRING_WITH_LEN(" on "));
-  str->append(&key_info->name);
+  str->append(key_info->name);
   if (cond)
   {
     str->append(STRING_WITH_LEN(" where "));
@@ -4436,7 +4441,7 @@ void subselect_indexsubquery_engine::print(String *str,
   str->append(tab->table->s->table_name.str, tab->table->s->table_name.length);
   KEY *key_info= tab->table->key_info+ tab->ref.key;
   str->append(STRING_WITH_LEN(" on "));
-  str->append(&key_info->name);
+  str->append(key_info->name);
   if (check_null)
     str->append(STRING_WITH_LEN(" checking NULL"));
   if (cond)
@@ -4897,7 +4902,7 @@ my_bitmap_init_memroot(MY_BITMAP *map, uint n_bits, MEM_ROOT *mem_root)
 bool subselect_hash_sj_engine::init(List<Item> *tmp_columns, uint subquery_id)
 {
   THD *thd= get_thd();
-  select_unit *result_sink;
+  select_union *result_sink;
   /* Options to create_tmp_table. */
   ulonglong tmp_create_options= thd->variables.option_bits | TMP_TABLE_ALL_COLUMNS;
                              /* | TMP_TABLE_FORCE_MYISAM; TIMOUR: force MYISAM */
@@ -4935,7 +4940,7 @@ bool subselect_hash_sj_engine::init(List<Item> *tmp_columns, uint subquery_id)
     DBUG_RETURN(TRUE);
     
   char buf[32];
-  uint len= my_snprintf(buf, sizeof(buf), "<subquery%u>", subquery_id);
+  uint len= my_snprintf(buf, sizeof(buf), "<subquery%d>", subquery_id);
   char *name;
   if (!(name= (char*)thd->alloc(len + 1)))
     DBUG_RETURN(TRUE);
@@ -4949,7 +4954,7 @@ bool subselect_hash_sj_engine::init(List<Item> *tmp_columns, uint subquery_id)
   }
   if (result_sink->create_result_table(thd, tmp_columns, TRUE,
                                        tmp_create_options,
-				       name, TRUE, TRUE, FALSE, 0))
+				       name, TRUE, TRUE))
     DBUG_RETURN(TRUE);
 
   tmp_table= result_sink->table;
@@ -5978,10 +5983,10 @@ void Ordered_key::print(String *str)
   str->append(", (");
   for (i= 0; i < key_column_count - 1; i++)
   {
-    str->append(&key_columns[i]->field->field_name);
+    str->append(key_columns[i]->field->field_name);
     str->append(", ");
   }
-  str->append(&key_columns[i]->field->field_name);
+  str->append(key_columns[i]->field->field_name);
   str->append("), ");
 
   str->append("null_bitmap: (bits=");

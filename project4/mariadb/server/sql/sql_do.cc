@@ -16,7 +16,7 @@
 
 /* Execute DO statement */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "transaction.h"
 #include "unireg.h"

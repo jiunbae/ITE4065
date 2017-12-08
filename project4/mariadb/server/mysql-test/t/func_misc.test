@@ -316,7 +316,7 @@ CREATE TABLE t1 (a INT, b INT) ENGINE=MyISAM;
 INSERT INTO t1 VALUES (1,10);
 CREATE VIEW v1 AS SELECT * FROM t1;
 
-EXPLAIN EXTENDED SELECT VALUE(b) FROM v1;
+EXPLAIN EXTENDED SELECT VALUES(b) FROM v1;
 
 drop view v1;
 drop table t1;
@@ -1104,23 +1104,6 @@ SELECT CONCAT(NAME_CONST('name',15),'오');
 SET NAMES latin1;
 
 --echo #
---echo # MDEV-14116 INET6_NTOA output is set as null to varchar(39) variable
---echo #
-
-DELIMITER $$;
-CREATE PROCEDURE p1()
-BEGIN
-  DECLARE ip_full_addr varchar(39) DEFAULT "";
-  SELECT INET6_NTOA(UNHEX('20000000000000000000000000000000')) into ip_full_addr;
-  SELECT ip_full_addr;
-END;
-$$
-DELIMITER ;$$
-CALL p1();
-DROP PROCEDURE p1;
-
-
---echo #
 --echo # Start of 10.2 tests
 --echo #
 
@@ -1155,19 +1138,3 @@ DROP TABLE t1;
 --echo #
 --echo # End of 10.2 tests
 --echo #
-
---echo #
---echo # Start of 10.3 tests
---echo #
-
---echo #
---echo # MDEV-12854 Synchronize CREATE..SELECT data type and result set metadata data type for INT functions
---echo #
-
---enable_metadata
---disable_ps_protocol
-
-SELECT INET_ATON("255.255.255.255.255.255.255.255");
-
---enable_ps_protocol
---disable_metadata

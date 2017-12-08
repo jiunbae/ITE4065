@@ -16,7 +16,6 @@
 
 /* Testing of the basic functions of a MyISAM table */
 
-#include <my_global.h>
 #include "myisam.h"
 #include <my_getopt.h>
 #include <m_string.h>

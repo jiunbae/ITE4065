@@ -34,7 +34,6 @@ class sp_instr_cpush;
 class Query_arena;
 class sp_head;
 class Item_cache;
-class Virtual_tmp_table;
 
 
 /*
@@ -70,16 +69,13 @@ public:
   ///
   /// @return valid sp_rcontext object or NULL in case of OOM-error.
   static sp_rcontext *create(THD *thd,
-                             const sp_head *owner,
                              const sp_pcontext *root_parsing_ctx,
-                             Field *return_value_fld,
-                             Row_definition_list &defs);
+                             Field *return_value_fld);
 
   ~sp_rcontext();
 
 private:
-  sp_rcontext(const sp_head *owner,
-              const sp_pcontext *root_parsing_ctx,
+  sp_rcontext(const sp_pcontext *root_parsing_ctx,
               Field *return_value_fld,
               bool in_sub_stmt);
 
@@ -124,10 +120,18 @@ public:
   /// standard SQL-condition processing (Diagnostics_area should contain an
   /// object for active SQL-condition, not just information stored in DA's
   /// fields).
-  class Sql_condition_info : public Sql_alloc,
-                             public Sql_condition_identity
+  class Sql_condition_info : public Sql_alloc
   {
   public:
+    /// SQL error code.
+    uint sql_errno;
+
+    /// Error level.
+    Sql_condition::enum_warning_level level;
+
+    /// SQLSTATE.
+    char sql_state[SQLSTATE_LENGTH + 1];
+
     /// Text message.
     char *message;
 
@@ -137,8 +141,12 @@ public:
     /// @param arena           Query arena for SP
     Sql_condition_info(const Sql_condition *_sql_condition,
                        Query_arena *arena)
-      :Sql_condition_identity(*_sql_condition)
+      :sql_errno(_sql_condition->get_sql_errno()),
+       level(_sql_condition->get_level())
     {
+      memcpy(sql_state, _sql_condition->get_sqlstate(), SQLSTATE_LENGTH);
+      sql_state[SQLSTATE_LENGTH]= '\0';
+
       message= strdup_root(arena->mem_root, _sql_condition->get_message_text());
     }
   };
@@ -179,20 +187,19 @@ public:
   /// of the client/server protocol.
   bool end_partial_result_set;
 
+#ifndef DBUG_OFF
   /// The stored program for which this runtime context is created. Used for
   /// checking if correct runtime context is used for variable handling.
-  /// Also used by slow log.
-  const sp_head *m_sp;
+  sp_head *sp;
+#endif
 
   /////////////////////////////////////////////////////////////////////////
   // SP-variables.
   /////////////////////////////////////////////////////////////////////////
 
-  int set_variable(THD *thd, uint var_idx, Item **value);
-  void set_variable_row_field_to_null(THD *thd, uint var_idx, uint field_idx);
-  int set_variable_row_field(THD *thd, uint var_idx, uint field_idx,
-                             Item **value);
-  int set_variable_row(THD *thd, uint var_idx, List<Item> &items);
+  int set_variable(THD *thd, uint var_idx, Item **value)
+  { return set_variable(thd, m_var_table->field[var_idx], value); }
+
   Item *get_item(uint var_idx) const
   { return m_var_items[var_idx]; }
 
@@ -274,7 +281,7 @@ public:
   /// @return error flag.
   /// @retval false on success.
   /// @retval true on error.
-  bool push_cursor(THD *thd, sp_lex_keeper *lex_keeper);
+  bool push_cursor(THD *thd, sp_lex_keeper *lex_keeper, sp_instr_cpush *i);
 
   /// Pop and delete given number of sp_cursor instance from the cursor stack.
   ///
@@ -339,7 +346,7 @@ private:
   /// @return error flag.
   /// @retval false on success.
   /// @retval true on error.
-  bool init_var_table(THD *thd, List<Spvar_definition> &defs);
+  bool init_var_table(THD *thd);
 
   /// Create and initialize an Item-adapter (Item_field) for each SP-var field.
   ///
@@ -348,7 +355,7 @@ private:
   /// @return error flag.
   /// @retval false on success.
   /// @retval true on error.
-  bool init_var_items(THD *thd, List<Spvar_definition> &defs);
+  bool init_var_items(THD *thd);
 
   /// Create an instance of appropriate Item_cache class depending on the
   /// specified type in the callers arena.
@@ -362,12 +369,14 @@ private:
   /// @return Pointer to valid object on success, or NULL in case of error.
   Item_cache *create_case_expr_holder(THD *thd, const Item *item) const;
 
+  int set_variable(THD *thd, Field *field, Item **value);
+
 private:
   /// Top-level (root) parsing context for this runtime context.
   const sp_pcontext *m_root_parsing_ctx;
 
   /// Virtual table for storing SP-variables.
-  Virtual_tmp_table *m_var_table;
+  TABLE *m_var_table;
 
   /// Collection of Item_field proxies, each of them points to the
   /// corresponding field in m_var_table.
@@ -418,7 +427,6 @@ private:
   {
     List<sp_variable> *spvar_list;
     uint field_count;
-    bool send_data_to_variable_list(List<sp_variable> &vars, List<Item> &items);
   public:
     Select_fetch_into_spvars(THD *thd_arg): select_result_interceptor(thd_arg) {}
     uint get_field_count() { return field_count; }
@@ -430,7 +438,7 @@ private:
 };
 
 public:
-  sp_cursor(THD *thd_arg, sp_lex_keeper *lex_keeper);
+  sp_cursor(THD *thd_arg, sp_lex_keeper *lex_keeper, sp_instr_cpush *i);
 
   virtual ~sp_cursor()
   { destroy(); }
@@ -439,33 +447,21 @@ public:
 
   int open(THD *thd);
 
-  int open_view_structure_only(THD *thd);
-
   int close(THD *thd);
 
   my_bool is_open()
   { return MY_TEST(server_side_cursor); }
 
-  bool found() const
-  { return m_found; }
-
-  ulonglong row_count() const
-  { return m_row_count; }
-
-  ulonglong fetch_count() const
-  { return m_fetch_count; }
-
   int fetch(THD *, List<sp_variable> *vars);
 
-  bool export_structure(THD *thd, Row_definition_list *list);
+  sp_instr_cpush *get_instr()
+  { return m_i; }
 
 private:
   Select_fetch_into_spvars result;
   sp_lex_keeper *m_lex_keeper;
   Server_side_cursor *server_side_cursor;
-  ulonglong m_fetch_count; // Number of FETCH commands since last OPEN
-  ulonglong m_row_count;   // Number of successful FETCH since last OPEN
-  bool m_found;            // If last FETCH fetched a row
+  sp_instr_cpush *m_i;		// My push instruction
   void destroy();
 
 }; // class sp_cursor : public Sql_alloc

@@ -392,7 +392,7 @@ extern fil_addr_t	fil_addr_null;
 						 then encrypted */
 #define FIL_PAGE_PAGE_COMPRESSED 34354  /*!< page compressed page */
 #define FIL_PAGE_INDEX		17855	/*!< B-tree node */
-#define FIL_PAGE_RTREE		17854	/*!< R-tree node (SPATIAL INDEX) */
+#define FIL_PAGE_RTREE		17854	/*!< B-tree node */
 #define FIL_PAGE_UNDO_LOG	2	/*!< Undo log page */
 #define FIL_PAGE_INODE		3	/*!< Index node */
 #define FIL_PAGE_IBUF_FREE_LIST	4	/*!< Insert buffer free list */
@@ -415,26 +415,15 @@ extern fil_addr_t	fil_addr_null;
 //#define FIL_PAGE_ENCRYPTED	15
 //#define FIL_PAGE_COMPRESSED_AND_ENCRYPTED 16
 //#define FIL_PAGE_ENCRYPTED_RTREE 17
-/** Clustered index root page after instant ADD COLUMN */
-#define FIL_PAGE_TYPE_INSTANT	18
 
-/** Used by i_s.cc to index into the text description.
-Note: FIL_PAGE_TYPE_INSTANT maps to the same as FIL_PAGE_INDEX. */
+/** Used by i_s.cc to index into the text description. */
 #define FIL_PAGE_TYPE_LAST	FIL_PAGE_TYPE_UNKNOWN
 					/*!< Last page type */
 /* @} */
 
-/** @return whether the page type is B-tree or R-tree index */
-inline bool fil_page_type_is_index(ulint page_type)
-{
-	switch (page_type) {
-	case FIL_PAGE_TYPE_INSTANT:
-	case FIL_PAGE_INDEX:
-	case FIL_PAGE_RTREE:
-		return(true);
-	}
-	return(false);
-}
+/** macro to check whether the page type is index (Btree or Rtree) type */
+#define fil_page_type_is_index(page_type)                          \
+        (page_type == FIL_PAGE_INDEX || page_type == FIL_PAGE_RTREE)
 
 /** Check whether the page is index page (either regular Btree index or Rtree
 index */
@@ -940,12 +929,17 @@ bool
 fil_table_accessible(const dict_table_t* table)
 	MY_ATTRIBUTE((warn_unused_result, nonnull));
 
-/** Delete a tablespace and associated .ibd file.
-@param[in]	id		tablespace identifier
-@param[in]	drop_ahi	whether to drop the adaptive hash index
-@return	DB_SUCCESS or error */
+/** Deletes an IBD tablespace, either general or single-table.
+The tablespace must be cached in the memory cache. This will delete the
+datafile, fil_space_t & fil_node_t entries from the file_system_t cache.
+@param[in]	space_id	Tablespace id
+@param[in]	buf_remove	Specify the action to take on the pages
+for this table in the buffer pool.
+@return true if success */
 dberr_t
-fil_delete_tablespace(ulint id, bool drop_ahi = false);
+fil_delete_tablespace(
+	ulint		id,
+	buf_remove_t	buf_remove);
 
 /** Truncate the tablespace to needed size.
 @param[in]	space_id	id of tablespace to truncate

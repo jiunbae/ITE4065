@@ -328,7 +328,7 @@ TODO list:
       (This could be done with almost no speed penalty)
 */
 
-#include "mariadb.h"                          /* NO_EMBEDDED_ACCESS_CHECKS */
+#include <my_global.h>                          /* NO_EMBEDDED_ACCESS_CHECKS */
 #include "sql_priv.h"
 #include "sql_basic_types.h"
 #include "sql_cache.h"
@@ -345,6 +345,7 @@ TODO list:
 #include "../storage/myisammrg/ha_myisammrg.h"
 #include "../storage/myisammrg/myrg_def.h"
 #include "probes_mysql.h"
+#include "log_slow.h"
 #include "transaction.h"
 #include "strfunc.h"
 
@@ -961,7 +962,7 @@ inline void Query_cache_query::unlock_reading()
 void Query_cache_query::init_n_lock()
 {
   DBUG_ENTER("Query_cache_query::init_n_lock");
-  res=0; wri = 0; len = 0; ready= 0; hit_count = 0;
+  res=0; wri = 0; len = 0; ready= 0;
   mysql_rwlock_init(key_rwlock_query_cache_query_lock, &lock);
   lock_writing();
   DBUG_PRINT("qcache", ("inited & locked query for block %p",
@@ -2142,7 +2143,6 @@ lookup:
   }
   move_to_query_list_end(query_block);
   hits++;
-  query->increment_hits();
   unlock();
 
   /*
@@ -2335,13 +2335,13 @@ void Query_cache::invalidate(THD *thd, const char *key, uint32  key_length,
    Remove all cached queries that uses the given database.
 */
 
-void Query_cache::invalidate(THD *thd, const char *db)
+void Query_cache::invalidate(THD *thd, char *db)
 {
   DBUG_ENTER("Query_cache::invalidate (db)");
   if (is_disabled())
     DBUG_VOID_RETURN;
 
-  DBUG_SLOW_ASSERT(ok_for_lower_case_names(db));
+  DBUG_ASSERT(ok_for_lower_case_names(db));
 
   bool restart= FALSE;
   /*
@@ -4049,35 +4049,41 @@ Query_cache::process_and_count_tables(THD *thd, TABLE_LIST *tables_used,
                             tables_used->view_name.str,
                             tables_used->view_db.str));
       *tables_type|= HA_CACHE_TBL_NONTRANSACT;
-      continue;
     }
-    if (tables_used->derived)
+    else
     {
-      DBUG_PRINT("qcache", ("table: %s", tables_used->alias));
-      table_count--;
-      DBUG_PRINT("qcache", ("derived table skipped"));
-      continue;
-    }
+      if (tables_used->derived)
+      {
+        DBUG_PRINT("qcache", ("table: %s", tables_used->alias));
+        table_count--;
+        DBUG_PRINT("qcache", ("derived table skipped"));
+        continue;
+      }
+      DBUG_PRINT("qcache", ("table: %s  db:  %s  type: %u",
+                            tables_used->table->s->table_name.str,
+                            tables_used->table->s->db.str,
+                            tables_used->table->s->db_type()->db_type));
+      *tables_type|= tables_used->table->file->table_cache_type();
 
-    DBUG_PRINT("qcache", ("table: %s  db:  %s  type: %u",
-                          tables_used->table->s->table_name.str,
-                          tables_used->table->s->db.str,
-                          tables_used->table->s->db_type()->db_type));
-    *tables_type|= tables_used->table->file->table_cache_type();
+      /*
+        table_alias_charset used here because it depends of
+        lower_case_table_names variable
+      */
+      table_count+= tables_used->table->file->
+        count_query_cache_dependant_tables(tables_type);
 
-    /*
-      table_alias_charset used here because it depends of
-      lower_case_table_names variable
-    */
-    table_count+= tables_used->table->file->
-      count_query_cache_dependant_tables(tables_type);
-
-    if (tables_used->table->s->not_usable_by_query_cache)
-    {
-      DBUG_PRINT("qcache",
-                 ("select not cacheable: temporary, system or "
-                  "other non-cacheable table(s)"));
-      DBUG_RETURN(0);
+      if (tables_used->table->s->tmp_table != NO_TMP_TABLE ||
+          (*tables_type & HA_CACHE_TBL_NOCACHE) ||
+          (tables_used->db_length == 5 &&
+           my_strnncoll(table_alias_charset,
+                        (uchar*)tables_used->table->s->table_cache_key.str, 6,
+                        (uchar*)"mysql",6) == 0))
+      {
+        DBUG_PRINT("qcache",
+                   ("select not cacheable: temporary, system or "
+                    "other non-cacheable table(s)"));
+        DBUG_RETURN(0);
+      }
     }
   }
   DBUG_RETURN(table_count);

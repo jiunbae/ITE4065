@@ -14,7 +14,6 @@
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02111-1301 USA */
 
 #define MYSQL_SERVER 1
-#include <my_global.h>
 #include "mysql_version.h"
 #if MYSQL_VERSION_ID < 50500
 #include "mysql_priv.h"
@@ -276,7 +275,7 @@ TABLE *spider_sys_open_table(
     MYSQL_OPEN_IGNORE_FLUSH | MYSQL_LOCK_IGNORE_TIMEOUT | MYSQL_LOCK_LOG_TABLE
   ))) {
     table->use_all_columns();
-    table->s->no_replicate = 1;
+    table->no_replicate = 1;
   } else
     thd->restore_backup_open_tables_state(open_tables_backup);
   thd->utime_after_lock = utime_after_lock_backup;
@@ -2387,11 +2386,10 @@ TABLE *spider_mk_sys_tmp_table(
   Item_field *i_field;
   List<Item> i_list;
   TABLE *tmp_table;
-  LEX_CSTRING name= { field_name, strlen(field_name) };
   DBUG_ENTER("spider_mk_sys_tmp_table");
 
   if (!(field = new Field_blob(
-    4294967295U, FALSE, &name, cs, TRUE)))
+    4294967295U, FALSE, field_name, cs, TRUE)))
     goto error_alloc_field;
   field->init(table);
 
@@ -2446,13 +2444,10 @@ TABLE *spider_mk_sys_tmp_table_for_result(
   Item_field *i_field1, *i_field2, *i_field3;
   List<Item> i_list;
   TABLE *tmp_table;
-  LEX_CSTRING name1= { field_name1, strlen(field_name1) };
-  LEX_CSTRING name2= { field_name2, strlen(field_name2) };
-  LEX_CSTRING name3= { field_name3, strlen(field_name3) };
   DBUG_ENTER("spider_mk_sys_tmp_table_for_result");
 
   if (!(field1 = new Field_blob(
-    4294967295U, FALSE, &name1, cs, TRUE)))
+    4294967295U, FALSE, field_name1, cs, TRUE)))
     goto error_alloc_field1;
   field1->init(table);
 
@@ -2468,7 +2463,7 @@ TABLE *spider_mk_sys_tmp_table_for_result(
     goto error_push_item1;
 
   if (!(field2 = new (thd->mem_root) Field_blob(
-    4294967295U, FALSE, &name2, cs, TRUE)))
+    4294967295U, FALSE, field_name2, cs, TRUE)))
     goto error_alloc_field2;
   field2->init(table);
 
@@ -2484,7 +2479,7 @@ TABLE *spider_mk_sys_tmp_table_for_result(
     goto error_push_item2;
 
   if (!(field3 = new (thd->mem_root) Field_blob(
-    4294967295U, FALSE, &name3, cs, TRUE)))
+    4294967295U, FALSE, field_name3, cs, TRUE)))
     goto error_alloc_field3;
   field3->init(table);
 

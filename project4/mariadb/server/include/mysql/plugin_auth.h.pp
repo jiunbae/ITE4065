@@ -270,20 +270,13 @@ struct st_mysql_lex_string
   size_t length;
 };
 typedef struct st_mysql_lex_string MYSQL_LEX_STRING;
-struct st_mysql_const_lex_string
-{
-  const char *str;
-  size_t length;
-};
-typedef struct st_mysql_const_lex_string MYSQL_CONST_LEX_STRING;
 extern struct thd_alloc_service_st {
   void *(*thd_alloc_func)(void*, size_t);
   void *(*thd_calloc_func)(void*, size_t);
   char *(*thd_strdup_func)(void*, const char *);
   char *(*thd_strmake_func)(void*, const char *, size_t);
   void *(*thd_memdup_func)(void*, const void*, size_t);
-  MYSQL_CONST_LEX_STRING *(*thd_make_lex_string_func)(void*,
-                                        MYSQL_CONST_LEX_STRING *,
+  MYSQL_LEX_STRING *(*thd_make_lex_string_func)(void*, MYSQL_LEX_STRING *,
                                         const char *, size_t, int);
 } *thd_alloc_service;
 void *thd_alloc(void* thd, size_t size);
@@ -291,10 +284,9 @@ void *thd_calloc(void* thd, size_t size);
 char *thd_strdup(void* thd, const char *str);
 char *thd_strmake(void* thd, const char *str, size_t size);
 void *thd_memdup(void* thd, const void* str, size_t size);
-MYSQL_CONST_LEX_STRING
-*thd_make_lex_string(void* thd, MYSQL_CONST_LEX_STRING *lex_str,
-                     const char *str, size_t size,
-                     int allocate_lex_string);
+MYSQL_LEX_STRING *thd_make_lex_string(void* thd, MYSQL_LEX_STRING *lex_str,
+                                      const char *str, size_t size,
+                                      int allocate_lex_string);
 extern struct thd_autoinc_service_st {
   void (*thd_get_autoinc_func)(const void* thd,
                                unsigned long* off, unsigned long* inc);
@@ -546,7 +538,7 @@ typedef struct st_plugin_vio
 } MYSQL_PLUGIN_VIO;
 typedef struct st_mysql_server_auth_info
 {
-  const char *user_name;
+  char *user_name;
   unsigned int user_name_length;
   const char *auth_string;
   unsigned long auth_string_length;

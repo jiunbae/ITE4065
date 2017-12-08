@@ -14,7 +14,6 @@
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02111-1301 USA */
 
 #define MYSQL_SERVER 1
-#include <my_global.h>
 #include "mysql_version.h"
 #if MYSQL_VERSION_ID < 50500
 #include "mysql_priv.h"
@@ -1666,8 +1665,8 @@ int spider_db_append_key_where_internal(
 
   if (sql_kind == SPIDER_SQL_KIND_HANDLER)
   {
-    const char *key_name = key_info->name.str;
-    key_name_length =      key_info->name.length;
+    char *key_name = key_info->name;
+    key_name_length = strlen(key_name);
     if (str->reserve(SPIDER_SQL_READ_LEN +
       /* SPIDER_SQL_NAME_QUOTE_LEN */ 2 + key_name_length))
       DBUG_RETURN(HA_ERR_OUT_OF_MEM);
@@ -2845,7 +2844,7 @@ int spider_db_fetch_row(
 ) {
   int error_num;
   DBUG_ENTER("spider_db_fetch_row");
-  DBUG_PRINT("info", ("spider field_name %s", field->field_name.str));
+  DBUG_PRINT("info", ("spider field_name %s", field->field_name));
   DBUG_PRINT("info", ("spider fieldcharset %s", field->charset()->csname));
   field->move_field_offset(ptr_diff);
   error_num = row->store_to_field(field, share->access_charset);
@@ -2968,8 +2967,7 @@ int spider_db_fetch_table(
         my_bitmap_map *tmp_map =
           dbug_tmp_use_all_columns(table, table->write_set);
 #endif
-        DBUG_PRINT("info", ("spider bitmap is set %s",
-                            (*field)->field_name.str));
+        DBUG_PRINT("info", ("spider bitmap is set %s", (*field)->field_name));
         if ((error_num =
           spider_db_fetch_row(share, *field, row, ptr_diff)))
           DBUG_RETURN(error_num);
@@ -3140,7 +3138,7 @@ int spider_db_fetch_key(
       my_bitmap_map *tmp_map =
         dbug_tmp_use_all_columns(table, table->write_set);
 #endif
-      DBUG_PRINT("info", ("spider bitmap is set %s", field->field_name.str));
+      DBUG_PRINT("info", ("spider bitmap is set %s", field->field_name));
       if ((error_num =
         spider_db_fetch_row(share, field, row, ptr_diff)))
         DBUG_RETURN(error_num);
@@ -3254,8 +3252,7 @@ int spider_db_fetch_minimum_columns(
         my_bitmap_map *tmp_map =
           dbug_tmp_use_all_columns(table, table->write_set);
 #endif
-        DBUG_PRINT("info", ("spider bitmap is set %s",
-                            (*field)->field_name.str));
+        DBUG_PRINT("info", ("spider bitmap is set %s", (*field)->field_name));
         if ((error_num = spider_db_fetch_row(share, *field, row, ptr_diff)))
           DBUG_RETURN(error_num);
 #ifndef DBUG_OFF
@@ -5119,8 +5116,7 @@ int spider_db_seek_tmp_table(
       my_bitmap_map *tmp_map =
         dbug_tmp_use_all_columns(table, table->write_set);
 #endif
-      DBUG_PRINT("info", ("spider bitmap is set %s",
-                          (*field)->field_name.str));
+      DBUG_PRINT("info", ("spider bitmap is set %s", (*field)->field_name));
       if ((error_num =
         spider_db_fetch_row(spider->share, *field, row, ptr_diff)))
         DBUG_RETURN(error_num);
@@ -5207,7 +5203,7 @@ int spider_db_seek_tmp_key(
       my_bitmap_map *tmp_map =
         dbug_tmp_use_all_columns(table, table->write_set);
 #endif
-      DBUG_PRINT("info", ("spider bitmap is set %s", field->field_name.str));
+      DBUG_PRINT("info", ("spider bitmap is set %s", field->field_name));
       if ((error_num =
         spider_db_fetch_row(spider->share, field, row, ptr_diff)))
         DBUG_RETURN(error_num);
@@ -5297,8 +5293,7 @@ int spider_db_seek_tmp_minimum_columns(
       my_bitmap_map *tmp_map =
         dbug_tmp_use_all_columns(table, table->write_set);
 #endif
-      DBUG_PRINT("info", ("spider bitmap is set %s",
-                          (*field)->field_name.str));
+      DBUG_PRINT("info", ("spider bitmap is set %s", (*field)->field_name));
       if ((error_num =
         spider_db_fetch_row(spider->share, *field, row, ptr_diff)))
         DBUG_RETURN(error_num);
@@ -5310,7 +5305,7 @@ int spider_db_seek_tmp_minimum_columns(
     else if (bitmap_is_set(table->read_set, (*field)->field_index))
     {
       DBUG_PRINT("info", ("spider bitmap is cleared %s",
-        (*field)->field_name.str));
+        (*field)->field_name));
       bitmap_clear_bit(table->read_set, (*field)->field_index);
     }
   }
@@ -8066,7 +8061,10 @@ int spider_db_open_item_ident(
   }
   if (str)
   {
-    field_name_length = item_ident->field_name.length;
+    if (item_ident->field_name)
+      field_name_length = strlen(item_ident->field_name);
+    else
+      field_name_length = 0;
     if (share->access_charset->cset == system_charset_info->cset)
     {
       if (str->reserve(alias_length +
@@ -8076,7 +8074,7 @@ int spider_db_open_item_ident(
       }
       str->q_append(alias, alias_length);
       if ((error_num = spider_dbton[dbton_id].db_util->
-        append_name(str, item_ident->field_name.str, field_name_length)))
+        append_name(str, item_ident->field_name, field_name_length)))
       {
         DBUG_RETURN(error_num);
       }
@@ -8085,7 +8083,7 @@ int spider_db_open_item_ident(
         DBUG_RETURN(HA_ERR_OUT_OF_MEM);
       str->q_append(alias, alias_length);
       if ((error_num = spider_dbton[dbton_id].db_util->
-        append_name_with_charset(str, item_ident->field_name.str,
+        append_name_with_charset(str, item_ident->field_name,
           field_name_length, system_charset_info)))
       {
         DBUG_RETURN(error_num);
@@ -8144,18 +8142,18 @@ int spider_db_open_item_ref(
       (*(item_ref->ref))->type() != Item::CACHE_ITEM &&
       item_ref->ref_type() != Item_ref::VIEW_REF &&
       !item_ref->table_name &&
-      item_ref->name.str &&
+      item_ref->name &&
       item_ref->alias_name_used
     ) {
       if (str)
       {
-        uint length = item_ref->name.length;
+        uint length = strlen(item_ref->name);
         if (str->reserve(length + /* SPIDER_SQL_NAME_QUOTE_LEN */ 2))
         {
           DBUG_RETURN(HA_ERR_OUT_OF_MEM);
         }
         if ((error_num = spider_dbton[dbton_id].db_util->
-          append_name(str, item_ref->name.str, length)))
+          append_name(str, item_ref->name, length)))
         {
           DBUG_RETURN(error_num);
         }
@@ -9625,7 +9623,7 @@ int spider_db_udf_copy_key_row(
   int error_num;
   DBUG_ENTER("spider_db_udf_copy_key_row");
   if ((error_num = spider_db_append_name_with_quote_str(str,
-    (char *) field->field_name.str, dbton_id)))
+    (char *) field->field_name, dbton_id)))
     DBUG_RETURN(error_num);
   if (str->reserve(joint_length + *length + SPIDER_SQL_AND_LEN))
     DBUG_RETURN(HA_ERR_OUT_OF_MEM);

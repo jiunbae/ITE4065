@@ -16,6 +16,8 @@
 #ifndef SQL_UNION_INCLUDED
 #define SQL_UNION_INCLUDED
 
+#include "my_global.h"                          /* ulong */
+
 class THD;
 class select_result;
 struct LEX;

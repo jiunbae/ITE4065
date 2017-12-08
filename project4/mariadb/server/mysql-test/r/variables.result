@@ -672,9 +672,9 @@ select @a, @b;
 @a	@b
 2	1
 set @@global.global.key_buffer_size= 1;
-ERROR HY000: Unknown structured system variable or ROW routine variable 'global'
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'key_buffer_size= 1' at line 1
 set GLOBAL global.key_buffer_size= 1;
-ERROR HY000: Unknown structured system variable or ROW routine variable 'global'
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'key_buffer_size= 1' at line 1
 SELECT @@global.global.key_buffer_size;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'key_buffer_size' at line 1
 SELECT @@global.session.key_buffer_size;
@@ -1789,7 +1789,7 @@ set session collation_database=2048;
 ERROR HY000: Unknown collation: '2048'
 set session rand_seed1=DEFAULT;
 ERROR 42000: Variable 'rand_seed1' doesn't have a default value
-set autocommit = value(v);
+set autocommit = values(v);
 ERROR 42S22: Unknown column 'v' in 'field list'
 set session sql_mode=ansi_quotes;
 select * from information_schema.session_variables where variable_name='sql_mode';

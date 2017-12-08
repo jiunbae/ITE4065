@@ -14,7 +14,9 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
-#include "mariadb.h"
+#include <my_global.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 /* We only need the tokens here */
@@ -130,8 +132,6 @@ void compute_tokens()
 
   set_token(WITH_CUBE_SYM, "WITH CUBE");
   set_token(WITH_ROLLUP_SYM, "WITH ROLLUP");
-  set_token(VALUES_IN_SYM, "VALUES IN");
-  set_token(VALUES_LESS_SYM, "VALUES LESS");
   set_token(NOT2_SYM, "!");
   set_token(OR2_SYM, "|");
   set_token(PARAM_MARKER, "?");

@@ -315,9 +315,7 @@ lock_loop:
 
 	/* Spin waiting for the writer field to become free */
 	HMT_low();
-	while (i < srv_n_spin_wait_rounds &&
-	       my_atomic_loadlint_explicit(&lock->lock_word,
-					   MY_MEMORY_ORDER_RELAXED) <= 0) {
+	while (i < srv_n_spin_wait_rounds && lock->lock_word <= 0) {
 		if (srv_spin_wait_delay) {
 			ut_delay(ut_rnd_interval(0, srv_spin_wait_delay));
 		}
@@ -887,12 +885,10 @@ rw_lock_validate(
 
 	ut_ad(lock);
 
-	lock_word = my_atomic_loadlint_explicit(&lock->lock_word,
-						MY_MEMORY_ORDER_RELAXED);
+	lock_word = lock->lock_word;
 
 	ut_ad(lock->magic_n == RW_LOCK_MAGIC_N);
-	ut_ad(my_atomic_load32_explicit((int32*) &lock->waiters,
-					MY_MEMORY_ORDER_RELAXED) < 2);
+	ut_ad(lock->waiters < 2);
 	ut_ad(lock_word > -(2 * X_LOCK_DECR));
 	ut_ad(lock_word <= X_LOCK_DECR);
 

@@ -27,6 +27,8 @@
 
 extern size_t username_char_length;
 
+class MY_LOCALE;
+
 class Item_str_func :public Item_func
 {
 protected:
@@ -62,7 +64,8 @@ public:
   longlong val_int();
   double val_real();
   my_decimal *val_decimal(my_decimal *);
-  const Type_handler *type_handler() const { return string_type_handler(); }
+  enum Item_result result_type () const { return STRING_RESULT; }
+  enum_field_types field_type() const { return string_field_type(); }
   void left_right_max_length();
   bool fix_fields(THD *thd, Item **ref);
   void update_null_value()
@@ -241,40 +244,7 @@ public:
 
 class Item_func_concat :public Item_str_func
 {
-protected:
   String tmp_value;
-  /*
-     Get the i-th argument val_str() and its const_item()
-     @param i[IN]            - The argument number
-     @param str[IN]          - The buffer for val_str()
-     @param is_const[IN/OUT] - If args[i]->val_str() returned a non-null value,
-                               then args[i]->const_item() is returned here.
-                               Otherwise, the value of is_const is not touched.
-     @retval                 - the result of val_str().
-  */
-  String *arg_val_str(uint i, String *str, bool *is_const)
-  {
-    String *res= args[i]->val_str(str);
-    if (res)
-      *is_const= args[i]->const_item();
-    return res;
-  }
-  /*
-    Append a non-NULL value to the result.
-    @param [IN]     thd          - The current thread.
-    @param [IN/OUT] res          - The current val_str() return value.
-    @param [IN]     res_is_const - If "false", then OK to append to "res"
-    @param [IN/OUT] str          - The val_str() argument.
-    @param [IN]     res2         - The value to be appended.
-    @param [IN/OUT] use_as_buff  - Which buffer to use for the next argument:
-                                     args[next_arg]->val_str(use_as_buff)
-  */
-  String *append_value(THD *thd,
-                       String *res,
-                       bool res_is_const,
-                       String *str,
-                       String **use_as_buff,
-                       const String *res2);
 public:
   Item_func_concat(THD *thd, List<Item> &list): Item_str_func(thd, list) {}
   Item_func_concat(THD *thd, Item *a, Item *b): Item_str_func(thd, a, b) {}
@@ -284,29 +254,6 @@ public:
   Item *get_copy(THD *thd, MEM_ROOT *mem_root)
   { return get_item_copy<Item_func_concat>(thd, mem_root, this); }
 };
-
-
-/*
-  This class handles the || operator in sql_mode=ORACLE.
-  Unlike the traditional MariaDB concat(), it treats NULL arguments as ''.
-*/
-class Item_func_concat_operator_oracle :public Item_func_concat
-{
-public:
-  Item_func_concat_operator_oracle(THD *thd, List<Item> &list)
-   :Item_func_concat(thd, list)
-  { }
-  Item_func_concat_operator_oracle(THD *thd, Item *a, Item *b)
-   :Item_func_concat(thd, a, b)
-  { }
-  String *val_str(String *);
-  const char *func_name() const { return "concat_operator_oracle"; }
-  Item *get_copy(THD *thd, MEM_ROOT *mem_root)
-  {
-    return get_item_copy<Item_func_concat_operator_oracle>(thd, mem_root, this);
-  }
-};
-
 
 class Item_func_decode_histogram :public Item_str_func
 {
@@ -357,25 +304,11 @@ class Item_func_replace :public Item_str_func
 public:
   Item_func_replace(THD *thd, Item *org, Item *find, Item *replace):
     Item_str_func(thd, org, find, replace) {}
-  String *val_str(String *to) { return val_str_internal(to, NULL); };
+  String *val_str(String *);
   void fix_length_and_dec();
-  String *val_str_internal(String *str, String *empty_string_for_null);
   const char *func_name() const { return "replace"; }
   Item *get_copy(THD *thd, MEM_ROOT *mem_root)
   { return get_item_copy<Item_func_replace>(thd, mem_root, this); }
-};
-
-
-class Item_func_replace_oracle :public Item_func_replace
-{
-  String tmp_emtpystr;
-public:
-  Item_func_replace_oracle(THD *thd, Item *org, Item *find, Item *replace):
-    Item_func_replace(thd, org, find, replace) {}
-  String *val_str(String *to) { return val_str_internal(to, &tmp_emtpystr); };
-  const char *func_name() const { return "replace_oracle"; }
-  Item *get_copy(THD *thd, MEM_ROOT *mem_root)
-  { return get_item_copy<Item_func_replace_oracle>(thd, mem_root, this); }
 };
 
 
@@ -400,7 +333,8 @@ public:
   bool fix_fields(THD *thd, Item **ref);
   void fix_length_and_dec();
   const char *func_name() const { return "regexp_replace"; }
-  Item *get_copy(THD *thd, MEM_ROOT *mem_root) { return 0;}
+  Item *get_copy(THD *thd, MEM_ROOT *mem_root)
+  { return get_item_copy<Item_func_regexp_replace>(thd, mem_root, this); }
 };
 
 
@@ -422,7 +356,8 @@ public:
   bool fix_fields(THD *thd, Item **ref);
   void fix_length_and_dec();
   const char *func_name() const { return "regexp_substr"; }
-  Item *get_copy(THD *thd, MEM_ROOT *mem_root) { return 0; }
+  Item *get_copy(THD *thd, MEM_ROOT *mem_root)
+  { return get_item_copy<Item_func_regexp_substr>(thd, mem_root, this); }
 };
 
 
@@ -503,12 +438,9 @@ public:
 class Item_func_substr :public Item_str_func
 {
   String tmp_value;
-protected:
-  virtual longlong get_position() { return args[1]->val_int(); }
 public:
   Item_func_substr(THD *thd, Item *a, Item *b): Item_str_func(thd, a, b) {}
-  Item_func_substr(THD *thd, Item *a, Item *b, Item *c):
-    Item_str_func(thd, a, b, c) {}
+  Item_func_substr(THD *thd, Item *a, Item *b, Item *c): Item_str_func(thd, a, b, c) {}
   String *val_str(String *);
   void fix_length_and_dec();
   const char *func_name() const { return "substr"; }
@@ -516,20 +448,6 @@ public:
   { return get_item_copy<Item_func_substr>(thd, mem_root, this); }
 };
 
-class Item_func_substr_oracle :public Item_func_substr
-{
-protected:
-  longlong get_position()
-  { longlong pos= args[1]->val_int(); return pos == 0 ? 1 : pos; }
-public:
-  Item_func_substr_oracle(THD *thd, Item *a, Item *b):
-    Item_func_substr(thd, a, b) {}
-  Item_func_substr_oracle(THD *thd, Item *a, Item *b, Item *c):
-    Item_func_substr(thd, a, b, c) {}
-  const char *func_name() const { return "substr_oracle"; }
-  Item *get_copy(THD *thd, MEM_ROOT *mem_root)
-  { return get_item_copy<Item_func_substr_oracle>(thd, mem_root, this); }
-};
 
 class Item_func_substr_index :public Item_str_func
 {
@@ -799,27 +717,6 @@ public:
 };
 
 
-class Item_func_sqlerrm :public Item_func_sysconst
-{
-public:
-  Item_func_sqlerrm(THD *thd): Item_func_sysconst(thd) {}
-  String *val_str(String *);
-  const char *func_name() const { return "SQLERRM"; }
-  const char *fully_qualified_func_name() const { return "SQLERRM"; }
-  void print(String *str, enum_query_type query_type)
-  {
-    str->append(func_name());
-  }
-  void fix_length_and_dec()
-  {
-    max_length= 512 * system_charset_info->mbmaxlen;
-    null_value= maybe_null= false;
-  }
-  Item *get_copy(THD *thd, MEM_ROOT *mem_root)
-  { return get_item_copy<Item_func_sqlerrm>(thd, mem_root, this); }
-};
-
-
 class Item_func_user :public Item_func_sysconst
 {
 protected:
@@ -945,13 +842,14 @@ public:
 
 class Item_func_format :public Item_str_ascii_func
 {
-  const MY_LOCALE *locale;
+  MY_LOCALE *locale;
 public:
   Item_func_format(THD *thd, Item *org, Item *dec):
     Item_str_ascii_func(thd, org, dec) {}
   Item_func_format(THD *thd, Item *org, Item *dec, Item *lang):
     Item_str_ascii_func(thd, org, dec, lang) {}
 
+  MY_LOCALE *get_locale(Item *item);
   String *val_str_ascii(String *);
   void fix_length_and_dec();
   const char *func_name() const { return "format"; }
@@ -968,11 +866,7 @@ public:
   Item_func_char(THD *thd, List<Item> &list, CHARSET_INFO *cs):
     Item_str_func(thd, list)
   { collation.set(cs); }
-  Item_func_char(THD *thd, Item *arg1, CHARSET_INFO *cs):
-    Item_str_func(thd, arg1)
-  { collation.set(cs); }
   String *val_str(String *);
-  void append_char(String * str, int32 num);
   void fix_length_and_dec()
   {
     max_length= arg_count * 4;
@@ -982,20 +876,6 @@ public:
   { return get_item_copy<Item_func_char>(thd, mem_root, this); }
 };
 
-class Item_func_chr :public Item_func_char
-{
-public:
-  Item_func_chr(THD *thd, Item *arg1, CHARSET_INFO *cs):
-    Item_func_char(thd, arg1, cs) {}
-  String *val_str(String *);
-  void fix_length_and_dec()
-  {
-    max_length= 4;
-  }
-  const char *func_name() const { return "chr"; }
-  Item *get_copy(THD *thd, MEM_ROOT *mem_root)
-  { return get_item_copy<Item_func_chr>(thd, mem_root, this); }
-};
 
 class Item_func_repeat :public Item_str_func
 {
@@ -1040,41 +920,28 @@ public:
 };
 
 
-class Item_func_pad: public Item_str_func
+class Item_func_rpad :public Item_str_func
 {
-protected:
-  String tmp_value, pad_str;
-public:
-  Item_func_pad(THD *thd, Item *arg1, Item *arg2, Item *arg3):
-    Item_str_func(thd, arg1, arg2, arg3) {}
-  Item_func_pad(THD *thd, Item *arg1, Item *arg2):
-    Item_str_func(thd, arg1, arg2) {}
-  void fix_length_and_dec();
-};
-
-
-class Item_func_rpad :public Item_func_pad
-{
+  String tmp_value, rpad_str;
 public:
   Item_func_rpad(THD *thd, Item *arg1, Item *arg2, Item *arg3):
-    Item_func_pad(thd, arg1, arg2, arg3) {}
-  Item_func_rpad(THD *thd, Item *arg1, Item *arg2):
-    Item_func_pad(thd, arg1, arg2) {}
+    Item_str_func(thd, arg1, arg2, arg3) {}
   String *val_str(String *);
+  void fix_length_and_dec();
   const char *func_name() const { return "rpad"; }
   Item *get_copy(THD *thd, MEM_ROOT *mem_root)
   { return get_item_copy<Item_func_rpad>(thd, mem_root, this); }
 };
 
 
-class Item_func_lpad :public Item_func_pad
+class Item_func_lpad :public Item_str_func
 {
+  String tmp_value, lpad_str;
 public:
   Item_func_lpad(THD *thd, Item *arg1, Item *arg2, Item *arg3):
-    Item_func_pad(thd, arg1, arg2, arg3) {}
-  Item_func_lpad(THD *thd, Item *arg1, Item *arg2):
-    Item_func_pad(thd, arg1, arg2) {}
+    Item_str_func(thd, arg1, arg2, arg3) {}
   String *val_str(String *);
+  void fix_length_and_dec();
   const char *func_name() const { return "lpad"; }
   Item *get_copy(THD *thd, MEM_ROOT *mem_root)
   { return get_item_copy<Item_func_lpad>(thd, mem_root, this); }
@@ -1101,33 +968,17 @@ public:
 
 class Item_func_hex :public Item_str_ascii_checksum_func
 {
-protected:
   String tmp_value;
-  /*
-    Calling arg[0]->type_handler() can be expensive on every row.
-    It's a virtual method, and in case if args[0] is a complex Item,
-    its type_handler() can call more virtual methods.
-    So let's cache it during fix_length_and_dec().
-  */
-  const Type_handler *m_arg0_type_handler;
 public:
   Item_func_hex(THD *thd, Item *a):
-    Item_str_ascii_checksum_func(thd, a), m_arg0_type_handler(NULL) {}
+    Item_str_ascii_checksum_func(thd, a) {}
   const char *func_name() const { return "hex"; }
-  String *val_str_ascii_from_val_int(String *str);
-  String *val_str_ascii_from_val_real(String *str);
-  String *val_str_ascii_from_val_str(String *str);
-  String *val_str_ascii(String *str)
-  {
-    DBUG_ASSERT(fixed);
-    return m_arg0_type_handler->Item_func_hex_val_str_ascii(this, str);
-  }
+  String *val_str_ascii(String *);
   void fix_length_and_dec()
   {
-    collation.set(default_charset(), DERIVATION_COERCIBLE, MY_REPERTOIRE_ASCII);
+    collation.set(default_charset());
     decimals=0;
     fix_char_length(args[0]->max_length * 2);
-    m_arg0_type_handler= args[0]->type_handler();
   }
   Item *get_copy(THD *thd, MEM_ROOT *mem_root)
   { return get_item_copy<Item_func_hex>(thd, mem_root, this); }
@@ -1464,13 +1315,11 @@ public:
   { return get_item_copy<Item_func_weight_string>(thd, mem_root, this); }
 };
 
-class Item_func_crc32 :public Item_long_func
+class Item_func_crc32 :public Item_int_func
 {
-  bool check_arguments() const
-  { return args[0]->check_type_can_return_str(func_name()); }
   String value;
 public:
-  Item_func_crc32(THD *thd, Item *a): Item_long_func(thd, a)
+  Item_func_crc32(THD *thd, Item *a): Item_int_func(thd, a)
   { unsigned_flag= 1; }
   const char *func_name() const { return "crc32"; }
   void fix_length_and_dec() { max_length=10; }
@@ -1479,12 +1328,11 @@ public:
   { return get_item_copy<Item_func_crc32>(thd, mem_root, this); }
 };
 
-class Item_func_uncompressed_length : public Item_long_func_length
+class Item_func_uncompressed_length : public Item_int_func
 {
   String value;
 public:
-  Item_func_uncompressed_length(THD *thd, Item *a)
-   :Item_long_func_length(thd, a) {}
+  Item_func_uncompressed_length(THD *thd, Item *a): Item_int_func(thd, a) {}
   const char *func_name() const{return "uncompressed_length";}
   void fix_length_and_dec() { max_length=10; maybe_null= true; }
   longlong val_int();

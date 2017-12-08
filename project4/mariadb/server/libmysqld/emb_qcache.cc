@@ -13,7 +13,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "mariadb.h"
+#include "my_global.h"                          // HAVE_*
 #include "sql_priv.h"
 
 #ifdef HAVE_QUERY_CACHE
@@ -28,14 +28,14 @@ void Querycache_stream::store_uchar(uchar c)
   if (data_end == cur_data)
     use_next_block(TRUE);
   *(cur_data++)= c;
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   stored_size++;
 #endif
 }
 
 void Querycache_stream::store_short(ushort s)
 {
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   stored_size+= 2;
 #endif
   if (data_end - cur_data > 1)
@@ -58,7 +58,7 @@ void Querycache_stream::store_short(ushort s)
 
 void Querycache_stream::store_int(uint i)
 {
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   stored_size+= 4;
 #endif
   size_t rest_len= data_end - cur_data;
@@ -85,7 +85,7 @@ void Querycache_stream::store_int(uint i)
 
 void Querycache_stream::store_ll(ulonglong ll)
 {
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   stored_size+= 8;
 #endif
   size_t rest_len= data_end - cur_data;
@@ -110,7 +110,7 @@ void Querycache_stream::store_ll(ulonglong ll)
 
 void Querycache_stream::store_str_only(const char *str, uint str_len)
 {
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   stored_size+= str_len;
 #endif
   do

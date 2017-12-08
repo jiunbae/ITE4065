@@ -14,7 +14,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 /*
   It is necessary to include set_var.h instead of item.h because there
@@ -110,14 +110,13 @@ void Item_row::split_sum_func(THD *thd, Ref_ptr_array ref_pointer_array,
 }
 
 
-void Item_row::fix_after_pullout(st_select_lex *new_parent, Item **ref,
-                                 bool merge)
+void Item_row::fix_after_pullout(st_select_lex *new_parent, Item **ref)
 {
   used_tables_and_const_cache_init();
   not_null_tables_cache= 0;
   for (uint i= 0; i < arg_count; i++)
   {
-    args[i]->fix_after_pullout(new_parent, &args[i], merge);
+    args[i]->fix_after_pullout(new_parent, &args[i]);
     used_tables_and_const_cache_join(args[i]);
     not_null_tables_cache|= args[i]->not_null_tables();
   }

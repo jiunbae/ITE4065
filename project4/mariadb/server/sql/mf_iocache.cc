@@ -32,7 +32,7 @@
   flush_io_cache().  
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "sql_class.h"                          // THD
 #ifdef HAVE_REPLICATION

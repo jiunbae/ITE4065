@@ -3,7 +3,7 @@
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
 //
-#include <my_global.h>
+#include <my_config.h>
 #include "../rdb_comparator.h"
 #include "rocksdb/ldb_tool.h"
 

@@ -438,9 +438,9 @@ select @a, @b;
 #
 # Bug#2586:Disallow global/session/local as structured var. instance names
 #
---error ER_UNKNOWN_STRUCTURED_VARIABLE
+--error ER_PARSE_ERROR
 set @@global.global.key_buffer_size= 1;
---error ER_UNKNOWN_STRUCTURED_VARIABLE
+--error ER_PARSE_ERROR
 set GLOBAL global.key_buffer_size= 1;
 --error ER_PARSE_ERROR
 SELECT @@global.global.key_buffer_size;
@@ -1521,7 +1521,7 @@ set session rand_seed1=DEFAULT;
 # Bug #14211565 CRASH WHEN ATTEMPTING TO SET SYSTEM VARIABLE TO RESULT OF VALUES()
 #
 --error ER_BAD_FIELD_ERROR
-set autocommit = value(v);
+set autocommit = values(v);
 
 #
 # MDEV-6673 I_S.SESSION_VARIABLES shows global values

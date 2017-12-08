@@ -15,7 +15,7 @@
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02111-1301 USA */
 
 
-#include "mariadb.h"
+#include <my_global.h> 
 
 #ifdef HAVE_SPATIAL
 

@@ -14,7 +14,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "sql_class.h"
 #include "item.h"
@@ -390,7 +390,7 @@ longlong Item_func_json_valid::val_int()
 
 void Item_func_json_exists::fix_length_and_dec()
 {
-  Item_bool_func::fix_length_and_dec();
+  Item_int_func::fix_length_and_dec();
   maybe_null= 1;
   path.set_constant_flag(args[1]->const_item());
 }
@@ -942,7 +942,7 @@ void Item_func_json_contains::fix_length_and_dec()
   maybe_null= 1;
   if (arg_count > 2)
     path.set_constant_flag(args[2]->const_item());
-  Item_bool_func::fix_length_and_dec();
+  Item_int_func::fix_length_and_dec();
 }
 
 
@@ -1194,7 +1194,7 @@ void Item_func_json_contains_path::fix_length_and_dec()
   ooa_parsed= FALSE;
   maybe_null= 1;
   mark_constant_paths(paths, args+2, arg_count-2);
-  Item_bool_func::fix_length_and_dec();
+  Item_int_func::fix_length_and_dec();
 }
 
 
@@ -1317,7 +1317,6 @@ longlong Item_func_json_contains_path::val_int()
   longlong result;
   json_path_t p;
   int n_found;
-  LINT_INIT(n_found);
 
   if ((null_value= args[0]->null_value))
     return 0;
@@ -2063,7 +2062,6 @@ String *Item_func_json_merge::val_str(String *str)
   json_engine_t je1, je2;
   String *js1= args[0]->val_json(&tmp_js1), *js2=NULL;
   uint n_arg;
-  LINT_INIT(js2);
 
   if (args[0]->null_value)
     goto null_return;
@@ -2127,7 +2125,6 @@ void Item_func_json_length::fix_length_and_dec()
   if (arg_count > 1)
     path.set_constant_flag(args[1]->const_item());
   maybe_null= 1;
-  max_length= 10;
 }
 
 

@@ -409,9 +409,6 @@ cmp_data(
 	const byte*	data2,
 	ulint		len2)
 {
-	ut_ad(len1 != UNIV_SQL_DEFAULT);
-	ut_ad(len2 != UNIV_SQL_DEFAULT);
-
 	if (len1 == UNIV_SQL_NULL || len2 == UNIV_SQL_NULL) {
 		if (len1 == len2) {
 			return(0);
@@ -711,11 +708,6 @@ cmp_dtuple_rec_with_match_low(
 		contain externally stored fields, and the first fields
 		(primary key fields) should already differ. */
 		ut_ad(!rec_offs_nth_extern(offsets, cur_field));
-		/* We should never compare against instantly added columns.
-		Columns can only be instantly added to clustered index
-		leaf page records, and the first fields (primary key fields)
-		should already differ. */
-		ut_ad(!rec_offs_nth_default(offsets, cur_field));
 
 		rec_b_ptr = rec_get_nth_field(rec, offsets, cur_field,
 					      &rec_f_len);
@@ -831,8 +823,6 @@ cmp_dtuple_rec_with_match_bytes(
 
 		dtuple_b_ptr = static_cast<const byte*>(
 			dfield_get_data(dfield));
-
-		ut_ad(!rec_offs_nth_default(offsets, cur_field));
 		rec_b_ptr = rec_get_nth_field(rec, offsets,
 					      cur_field, &rec_f_len);
 		ut_ad(!rec_offs_nth_extern(offsets, cur_field));
@@ -1154,9 +1144,10 @@ cmp_rec_rec_with_match(
 	/* Test if rec is the predefined minimum record */
 	if (UNIV_UNLIKELY(rec_get_info_bits(rec1, comp)
 			  & REC_INFO_MIN_REC_FLAG)) {
-		ret = UNIV_UNLIKELY(rec_get_info_bits(rec2, comp)
-				    & REC_INFO_MIN_REC_FLAG)
-			? 0 : -1;
+		/* There should only be one such record. */
+		ut_ad(!(rec_get_info_bits(rec2, comp)
+			& REC_INFO_MIN_REC_FLAG));
+		ret = -1;
 		goto order_resolved;
 	} else if (UNIV_UNLIKELY
 		   (rec_get_info_bits(rec2, comp)
@@ -1206,8 +1197,6 @@ cmp_rec_rec_with_match(
 		DB_ROLL_PTR, and any externally stored columns. */
 		ut_ad(!rec_offs_nth_extern(offsets1, cur_field));
 		ut_ad(!rec_offs_nth_extern(offsets2, cur_field));
-		ut_ad(!rec_offs_nth_default(offsets1, cur_field));
-		ut_ad(!rec_offs_nth_default(offsets2, cur_field));
 
 		rec1_b_ptr = rec_get_nth_field(rec1, offsets1,
 					       cur_field, &rec1_f_len);

@@ -102,7 +102,7 @@ trx_rollback_to_savepoint_low(
 
 	trx->error_state = DB_SUCCESS;
 
-	if (trx->has_logged_or_recovered()) {
+	if (trx->has_logged()) {
 
 		ut_ad(trx->rsegs.m_redo.rseg != 0
 		      || trx->rsegs.m_noredo.rseg != 0);
@@ -213,27 +213,24 @@ trx_rollback_low(
 
 	case TRX_STATE_PREPARED:
 		ut_ad(!trx_is_autocommit_non_locking(trx));
-		if (trx->rsegs.m_redo.undo || trx->rsegs.m_redo.old_insert) {
+		if (trx->has_logged_persistent()) {
 			/* Change the undo log state back from
 			TRX_UNDO_PREPARED to TRX_UNDO_ACTIVE
 			so that if the system gets killed,
 			recovery will perform the rollback. */
-			ut_ad(!trx->rsegs.m_redo.undo
-			      || trx->rsegs.m_redo.undo->rseg
-			      == trx->rsegs.m_redo.rseg);
-			ut_ad(!trx->rsegs.m_redo.old_insert
-			      || trx->rsegs.m_redo.old_insert->rseg
-			      == trx->rsegs.m_redo.rseg);
+			trx_undo_ptr_t*	undo_ptr = &trx->rsegs.m_redo;
 			mtr_t		mtr;
 			mtr.start();
 			mutex_enter(&trx->rsegs.m_redo.rseg->mutex);
-			if (trx_undo_t* undo = trx->rsegs.m_redo.undo) {
-				trx_undo_set_state_at_prepare(trx, undo, true,
-							      &mtr);
+			if (undo_ptr->insert_undo != NULL) {
+				trx_undo_set_state_at_prepare(
+					trx, undo_ptr->insert_undo,
+					true, &mtr);
 			}
-			if (trx_undo_t* undo = trx->rsegs.m_redo.old_insert) {
-				trx_undo_set_state_at_prepare(trx, undo, true,
-							      &mtr);
+			if (undo_ptr->update_undo != NULL) {
+				trx_undo_set_state_at_prepare(
+					trx, undo_ptr->update_undo,
+					true, &mtr);
 			}
 			mutex_exit(&trx->rsegs.m_redo.rseg->mutex);
 			/* Persist the XA ROLLBACK, so that crash
@@ -902,12 +899,20 @@ trx_roll_try_truncate(trx_t* trx)
 	trx->pages_undone = 0;
 
 	undo_no_t	undo_no		= trx->undo_no;
+	trx_undo_t*	insert_undo	= trx->rsegs.m_redo.insert_undo;
+	trx_undo_t*	update_undo	= trx->rsegs.m_redo.update_undo;
 
-	if (trx_undo_t*	undo = trx->rsegs.m_redo.undo) {
-		ut_ad(undo->rseg == trx->rsegs.m_redo.rseg);
-		mutex_enter(&undo->rseg->mutex);
-		trx_undo_truncate_end(undo, undo_no, false);
-		mutex_exit(&undo->rseg->mutex);
+	if (insert_undo || update_undo) {
+		mutex_enter(&trx->rsegs.m_redo.rseg->mutex);
+		if (insert_undo) {
+			ut_ad(insert_undo->rseg == trx->rsegs.m_redo.rseg);
+			trx_undo_truncate_end(insert_undo, undo_no, false);
+		}
+		if (update_undo) {
+			ut_ad(update_undo->rseg == trx->rsegs.m_redo.rseg);
+			trx_undo_truncate_end(update_undo, undo_no, false);
+		}
+		mutex_exit(&trx->rsegs.m_redo.rseg->mutex);
 	}
 
 	if (trx_undo_t* undo = trx->rsegs.m_noredo.undo) {
@@ -982,8 +987,8 @@ trx_roll_pop_top_rec_of_trx(trx_t* trx, roll_ptr_t* roll_ptr, mem_heap_t* heap)
 	}
 
 	trx_undo_t*	undo;
-	trx_undo_t*	insert	= trx->rsegs.m_redo.old_insert;
-	trx_undo_t*	update	= trx->rsegs.m_redo.undo;
+	trx_undo_t*	insert	= trx->rsegs.m_redo.insert_undo;
+	trx_undo_t*	update	= trx->rsegs.m_redo.update_undo;
 	trx_undo_t*	temp	= trx->rsegs.m_noredo.undo;
 	const undo_no_t	limit	= trx->roll_limit;
 
@@ -994,8 +999,7 @@ trx_roll_pop_top_rec_of_trx(trx_t* trx, roll_ptr_t* roll_ptr, mem_heap_t* heap)
 	ut_ad(!update || !temp || update->empty || temp->empty
 	      || update->top_undo_no != temp->top_undo_no);
 
-	if (UNIV_LIKELY_NULL(insert)
-	    && !insert->empty && limit <= insert->top_undo_no) {
+	if (insert && !insert->empty && limit <= insert->top_undo_no) {
 		if (update && !update->empty
 		    && update->top_undo_no > insert->top_undo_no) {
 			undo = update;
@@ -1012,7 +1016,7 @@ trx_roll_pop_top_rec_of_trx(trx_t* trx, roll_ptr_t* roll_ptr, mem_heap_t* heap)
 		if the transaction object is committed and reused
 		later, we will default to a full ROLLBACK. */
 		trx->roll_limit = 0;
-		trx->in_rollback = false;
+		ut_d(trx->in_rollback = false);
 		mutex_exit(&trx->undo_mutex);
 		return(NULL);
 	}
@@ -1028,20 +1032,10 @@ trx_roll_pop_top_rec_of_trx(trx_t* trx, roll_ptr_t* roll_ptr, mem_heap_t* heap)
 
 	trx_undo_rec_t*	undo_rec = trx_roll_pop_top_rec(trx, undo, &mtr);
 	const undo_no_t	undo_no = trx_undo_rec_get_undo_no(undo_rec);
-	switch (trx_undo_rec_get_type(undo_rec)) {
-	case TRX_UNDO_INSERT_DEFAULT:
-		/* This record type was introduced in MDEV-11369
-		instant ADD COLUMN, which was implemented after
-		MDEV-12288 removed the insert_undo log. There is no
-		instant ADD COLUMN for temporary tables. Therefore,
-		this record can only be present in the main undo log. */
-		ut_ad(undo == update);
-		/* fall through */
-	case TRX_UNDO_INSERT_REC:
-		ut_ad(undo == insert || undo == update || undo == temp);
+	if (trx_undo_rec_get_type(undo_rec) == TRX_UNDO_INSERT_REC) {
+		ut_ad(undo == insert || undo == temp);
 		*roll_ptr |= 1ULL << ROLL_PTR_INSERT_FLAG_POS;
-		break;
-	default:
+	} else {
 		ut_ad(undo == update || undo == temp);
 	}
 
@@ -1129,7 +1123,7 @@ trx_rollback_start(
 	ut_ad(!trx->in_rollback);
 
 	trx->roll_limit = roll_limit;
-	trx->in_rollback = true;
+	ut_d(trx->in_rollback = true);
 
 	ut_a(trx->roll_limit <= trx->undo_no);
 

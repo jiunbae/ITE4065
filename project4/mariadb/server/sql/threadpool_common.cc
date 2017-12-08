@@ -13,7 +13,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02111-1301 USA */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include <violite.h>
 #include <sql_priv.h>
 #include <sql_class.h>
@@ -199,7 +199,7 @@ void tp_callback(TP_connection *c)
   c->priority= get_priority(c);
 
   /* Read next command from client. */
-  c->set_io_timeout(thd->get_net_wait_timeout());
+  c->set_io_timeout(thd->variables.net_wait_timeout);
   c->state= TP_STATE_IDLE;
   if (c->start_io())
     goto error;

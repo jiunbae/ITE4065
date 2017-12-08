@@ -89,6 +89,16 @@ dict_col_copy_type(
 	type->len = col->len;
 	type->mbminmaxlen = col->mbminmaxlen;
 }
+/** Check if a column is a virtual column
+@param[in]      col     column
+@return true if it is a virtual column, false otherwise */
+UNIV_INLINE
+bool
+dict_col_is_virtual(
+	const dict_col_t*	col)
+{
+	return(col->prtype & DATA_VIRTUAL);
+}
 
 #ifdef UNIV_DEBUG
 /*********************************************************************//**
@@ -286,7 +296,8 @@ dict_index_is_clust(
 	const dict_index_t*	index)	/*!< in: index */
 {
 	ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
-	return(index->is_clust());
+
+	return(index->type & DICT_CLUSTERED);
 }
 
 /** Check if index is auto-generated clustered index.
@@ -385,10 +396,8 @@ dict_table_get_n_user_cols(
 	const dict_table_t*	table)	/*!< in: table */
 {
 	ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
-	/* n_cols counts stored columns only. A table may contain
-	virtual columns and no user-specified stored columns at all. */
-	ut_ad(table->n_cols >= DATA_N_SYS_COLS);
-	return(table->n_cols - DATA_N_SYS_COLS);
+
+	return(table->n_cols - dict_table_get_n_sys_cols(table));
 }
 
 /********************************************************************//**
@@ -520,8 +529,8 @@ dict_table_get_nth_v_col(
 	ut_ad(table);
 	ut_ad(pos < table->n_v_def);
 	ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
-	ut_ad(!table->v_cols[pos].m_col.is_instant());
-	return &table->v_cols[pos];
+
+	return(static_cast<dict_v_col_t*>(table->v_cols) + pos);
 }
 
 /********************************************************************//**
@@ -537,10 +546,11 @@ dict_table_get_sys_col(
 	dict_col_t*	col;
 
 	ut_ad(table);
-	ut_ad(sys < DATA_N_SYS_COLS);
+	ut_ad(sys < dict_table_get_n_sys_cols(table));
 	ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
 
-	col = dict_table_get_nth_col(table, table->n_cols - DATA_N_SYS_COLS
+	col = dict_table_get_nth_col(table, table->n_cols
+				     - dict_table_get_n_sys_cols(table)
 				     + sys);
 	ut_ad(col->mtype == DATA_SYS);
 	ut_ad(col->prtype == (sys | DATA_NOT_NULL));
@@ -560,10 +570,10 @@ dict_table_get_sys_col_no(
 	ulint			sys)	/*!< in: DATA_ROW_ID, ... */
 {
 	ut_ad(table);
-	ut_ad(sys < DATA_N_SYS_COLS);
+	ut_ad(sys < dict_table_get_n_sys_cols(table));
 	ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
 
-	return(table->n_cols - DATA_N_SYS_COLS + sys);
+	return(table->n_cols - dict_table_get_n_sys_cols(table) + sys);
 }
 
 /********************************************************************//**
@@ -713,6 +723,36 @@ dict_tf_get_rec_format(
 	return(REC_FORMAT_DYNAMIC);
 }
 
+/********************************************************************//**
+Determine the file format from a dict_table_t::flags.
+@return file format version */
+UNIV_INLINE
+ulint
+dict_tf_get_format(
+/*===============*/
+	ulint		flags)	/*!< in: dict_table_t::flags */
+{
+	if (DICT_TF_HAS_ATOMIC_BLOBS(flags)) {
+		return(UNIV_FORMAT_B);
+	}
+
+	return(UNIV_FORMAT_A);
+}
+
+/********************************************************************//**
+Determine the file format of a table.
+@return file format version */
+UNIV_INLINE
+ulint
+dict_table_get_format(
+/*==================*/
+	const dict_table_t*	table)	/*!< in: table */
+{
+	ut_ad(table);
+
+	return(dict_tf_get_format(table->flags));
+}
+
 /** Set the various values in a dict_table_t::flags pointer.
 @param[in,out]	flags,		Pointer to a 4 byte Table Flags
 @param[in]	format		File Format
@@ -848,8 +888,7 @@ dict_tf_to_sys_tables_type(
 			 | DICT_TF_MASK_ATOMIC_BLOBS
 			 | DICT_TF_MASK_DATA_DIR
 			 | DICT_TF_MASK_PAGE_COMPRESSION
-			 | DICT_TF_MASK_PAGE_COMPRESSION_LEVEL
-			 | DICT_TF_MASK_NO_ROLLBACK);
+			 | DICT_TF_MASK_PAGE_COMPRESSION_LEVEL);
 
 	return(type);
 }
@@ -1377,7 +1416,7 @@ dict_table_is_fts_column(
 
 /**********************************************************************//**
 Determine bytes of column prefix to be stored in the undo log. Please
-note that if !dict_table_has_atomic_blobs(table), no prefix
+note if the table format is UNIV_FORMAT_A (< UNIV_FORMAT_B), no prefix
 needs to be stored in the undo log.
 @return bytes of column prefix to be stored in the undo log */
 UNIV_INLINE
@@ -1388,15 +1427,16 @@ dict_max_field_len_store_undo(
 	const dict_col_t*	col)	/*!< in: column which index prefix
 					is based on */
 {
-	if (!dict_table_has_atomic_blobs(table)) {
-		return(0);
+	ulint	prefix_len = 0;
+
+	if (dict_table_get_format(table) >= UNIV_FORMAT_B)
+	{
+		prefix_len = col->max_prefix
+			? col->max_prefix
+			: DICT_MAX_FIELD_LEN_BY_FORMAT(table);
 	}
 
-	if (col->max_prefix != 0) {
-		return(col->max_prefix);
-	}
-
-	return(REC_VERSION_56_MAX_INDEX_COL_LEN);
+	return(prefix_len);
 }
 
 /** Determine maximum bytes of a virtual column need to be stored
@@ -1416,10 +1456,10 @@ dict_max_v_field_len_store_undo(
 
 	/* This calculation conforms to the non-virtual column
 	maximum log length calculation:
-	1) if No atomic BLOB, upto REC_ANTELOPE_MAX_INDEX_COL_LEN
-	2) if atomic BLOB, upto col->max_prefix or
-	REC_VERSION_56_MAX_INDEX_COL_LEN, whichever is less */
-	if (dict_table_has_atomic_blobs(table)) {
+	1) for UNIV_FORMAT_A, upto REC_ANTELOPE_MAX_INDEX_COL_LEN
+	for UNIV_FORMAT_B, upto col->max_prefix or
+	2) REC_VERSION_56_MAX_INDEX_COL_LEN, whichever is less */
+	if (dict_table_get_format(table) >= UNIV_FORMAT_B) {
 		if (DATA_BIG_COL(col) && col->max_prefix > 0) {
 			max_log_len = col->max_prefix;
 		} else {

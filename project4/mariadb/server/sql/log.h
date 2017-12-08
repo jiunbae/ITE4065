@@ -415,10 +415,8 @@ private:
   ( ((ulong)(c)>>1) == BINLOG_COOKIE_DUMMY_ID )
 
 class binlog_cache_mngr;
-class binlog_cache_data;
 struct rpl_gtid;
 struct wait_for_commit;
-
 class MYSQL_BIN_LOG: public TC_LOG, private MYSQL_LOG
 {
  private:
@@ -711,6 +709,7 @@ public:
   void wait_for_sufficient_commits();
   void binlog_trigger_immediate_group_commit();
   void wait_for_update_relay_log(THD* thd);
+  int  wait_for_update_bin_log(THD* thd, const struct timespec * timeout);
   void init(ulong max_size);
   void init_pthread_objects();
   void cleanup();
@@ -744,8 +743,8 @@ public:
   void stop_union_events(THD *thd);
   bool is_query_in_union(THD *thd, query_id_t query_id_param);
 
-  bool write_event(Log_event *ev, binlog_cache_data *data, IO_CACHE *file);
-  bool write_event(Log_event *ev) { return write_event(ev, 0, &log_file); }
+  bool write_event(Log_event *ev, IO_CACHE *file);
+  bool write_event(Log_event *ev) { return write_event(ev, &log_file); }
 
   bool write_event_buffer(uchar* buf,uint len);
   bool append(Log_event* ev);
@@ -1095,7 +1094,6 @@ void make_default_log_name(char **out, const char* log_ext, bool once);
 void binlog_reset_cache(THD *thd);
 
 extern MYSQL_PLUGIN_IMPORT MYSQL_BIN_LOG mysql_bin_log;
-extern handlerton *binlog_hton;
 extern LOGGER logger;
 
 extern const char *log_bin_index;

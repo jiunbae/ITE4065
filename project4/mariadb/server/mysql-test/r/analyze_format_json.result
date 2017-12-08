@@ -451,7 +451,6 @@ ANALYZE
         {
           "query_block": {
             "select_id": 2,
-            "operation": "UNION",
             "r_loops": 1,
             "r_total_time_ms": "REPLACED",
             "table": {

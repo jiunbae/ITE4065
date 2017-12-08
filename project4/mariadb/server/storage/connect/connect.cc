@@ -33,7 +33,6 @@
 /*  plgdbsem.h   is header containing the DB applic. declarations.     */
 /***********************************************************************/
 #define DONT_DEFINE_VOID
-#include <my_global.h>
 #include "handler.h"
 #undef  OFFSET
 

@@ -19,7 +19,7 @@
 #pragma implementation // gcc: Class implementation
 #endif
 
-#include <my_global.h>
+#include <my_config.h>
 
 /* The C++ file's header */
 #include "./rdb_threads.h"

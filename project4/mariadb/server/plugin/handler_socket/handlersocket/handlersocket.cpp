@@ -6,7 +6,8 @@
  * See COPYRIGHT.txt for details.
  */
 
-#include <my_global.h>
+#include <my_config.h>
+
 #include <memory>
 #include <string>
 #include <stdio.h>

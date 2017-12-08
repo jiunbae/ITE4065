@@ -14,7 +14,6 @@
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
 
-#include "mariadb.h"
 #include "sql_class.h"
 #include "debug_sync.h"
 #include "sql_array.h"
@@ -2087,14 +2086,6 @@ MDL_context::acquire_lock(MDL_request *mdl_request, double lock_wait_timeout)
   */
   lock= ticket->m_lock;
 
-  if (lock_wait_timeout == 0)
-  {
-    mysql_prlock_unlock(&lock->m_rwlock);
-    MDL_ticket::destroy(ticket);
-    my_error(ER_LOCK_WAIT_TIMEOUT, MYF(0));
-    DBUG_RETURN(TRUE);
-  }
-
   lock->m_waiting.add_ticket(ticket);
 
   /*
@@ -2119,11 +2110,11 @@ MDL_context::acquire_lock(MDL_request *mdl_request, double lock_wait_timeout)
     the parallel replication scheduler should never schedule a DDL while
     DML's are still running.
   */
-  DBUG_SLOW_ASSERT((mdl_request->type != MDL_INTENTION_EXCLUSIVE &&
-                    mdl_request->type != MDL_EXCLUSIVE) ||
-                   !(get_thd()->rgi_slave &&
-                     get_thd()->rgi_slave->is_parallel_exec &&
-                     lock->check_if_conflicting_replication_locks(this)));
+  DBUG_ASSERT((mdl_request->type != MDL_INTENTION_EXCLUSIVE &&
+               mdl_request->type != MDL_EXCLUSIVE) ||
+              !(get_thd()->rgi_slave &&
+                get_thd()->rgi_slave->is_parallel_exec &&
+                lock->check_if_conflicting_replication_locks(this)));
 
   mysql_prlock_unlock(&lock->m_rwlock);
 
@@ -2328,6 +2319,13 @@ MDL_context::upgrade_shared_lock(MDL_ticket *mdl_ticket,
   */
   if (mdl_ticket->has_stronger_or_equal_type(new_type))
     DBUG_RETURN(FALSE);
+
+  /* Only allow upgrades from UPGRADABLE/NO_WRITE/NO_READ_WRITE/READ/WRITE */
+  DBUG_ASSERT(mdl_ticket->m_type == MDL_SHARED_UPGRADABLE ||
+              mdl_ticket->m_type == MDL_SHARED_NO_WRITE ||
+              mdl_ticket->m_type == MDL_SHARED_NO_READ_WRITE ||
+              mdl_ticket->m_type == MDL_SHARED_READ ||
+              mdl_ticket->m_type == MDL_SHARED_WRITE);
 
   mdl_xlock_request.init(&mdl_ticket->m_lock->key, new_type,
                          MDL_TRANSACTION);
@@ -2644,7 +2642,7 @@ void MDL_context::release_lock(enum_mdl_duration duration, MDL_ticket *ticket)
 
 void MDL_context::release_lock(MDL_ticket *ticket)
 {
-  DBUG_SLOW_ASSERT(ticket->m_duration == MDL_EXPLICIT);
+  DBUG_ASSERT(ticket->m_duration == MDL_EXPLICIT);
 
   release_lock(MDL_EXPLICIT, ticket);
 }
@@ -2904,8 +2902,8 @@ bool MDL_context::has_lock(const MDL_savepoint &mdl_savepoint,
 void MDL_context::set_lock_duration(MDL_ticket *mdl_ticket,
                                     enum_mdl_duration duration)
 {
-  DBUG_SLOW_ASSERT(mdl_ticket->m_duration == MDL_TRANSACTION &&
-                   duration != MDL_TRANSACTION);
+  DBUG_ASSERT(mdl_ticket->m_duration == MDL_TRANSACTION &&
+              duration != MDL_TRANSACTION);
 
   m_tickets[MDL_TRANSACTION].remove(mdl_ticket);
   m_tickets[duration].push_front(mdl_ticket);
