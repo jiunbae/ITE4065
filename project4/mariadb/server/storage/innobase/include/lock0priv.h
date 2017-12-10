@@ -746,6 +746,12 @@ public:
 		bool		add_to_hash,
 		const lock_prdt_t*
 				prdt = NULL);
+
+	lock_t* project4_create(lock_t* const	c_lock,
+		trx_t*		trx,
+		bool		owns_trx_mutex,
+		bool		add_to_hash);
+
 	/**
 	Check of the lock is on m_rec_id.
 	@param[in] lock			Lock to compare with
@@ -761,6 +767,13 @@ public:
 	@param[in] size		Size of the lock + bitmap requested
 	@return a record lock instance */
 	static lock_t* lock_alloc(
+		trx_t*		trx,
+		dict_index_t*	index,
+		ulint		mode,
+		const RecID&	rec_id,
+		ulint		size);
+
+	static lock_t* project4_lock_alloc(
 		trx_t*		trx,
 		dict_index_t*	index,
 		ulint		mode,
@@ -838,6 +851,8 @@ private:
 				rec hash and the transaction lock list
 	@param[in] add_to_hash	If the lock should be added to the hash table */
 	void lock_add(lock_t* lock, bool add_to_hash);
+
+	void project4_lock_add(lock_t* lock, bool add_to_hash);
 
 	/**
 	Check and resolve any deadlocks

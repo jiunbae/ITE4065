@@ -109,6 +109,11 @@ hash_create(
 	array = static_cast<hash_cell_t*>(
 		ut_malloc_nokey(sizeof(hash_cell_t) * prime));
 
+	for (ulint i = 0; i < prime; i++) {
+		array[i].epoch = 0;
+		array[i].tail = array[i].head = NULL;
+	}
+
 	/* The default type of hash_table is HASH_TABLE_SYNC_NONE i.e.:
 	the caller is responsible for access control to the table. */
 	table->type = HASH_TABLE_SYNC_NONE;
