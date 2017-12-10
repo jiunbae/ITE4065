@@ -689,4 +689,14 @@ static const size_t UNIV_SECTOR_SIZE = 512;
 myisam/sp_defs.h. We only support 2 dimension data */
 #define SPDIMS          2
 
+/* ITE4068 Project4: Scalable Lock Manager
+Author: Bae jiun, MaybeS */
+#define ITE4068 		TRUE
+
+#ifdef ITE4068
+# include "ite4068.h"
+# define ITE4068_READ_ONLY	TRUE
+# define ITE4068_READ_WRITE	FALSE
+#endif
+
 #endif
