@@ -140,6 +140,14 @@ struct lock_t {
 					LOCK_INSERT_INTENTION,
 					wait flag, ORed */
 
+#ifdef ITE4068
+	//Jiun: Attribute timestamp for check epoch
+	time_t		timestamp;
+
+	//Jiun: Attribute state for check logical deletiong (if true)
+	bool		state;
+#endif
+	
 	/** Determine if the lock object is a record lock.
 	@return true if record lock, false otherwise. */
 	bool is_record_lock() const
