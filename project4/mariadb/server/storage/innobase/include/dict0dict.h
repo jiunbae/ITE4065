@@ -204,7 +204,7 @@ dict_col_copy_type(
 
 /**********************************************************************//**
 Determine bytes of column prefix to be stored in the undo log. Please
-note that if !dict_table_has_atomic_blobs(table), no prefix
+note if the table format is UNIV_FORMAT_A (< UNIV_FORMAT_B), no prefix
 needs to be stored in the undo log.
 @return bytes of column prefix to be stored in the undo log */
 UNIV_INLINE
@@ -385,6 +385,15 @@ dict_table_add_system_columns(
 /*==========================*/
 	dict_table_t*	table,	/*!< in/out: table */
 	mem_heap_t*	heap)	/*!< in: temporary heap */
+	MY_ATTRIBUTE((nonnull));
+/**********************************************************************//**
+Adds a table object to the dictionary cache. */
+void
+dict_table_add_to_cache(
+/*====================*/
+	dict_table_t*	table,		/*!< in: table */
+	bool		can_be_evicted,	/*!< in: whether can be evicted*/
+	mem_heap_t*	heap)		/*!< in: temporary heap */
 	MY_ATTRIBUTE((nonnull));
 /**********************************************************************//**
 Removes a table object from the dictionary cache. */
@@ -580,6 +589,16 @@ dict_foreign_find_index(
 					happened */
 
 	MY_ATTRIBUTE((nonnull(1,3), warn_unused_result));
+/**********************************************************************//**
+Returns a column's name.
+@return column name. NOTE: not guaranteed to stay valid if table is
+modified in any way (columns added, etc.). */
+const char*
+dict_table_get_col_name(
+/*====================*/
+	const dict_table_t*	table,	/*!< in: table */
+	ulint			col_nr)	/*!< in: column number */
+	MY_ATTRIBUTE((nonnull, warn_unused_result));
 
 /** Returns a virtual column's name.
 @param[in]	table		table object
@@ -886,25 +905,14 @@ dict_table_get_sys_col(
 	ulint			sys)	/*!< in: DATA_ROW_ID, ... */
 	MY_ATTRIBUTE((nonnull, warn_unused_result));
 #else /* UNIV_DEBUG */
-#define dict_table_get_nth_col(table, pos)				\
-	(&(table)->cols[pos])
-#define dict_table_get_sys_col(table, sys)				\
-	(&(table)->cols[(table)->n_cols + (sys) - DATA_N_SYS_COLS])
+#define dict_table_get_nth_col(table, pos)	\
+((table)->cols + (pos))
+#define dict_table_get_sys_col(table, sys)	\
+((table)->cols + (table)->n_cols + (sys)	\
+ - (dict_table_get_n_sys_cols(table)))
 /* Get nth virtual columns */
-#define dict_table_get_nth_v_col(table, pos)	(&(table)->v_cols[pos])
+#define dict_table_get_nth_v_col(table, pos)	((table)->v_cols + (pos))
 #endif /* UNIV_DEBUG */
-/** Wrapper function.
-@see dict_col_t::name()
-@param[in]	table	table
-@param[in]	col_nr	column number in table
-@return	column name */
-inline
-const char*
-dict_table_get_col_name(const dict_table_t* table, ulint col_nr)
-{
-	return(dict_table_get_nth_col(table, col_nr)->name(*table));
-}
-
 /********************************************************************//**
 Gets the given system column number of a table.
 @return column number */
@@ -935,15 +943,24 @@ dict_table_is_comp(
 	const dict_table_t*	table)	/*!< in: table */
 	MY_ATTRIBUTE((nonnull, warn_unused_result));
 
-/** Determine if a table uses atomic BLOBs (no locally stored prefix).
-@param[in]	table	InnoDB table
-@return whether BLOBs are atomic */
-inline
-bool
-dict_table_has_atomic_blobs(const dict_table_t* table)
-{
-	return(DICT_TF_HAS_ATOMIC_BLOBS(table->flags));
-}
+/********************************************************************//**
+Determine the file format of a table.
+@return file format version */
+UNIV_INLINE
+ulint
+dict_table_get_format(
+/*==================*/
+	const dict_table_t*	table)	/*!< in: table */
+	MY_ATTRIBUTE((nonnull, warn_unused_result));
+/********************************************************************//**
+Determine the file format from a dict_table_t::flags.
+@return file format version */
+UNIV_INLINE
+ulint
+dict_tf_get_format(
+/*===============*/
+	ulint		flags)		/*!< in: dict_table_t::flags */
+	MY_ATTRIBUTE((warn_unused_result));
 
 /** Set the various values in a dict_table_t::flags pointer.
 @param[in,out]	flags,		Pointer to a 4 byte Table Flags
@@ -1148,7 +1165,6 @@ dict_index_get_n_fields(
 					representation of index (in
 					the dictionary cache) */
 	MY_ATTRIBUTE((nonnull, warn_unused_result));
-
 /********************************************************************//**
 Gets the number of fields in the internal representation of an index
 that uniquely determine the position of an index entry in the index, if
@@ -1437,13 +1453,22 @@ dict_index_copy_rec_order_prefix(
 @param[in,out]	heap		memory heap for allocation
 @return own: data tuple */
 dtuple_t*
-dict_index_build_data_tuple(
+dict_index_build_data_tuple_func(
 	const rec_t*		rec,
 	const dict_index_t*	index,
+#ifdef UNIV_DEBUG
 	bool			leaf,
+#endif /* UNIV_DEBUG */
 	ulint			n_fields,
 	mem_heap_t*		heap)
 	MY_ATTRIBUTE((nonnull, warn_unused_result));
+#ifdef UNIV_DEBUG
+# define dict_index_build_data_tuple(rec, index, leaf, n_fields, heap)	\
+	dict_index_build_data_tuple_func(rec, index, leaf, n_fields, heap)
+#else /* UNIV_DEBUG */
+# define dict_index_build_data_tuple(rec, index, leaf, n_fields, heap)	\
+	dict_index_build_data_tuple_func(rec, index, n_fields, heap)
+#endif /* UNIV_DEBUG */
 
 /*********************************************************************//**
 Gets the space id of the root of the index tree.
@@ -1955,7 +1980,13 @@ dict_index_node_ptr_max_size(
 /*=========================*/
 	const dict_index_t*	index)	/*!< in: index */
 	MY_ATTRIBUTE((warn_unused_result));
-#define dict_col_is_virtual(col) (col)->is_virtual()
+/** Check if a column is a virtual column
+@param[in]	col	column
+@return true if it is a virtual column, false otherwise */
+UNIV_INLINE
+bool
+dict_col_is_virtual(
+	const dict_col_t*	col);
 
 /** encode number of columns and number of virtual columns in one
 4 bytes value. We could do this because the number of columns in

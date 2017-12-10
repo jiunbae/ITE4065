@@ -96,9 +96,6 @@ enum enum_sql_command {
   SQLCOM_ALTER_USER,
   SQLCOM_SHOW_CREATE_USER,
   SQLCOM_EXECUTE_IMMEDIATE,
-  SQLCOM_CREATE_SEQUENCE,
-  SQLCOM_DROP_SEQUENCE,
-  SQLCOM_ALTER_SEQUENCE,
 
   /*
     When a command is added here, be sure it's also added in mysqld.cc
@@ -166,34 +163,5 @@ protected:
     DBUG_ASSERT(FALSE);
   }
 };
-
-
-/**
-  Sql_cmd_call represents the CALL statement.
-*/
-class Sql_cmd_call : public Sql_cmd
-{
-public:
-  class sp_name *m_name;
-  Sql_cmd_call(class sp_name *name)
-   :m_name(name)
-  {}
-
-  virtual ~Sql_cmd_call()
-  {}
-
-  /**
-    Execute a CALL statement at runtime.
-    @param thd the current thread.
-    @return false on success.
-  */
-  bool execute(THD *thd);
-
-  virtual enum_sql_command sql_command_code() const
-  {
-    return SQLCOM_CALL;
-  }
-};
-
 
 #endif // SQL_CMD_INCLUDED

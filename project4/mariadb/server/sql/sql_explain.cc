@@ -18,7 +18,7 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "sql_select.h"
 #include "my_json_writer.h"
@@ -28,11 +28,6 @@
 const char * STR_DELETING_ALL_ROWS= "Deleting all rows";
 const char * STR_IMPOSSIBLE_WHERE= "Impossible WHERE";
 const char * STR_NO_ROWS_AFTER_PRUNING= "No matching rows after partition pruning";
-
-const char *unit_operation_text[4]=
-{
-   "UNIT RESULT","UNION RESULT","INTERSECT RESULT","EXCEPT RESULT"
-};
 
 static void write_item(Json_writer *writer, Item *item);
 static void append_item_to_str(String *out, Item *item);
@@ -426,26 +421,8 @@ int print_explain_row(select_result_sink *result,
 uint Explain_union::make_union_table_name(char *buf)
 {
   uint childno= 0;
-  uint len, lastop= 0;
-  LEX_CSTRING type;
-  switch (operation)
-  {
-    case OP_MIX:
-      lex_string_set3(&type, STRING_WITH_LEN("<unit"));
-      break;
-    case OP_UNION:
-      lex_string_set3(&type, STRING_WITH_LEN("<union"));
-      break;
-    case OP_INTERSECT:
-      lex_string_set3(&type, STRING_WITH_LEN("<intersect"));
-      break;
-    case OP_EXCEPT:
-      lex_string_set3(&type, STRING_WITH_LEN("<except"));
-      break;
-    default:
-      DBUG_ASSERT(0);
-  }
-  memcpy(buf, type.str, (len= type.length));
+  uint len= 6, lastop= 0;
+  memcpy(buf, STRING_WITH_LEN("<union"));
 
   for (; childno < union_members.elements() && len + lastop + 5 < NAME_LEN;
        childno++)
@@ -488,7 +465,7 @@ int Explain_union::print_explain(Explain_query *query,
   if (!using_tmp)
     return 0;
 
-  /* Print a line with "UNIT RESULT" */
+  /* Print a line with "UNION RESULT" */
   List<Item> item_list;
   Item *item_null= new (mem_root) Item_null(thd);
 
@@ -840,28 +817,6 @@ int Explain_basic_join::print_explain(Explain_query *query,
 }
 
 
-void Explain_select::add_linkage(Json_writer *writer)
-{
-  const char *operation= NULL;
-  switch (linkage)
-  {
-     case UNION_TYPE:
-       operation= "UNION";
-       break;
-     case INTERSECT_TYPE:
-       operation= "INTERSECT";
-       break;
-     case EXCEPT_TYPE:
-       operation= "EXCEPT";
-       break;
-     default:
-       // It is the first or the only SELECT => no operation
-       break;
-  }
-  if (operation)
-    writer->add_member("operation").add_str(operation);
-}
-
 void Explain_select::print_explain_json(Explain_query *query, 
                                         Json_writer *writer, bool is_analyze)
 {
@@ -873,7 +828,6 @@ void Explain_select::print_explain_json(Explain_query *query,
   {
     writer->add_member("query_block").start_object();
     writer->add_member("select_id").add_ll(select_id);
-    add_linkage(writer);
 
     writer->add_member("table").start_object();
     writer->add_member("message").add_str(message);
@@ -886,7 +840,6 @@ void Explain_select::print_explain_json(Explain_query *query,
   {
     writer->add_member("query_block").start_object();
     writer->add_member("select_id").add_ll(select_id);
-    add_linkage(writer);
 
     if (is_analyze && time_tracker.get_loops())
     {
@@ -1143,37 +1096,32 @@ void Explain_table_access::fill_key_len_str(String *key_len_str) const
 }
 
 
-bool Explain_index_use::set(MEM_ROOT *mem_root, KEY *key, uint key_len_arg)
+void Explain_index_use::set(MEM_ROOT *mem_root, KEY *key, uint key_len_arg)
 {
-  if (set_pseudo_key(mem_root, key->name.str))
-    return 1;
-
+  set_pseudo_key(mem_root, key->name);
   key_len= key_len_arg;
   uint len= 0;
   for (uint i= 0; i < key->usable_key_parts; i++)
   {
-    if (!key_parts_list.append_str(mem_root,
-                                   key->key_part[i].field->field_name.str))
-      return 1;
+    key_parts_list.append_str(mem_root, key->key_part[i].field->field_name);
     len += key->key_part[i].store_length;
     if (len >= key_len_arg)
       break;
   }
-  return 0;
 }
 
 
-bool Explain_index_use::set_pseudo_key(MEM_ROOT *root, const char* key_name_arg)
+void Explain_index_use::set_pseudo_key(MEM_ROOT *root, const char* key_name_arg)
 {
   if (key_name_arg)
   {
-    if (!(key_name= strdup_root(root, key_name_arg)))
-      return 1;
+    size_t name_len= strlen(key_name_arg);
+    if ((key_name= (char*)alloc_root(root, name_len+1)))
+      memcpy(key_name, key_name_arg, name_len+1);
   }
   else
     key_name= NULL;
   key_len= ~(uint) 0;
-  return 0;
 }
 
 
@@ -2454,11 +2402,7 @@ int Explain_range_checked_fer::append_possible_keys_stat(MEM_ROOT *alloc,
   for (j= 0; j < table->s->keys; j++)
   {
     if (possible_keys.is_set(j))
-    {
-      if (!(keys_stat_names[j]= key_set.append_str(alloc,
-                                                   table->key_info[j].name.str)))
-        return 1;
-    }
+      keys_stat_names[j]= key_set.append_str(alloc, table->key_info[j].name);
     else
       keys_stat_names[j]= NULL;
   }

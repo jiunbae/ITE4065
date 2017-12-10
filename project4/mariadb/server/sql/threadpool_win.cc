@@ -19,7 +19,7 @@
 
 #define _WIN32_WINNT 0x0601
 
-#include "mariadb.h"
+#include <my_global.h>
 #include <violite.h>
 #include <sql_priv.h>
 #include <sql_class.h>

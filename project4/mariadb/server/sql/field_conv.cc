@@ -25,7 +25,7 @@
     gives much more speed.
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "sql_class.h"                          // THD
 #include <m_ctype.h>
@@ -125,7 +125,7 @@ static int set_bad_null_error(Field *field, int err)
     return 0;
   case CHECK_FIELD_ERROR_FOR_NULL:
     if (!field->table->in_use->no_errors)
-      my_error(ER_BAD_NULL_ERROR, MYF(0), field->field_name.str);
+      my_error(ER_BAD_NULL_ERROR, MYF(0), field->field_name);
     return -1;
   }
   DBUG_ASSERT(0); // impossible
@@ -754,8 +754,7 @@ Field::Copy_func *Field_varstring::get_copy_func(const Field *from) const
     return do_field_varbinary_pre50;
   if (Field_varstring::real_type() != from->real_type() ||
       Field_varstring::charset() != from->charset() ||
-      length_bytes != ((const Field_varstring*) from)->length_bytes ||
-      !compression_method() != !from->compression_method())
+      length_bytes != ((const Field_varstring*) from)->length_bytes)
     return do_field_string;
   return length_bytes == 1 ?
          (from->charset()->mbmaxlen == 1 ? do_varstring1 : do_varstring1_mb) :

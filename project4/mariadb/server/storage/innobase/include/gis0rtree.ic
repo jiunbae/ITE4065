@@ -38,7 +38,7 @@ rtr_page_cal_mbr(
 {
 	page_t*		page;
 	rec_t*		rec;
-	const byte*	field;
+	byte*		field;
 	ulint		len;
 	ulint*		offsets = NULL;
 	double		bmin, bmax;

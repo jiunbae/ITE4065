@@ -1,21 +1,6 @@
-/*
-   Copyright (c) 2016,2017 MariaDB
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
-
-#include "mariadb.h"
 #include "item_windowfunc.h" 
+#include "my_dbug.h"
+#include "my_global.h"
 #include "sql_select.h" // test if group changed
 
 
@@ -28,7 +13,7 @@ Item_window_func::resolve_window_name(THD *thd)
     return false;
   }
   DBUG_ASSERT(window_name != NULL && window_spec == NULL);
-  const char *ref_name= window_name->str;
+  char *ref_name= window_name->str;
 
   /* !TODO: Add the code to resolve ref_name in outer queries */ 
   /* 
@@ -41,7 +26,7 @@ Item_window_func::resolve_window_name(THD *thd)
   Window_spec *win_spec;
   while((win_spec= it++))
   {
-    const char *win_spec_name= win_spec->name();
+    char *win_spec_name= win_spec->name();
     if (win_spec_name &&
         my_strcasecmp(system_charset_info, ref_name, win_spec_name) == 0)
     {
@@ -108,7 +93,6 @@ Item_window_func::fix_fields(THD *thd, Item **ref)
     my_error(ER_NO_ORDER_LIST_IN_WINDOW_SPEC, MYF(0), window_func()->func_name());
     return true;
   }
-
   /*
     TODO: why the last parameter is 'ref' in this call? What if window_func
     decides to substitute itself for something else and does *ref=.... ? 
@@ -169,25 +153,10 @@ void Item_window_func::split_sum_func(THD *thd, Ref_ptr_array ref_pointer_array,
   window_func()->setup_caches(thd);
 }
 
-bool Item_window_func::check_result_type_of_order_item()
-{
-  if (only_single_element_order_list())
-  {
-    Item_result rtype= window_spec->order_list->first->item[0]->cmp_type();
-    // TODO (varun) : support date type in percentile_cont function
-    if (rtype != REAL_RESULT && rtype != INT_RESULT &&
-        rtype != DECIMAL_RESULT && rtype != TIME_RESULT)
-    {
-      my_error(ER_WRONG_TYPE_FOR_PERCENTILE_FUNC, MYF(0), window_func()->func_name());
-      return TRUE;
-    }
-    setting_handler_for_percentile_functions(rtype);
-  }
-  return FALSE;
-}
 
 /*
   This must be called before attempting to compute the window function values.
+
   @detail
     If we attempt to do it in fix_fields(), partition_fields will refer
     to the original window function arguments.
@@ -208,71 +177,6 @@ void Item_sum_dense_rank::setup_window_func(THD *thd, Window_spec *window_spec)
   peer_tracker = new Group_bound_tracker(thd, window_spec->order_list);
   peer_tracker->init();
   clear();
-}
-
-void Item_sum_percentile_disc::setup_window_func(THD *thd, Window_spec *window_spec)
-{
-  order_item= window_spec->order_list->first->item[0];
-  if (!(value= order_item->get_cache(thd)))
-    return;
-  value->setup(thd, order_item);
-  value->store(order_item);
-}
-
-void Item_sum_percentile_cont::setup_window_func(THD *thd, Window_spec *window_spec)
-{
-  order_item= window_spec->order_list->first->item[0];
-  /* TODO(varun): need to discuss and finalise what type should we
-     return for percentile cont functions
-  */
-  if (!(ceil_value= order_item->get_cache(thd)))
-    return;
-  ceil_value->setup(thd, order_item);
-  ceil_value->store(order_item);
-
-  if (!(floor_value= order_item->get_cache(thd)))
-    return;
-  floor_value->setup(thd, order_item);
-  floor_value->store(order_item);
-}
-bool Item_sum_percentile_cont::fix_fields(THD *thd, Item **ref)
-{
-  bool res;
-  res= Item_sum_num::fix_fields(thd, ref);
-  if (res)
-    return res;
-
-  switch(args[0]->cmp_type())
-  {
-    case DECIMAL_RESULT:
-    case REAL_RESULT:
-    case INT_RESULT:
-      break;
-    default:
-      my_error(ER_WRONG_TYPE_OF_ARGUMENT, MYF(0), func_name());
-      return TRUE;
-  }
-  return res;
-}
-bool Item_sum_percentile_disc::fix_fields(THD *thd, Item **ref)
-{
-  bool res;
-  res= Item_sum_num::fix_fields(thd, ref);
-  if (res)
-    return res;
-
-  switch(args[0]->cmp_type())
-  {
-    case DECIMAL_RESULT:
-    case REAL_RESULT:
-    case INT_RESULT:
-      break;
-    default:
-      my_error(ER_WRONG_TYPE_OF_ARGUMENT, MYF(0), func_name());
-      return TRUE;
-  }
-  return res;
-
 }
 
 bool Item_sum_dense_rank::add()
@@ -339,14 +243,14 @@ bool Item_sum_hybrid_simple::fix_fields(THD *thd, Item **ref)
 
   Item *item2= args[0]->real_item();
   if (item2->type() == Item::FIELD_ITEM)
-    set_handler(item2->type_handler());
+    set_handler_by_field_type(((Item_field*) item2)->field->type());
   else if (args[0]->cmp_type() == TIME_RESULT)
-    set_handler(item2->type_handler());
+    set_handler_by_field_type(item2->field_type());
   else
     set_handler_by_result_type(item2->result_type(),
                                max_length, collation.collation);
 
-  switch (result_type()) {
+  switch (Item_sum_hybrid_simple::result_type()) {
   case INT_RESULT:
   case DECIMAL_RESULT:
   case STRING_RESULT:
@@ -386,7 +290,7 @@ bool Item_sum_hybrid_simple::add()
 
 void Item_sum_hybrid_simple::setup_hybrid(THD *thd, Item *item)
 {
-  if (!(value= item->get_cache(thd)))
+  if (!(value= Item_cache::get_cache(thd, item, item->cmp_type())))
     return;
   value->setup(thd, item);
   value->store(item);
@@ -448,7 +352,7 @@ Field *Item_sum_hybrid_simple::create_tmp_field(bool group, TABLE *table)
 
 void Item_sum_hybrid_simple::reset_field()
 {
-  switch(result_type()) {
+  switch(Item_sum_hybrid_simple::result_type()) {
   case STRING_RESULT:
   {
     char buff[MAX_FIELD_WIDTH];

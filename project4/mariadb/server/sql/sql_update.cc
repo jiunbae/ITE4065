@@ -20,7 +20,7 @@
   Multi-table updates were introduced by Sinisa & Monty
 */
 
-#include "mariadb.h"                          /* NO_EMBEDDED_ACCESS_CHECKS */
+#include <my_global.h>                          /* NO_EMBEDDED_ACCESS_CHECKS */
 #include "sql_priv.h"
 #include "sql_update.h"
 #include "sql_cache.h"                          // query_cache_*
@@ -140,7 +140,7 @@ static bool check_fields(THD *thd, List<Item> &items)
     if (!(field= item->field_for_view_update()))
     {
       /* item has name, because it comes from VIEW SELECT list */
-      my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name.str);
+      my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name);
       return TRUE;
     }
     /*
@@ -278,7 +278,6 @@ int mysql_update(THD *thd,
   killed_state killed_status= NOT_KILLED;
   Update_plan query_plan(thd->mem_root);
   Explain_update *explain;
-  TABLE_LIST *update_source_table;
   query_plan.index= MAX_KEY;
   query_plan.using_filesort= FALSE;
   DBUG_ENTER("mysql_update");
@@ -291,11 +290,9 @@ int mysql_update(THD *thd,
   if (mysql_handle_derived(thd->lex, DT_INIT))
     DBUG_RETURN(1);
 
-  if (((update_source_table=unique_table(thd, table_list,
-                                        table_list->next_global, 0)) ||
-        table_list->is_multitable()))
+  if (table_list->is_multitable())
   {
-    DBUG_ASSERT(update_source_table || table_list->view != 0);
+    DBUG_ASSERT(table_list->view != 0);
     DBUG_PRINT("info", ("Switch to multi-update"));
     /* pass counter value */
     thd->lex->table_count= table_count;
@@ -305,12 +302,12 @@ int mysql_update(THD *thd,
   if (lock_tables(thd, table_list, table_count, 0))
     DBUG_RETURN(1);
 
-  THD_STAGE_INFO(thd, stage_init_update);
   if (table_list->handle_derived(thd->lex, DT_MERGE_FOR_INSERT))
     DBUG_RETURN(1);
   if (table_list->handle_derived(thd->lex, DT_PREPARE))
     DBUG_RETURN(1);
 
+  THD_STAGE_INFO(thd, stage_init);
   table= table_list->table;
 
   if (!table_list->single_table_updatable())
@@ -451,8 +448,7 @@ int mysql_update(THD *thd,
       goto err;
     }
   }
-  if (init_ftfuncs(thd, select_lex, 1))
-    goto err;
+  init_ftfuncs(thd, select_lex, 1);
 
   table->mark_columns_needed_for_update();
 
@@ -523,8 +519,7 @@ int mysql_update(THD *thd,
   */
   if (thd->lex->describe)
     goto produce_explain_and_leave;
-  if (!(explain= query_plan.save_explain_update_data(query_plan.mem_root, thd)))
-    goto err;
+  explain= query_plan.save_explain_update_data(query_plan.mem_root, thd);
 
   ANALYZE_START_TRACKING(&explain->command_tracker);
 
@@ -621,7 +616,7 @@ int mysql_update(THD *thd,
       THD_STAGE_INFO(thd, stage_searching_rows_for_update);
       ha_rows tmp_limit= limit;
 
-      while (!(error=info.read_record()) && !thd->killed)
+      while (!(error=info.read_record(&info)) && !thd->killed)
       {
         explain->buf_tracker.on_record_read();
         thd->inc_examined_row_count(1);
@@ -709,6 +704,7 @@ int mysql_update(THD *thd,
   */
   thd->count_cuted_fields= CHECK_FIELD_WARN;
   thd->cuted_fields=0L;
+  THD_STAGE_INFO(thd, stage_updating);
 
   transactional_table= table->file->has_transactions();
   thd->abort_on_warning= !ignore && thd->is_strict_mode();
@@ -736,8 +732,7 @@ int mysql_update(THD *thd,
   can_compare_record= records_are_comparable(table);
   explain->tracker.on_scan_init();
 
-  THD_STAGE_INFO(thd, stage_updating);
-  while (!(error=info.read_record()) && !thd->killed)
+  while (!(error=info.read_record(&info)) && !thd->killed)
   {
     explain->tracker.on_record_read();
     thd->inc_examined_row_count(1);
@@ -1048,8 +1043,7 @@ produce_explain_and_leave:
     We come here for various "degenerate" query plans: impossible WHERE,
     no-partitions-used, impossible-range, etc.
   */
-  if (!query_plan.save_explain_update_data(query_plan.mem_root, thd))
-    goto err;
+  query_plan.save_explain_update_data(query_plan.mem_root, thd);
 
 emit_explain_and_leave:
   int err2= thd->lex->explain->send_explain(thd);
@@ -1546,6 +1540,16 @@ int mysql_multi_update_prepare(THD *thd)
     }
     DBUG_PRINT("info", ("table: %s  want_privilege: %u", tl->alias,
                         (uint) table->grant.want_privilege));
+    if (tl->lock_type != TL_READ &&
+        tl->lock_type != TL_READ_NO_INSERT)
+    {
+      TABLE_LIST *duplicate;
+      if ((duplicate= unique_table(thd, tl, table_list, 0)))
+      {
+        update_non_unique_table_error(table_list, "UPDATE", duplicate);
+        DBUG_RETURN(TRUE);
+      }
+    }
   }
   /*
     Set exclude_from_table_unique_test value back to FALSE. It is needed for
@@ -1591,9 +1595,10 @@ bool mysql_multi_update(THD *thd,
   List<Item> total_list;
 
   res= mysql_select(thd,
-                    table_list, select_lex->with_wild, total_list, conds,
-                    select_lex->order_list.elements, select_lex->order_list.first,
-                    (ORDER *)NULL, (Item *) NULL, (ORDER *)NULL,
+                    table_list, select_lex->with_wild,
+                    total_list,
+                    conds, 0, (ORDER *) NULL, (ORDER *)NULL, (Item *) NULL,
+                    (ORDER *)NULL,
                     options | SELECT_NO_JOIN_CACHE | SELECT_NO_UNLOCK |
                     OPTION_SETUP_TABLES_DONE,
                     *result, unit, select_lex);
@@ -1779,7 +1784,7 @@ int multi_update::prepare(List<Item> &not_used_values,
       switch_to_nullable_trigger_fields(*values_for_table[i], table);
     }
   }
-  copy_field= new (thd->mem_root) Copy_field[max_fields];
+  copy_field= new Copy_field[max_fields];
   DBUG_RETURN(thd->is_fatal_error != 0);
 }
 
@@ -1851,8 +1856,6 @@ static bool safe_update_on_fly(THD *thd, JOIN_TAB *join_tab,
 {
   TABLE *table= join_tab->table;
   if (unique_table(thd, table_ref, all_tables, 0))
-    return 0;
-  if (join_tab->join->order) // FIXME this is probably too strong
     return 0;
   switch (join_tab->type) {
   case JT_SYSTEM:
@@ -1931,7 +1934,6 @@ multi_update::initialize_tables(JOIN *join)
       }
     }
     table->prepare_for_position();
-    join->map2table[table->tablenr]->keep_current_rowid= true;
 
     /*
       enable uncacheable flag if we update a view with check option
@@ -1990,19 +1992,15 @@ loop_end:
     TABLE *tbl= table;
     do
     {
-      LEX_CSTRING field_name;
-      field_name.str= tbl->alias.c_ptr();
-      field_name.length= strlen(field_name.str);
       /*
         Signal each table (including tables referenced by WITH CHECK OPTION
         clause) for which we will store row position in the temporary table
         that we need a position to be read first.
       */
       tbl->prepare_for_position();
-      join->map2table[tbl->tablenr]->keep_current_rowid= true;
 
       Field_string *field= new Field_string(tbl->file->ref_length, 0,
-                                            &field_name,
+                                            tbl->alias.c_ptr(),
                                             &my_charset_bin);
       if (!field)
         DBUG_RETURN(1);

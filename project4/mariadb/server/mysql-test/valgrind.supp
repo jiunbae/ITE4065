@@ -362,6 +362,7 @@
    memory "loss" from _dl_init 2
    Memcheck:Leak
    fun:malloc
+   fun:pool
    ...
    fun:call_init*
    fun:_dl_init
@@ -1239,17 +1240,10 @@
 }
 
 {
-  TokuDB uses gcc __thread variables
+  XtraDB uses gcc __thread variables
   Memcheck:Leak
   fun:memalign
   fun:*
-  fun:__tls_get_addr
-}
-
-{
-  Galera uses gcc __thread variables
-  Memcheck:Leak
-  fun:memalign
   fun:__tls_get_addr
 }
 
@@ -1744,25 +1738,3 @@
    ...
 }
 
-#
-# OpenSSL 1.0.1k problems
-#
-
-{
-   OPENSSL 1.0.1k crypto leak
-   Memcheck:Leak
-   match-leak-kinds: reachable
-   fun:malloc
-   fun:CRYPTO_malloc
-   ...
-   fun:ENGINE_add
-}
-
-{
-   OPENSSL 1.0.1k crypto leak
-   Memcheck:Leak
-   match-leak-kinds: reachable
-   fun:malloc
-   fun:CRYPTO_malloc
-   fun:ENGINE_new
-}

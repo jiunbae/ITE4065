@@ -20,7 +20,7 @@
 #pragma implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 // Required to get server definitions for mysql/plugin.h right
 #include "sql_plugin.h"
@@ -562,11 +562,10 @@ bool partition_info::set_up_defaults_for_partitioning(THD *thd, handler *file,
     Check that the user haven't defined the same field twice in
     key or column list partitioning.
 */
-
-const char* partition_info::find_duplicate_field()
+char* partition_info::find_duplicate_field()
 {
-  const char *field_name_outer, *field_name_inner;
-  List_iterator<const char> it_outer(part_field_list);
+  char *field_name_outer, *field_name_inner;
+  List_iterator<char> it_outer(part_field_list);
   uint num_fields= part_field_list.elements;
   uint i,j;
   DBUG_ENTER("partition_info::find_duplicate_field");
@@ -574,7 +573,7 @@ const char* partition_info::find_duplicate_field()
   for (i= 0; i < num_fields; i++)
   {
     field_name_outer= it_outer++;
-    List_iterator<const char> it_inner(part_field_list);
+    List_iterator<char> it_inner(part_field_list);
     for (j= 0; j < num_fields; j++)
     {
       field_name_inner= it_inner++;
@@ -1385,7 +1384,7 @@ bool partition_info::check_partition_info(THD *thd, handlerton **eng_type,
   handlerton *table_engine= default_engine_type;
   uint i, tot_partitions;
   bool result= TRUE, table_engine_set;
-  const char *same_name;
+  char *same_name;
   DBUG_ENTER("partition_info::check_partition_info");
   DBUG_ASSERT(default_engine_type != partition_hton);
 
@@ -1920,7 +1919,7 @@ void partition_info::report_part_expr_error(bool use_subpart_expr)
         !(type == HASH_PARTITION && list_of_fields))
     {
       my_error(ER_FIELD_TYPE_NOT_ALLOWED_AS_PARTITION_FIELD, MYF(0),
-               item_field->name.str);
+               item_field->name);
       DBUG_VOID_RETURN;
     }
   }
@@ -2347,7 +2346,7 @@ bool partition_info::fix_column_value_functions(THD *thd,
       {
         uchar *val_ptr;
         uint len= field->pack_length();
-        sql_mode_t save_sql_mode;
+        ulonglong save_sql_mode;
         bool save_got_warning;
 
         if (!(column_item= get_column_item(column_item,
@@ -2648,9 +2647,9 @@ bool partition_info::has_same_partitioning(partition_info *new_part_info)
   }
 
   /* Check that it will use the same fields in KEY (fields) list. */
-  List_iterator<const char> old_field_name_it(part_field_list);
-  List_iterator<const char> new_field_name_it(new_part_info->part_field_list);
-  const char *old_name, *new_name;
+  List_iterator<char> old_field_name_it(part_field_list);
+  List_iterator<char> new_field_name_it(new_part_info->part_field_list);
+  char *old_name, *new_name;
   while ((old_name= old_field_name_it++))
   {
     new_name= new_field_name_it++;
@@ -2663,9 +2662,9 @@ bool partition_info::has_same_partitioning(partition_info *new_part_info)
   if (is_sub_partitioned())
   {
     /* Check that it will use the same fields in KEY subpart fields list. */
-    List_iterator<const char> old_field_name_it(subpart_field_list);
-    List_iterator<const char> new_field_name_it(new_part_info->subpart_field_list);
-    const char *old_name, *new_name;
+    List_iterator<char> old_field_name_it(subpart_field_list);
+    List_iterator<char> new_field_name_it(new_part_info->subpart_field_list);
+    char *old_name, *new_name;
     while ((old_name= old_field_name_it++))
     {
       new_name= new_field_name_it++;

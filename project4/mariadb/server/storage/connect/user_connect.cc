@@ -36,7 +36,6 @@
 
 #define DONT_DEFINE_VOID
 #define MYSQL_SERVER
-#include <my_global.h>
 #include "sql_class.h"
 #undef  OFFSET
 

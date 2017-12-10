@@ -22,8 +22,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 /* Source file cursor implementation */
 
-#include <my_global.h>
 #include <my_base.h>
+
 #include <fil0fil.h>
 #include <fsp0fsp.h>
 #include <srv0start.h>

@@ -20,7 +20,6 @@
 #define _GNU_SOURCE // POSIX_SPAWN_USEVFORK flag
 #endif
 
-#include "mariadb.h"
 #include "wsrep_utils.h"
 #include "wsrep_mysqld.h"
 

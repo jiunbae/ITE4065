@@ -17,6 +17,13 @@
 #ifndef _atomic_h_cleanup_
 #define _atomic_h_cleanup_ "atomic/generic-msvc.h"
 
+/*
+  We don't implement anything specific for MY_ATOMIC_MODE_DUMMY, always use
+  intrinsics.
+  8 and 16-bit atomics are not implemented, but it can be done if necessary.
+*/
+#undef MY_ATOMIC_HAS_8_16
+
 #include <windows.h>
 /*
   x86 compilers (both VS2003 or VS2005) never use instrinsics, but generate 

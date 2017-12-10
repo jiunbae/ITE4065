@@ -140,6 +140,17 @@ struct lock_t {
 					LOCK_INSERT_INTENTION,
 					wait flag, ORed */
 
+#ifdef ITE4065
+	//Jiun: For physical delete, mark delete time
+	time_t		timestamp;
+
+	//Jiun: False for logical delete, default true
+	bool		state;
+
+	//Jiun: Next pointer for garbage collection
+	lock_t* 	gc_hash;
+#endif
+
 	/** Determine if the lock object is a record lock.
 	@return true if record lock, false otherwise. */
 	bool is_record_lock() const
@@ -725,6 +736,7 @@ public:
 		const lock_prdt_t*
 				prdt = NULL);
 
+	//Jiun: Edited for latch-free design
 	/**
 	Create a lock for a transaction and initialise it.
 	@param[in, out] trx		Transaction requesting the new lock
@@ -746,12 +758,14 @@ public:
 		bool		add_to_hash,
 		const lock_prdt_t*
 				prdt = NULL);
+
 	/**
 	Check of the lock is on m_rec_id.
 	@param[in] lock			Lock to compare with
 	@return true if the record lock is on m_rec_id*/
 	bool is_on_row(const lock_t* lock) const;
 
+	//Jiun: Edited for latch-free design
 	/**
 	Create the lock instance
 	@param[in, out] trx	The transaction requesting the lock
@@ -832,6 +846,7 @@ private:
 	@param[in,out] lock	Lock for which to change state */
 	void set_wait_state(lock_t* lock);
 
+	//Jiun: Edited for latch-free design
 	/**
 	Add the lock to the record lock hash and the transaction's lock list
 	@param[in,out] lock	Newly created record lock to add to the

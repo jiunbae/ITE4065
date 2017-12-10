@@ -16,6 +16,8 @@
 #ifndef STRFUNC_INCLUDED
 #define STRFUNC_INCLUDED
 
+#include "my_global.h"                          /* ulonglong, uint */
+
 typedef struct st_typelib TYPELIB;
 
 ulonglong find_set(TYPELIB *lib, const char *x, uint length, CHARSET_INFO *cs,
@@ -31,13 +33,12 @@ uint find_type2(const TYPELIB *lib, const char *find, uint length,
 void unhex_type2(TYPELIB *lib);
 uint check_word(TYPELIB *lib, const char *val, const char *end,
 		const char **end_of_word);
-int find_string_in_array(LEX_CSTRING * const haystack,
-                         LEX_CSTRING * const needle,
+int find_string_in_array(LEX_STRING * const haystack, LEX_STRING * const needle,
                          CHARSET_INFO * const cs);
-const char *flagset_to_string(THD *thd, LEX_CSTRING *result, ulonglong set,
+char *flagset_to_string(THD *thd, LEX_STRING *result, ulonglong set,
                         const char *lib[]);
-const char *set_to_string(THD *thd, LEX_CSTRING *result, ulonglong set,
-                          const char *lib[]);
+char *set_to_string(THD *thd, LEX_STRING *result, ulonglong set,
+                    const char *lib[]);
 
 /*
   These functions were protected by INNODB_COMPATIBILITY_HOOKS

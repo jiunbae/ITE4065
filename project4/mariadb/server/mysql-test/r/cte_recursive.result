@@ -130,7 +130,7 @@ select t2.a+1 from t1,t2 where t1.a=t2.a
 select * from t1;
 show columns from v1;
 Field	Type	Null	Key	Default	Extra
-a	bigint(12)	YES		NULL	
+a	bigint(20)	YES		NULL	
 # WITH RECURSIVE : types of t1 columns are determined by anchor parts 
 create view v2 as
 with recursive
@@ -699,7 +699,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 NULL	UNION RESULT	<union3,4,5>	ALL	NULL	NULL	NULL	NULL	NULL	NULL	
 2	DERIVED	<derived3>	ALL	NULL	NULL	NULL	NULL	12	100.00	Using where
 Warnings:
-Note	1003	with recursive ancestor_couple_ids as (/* select#2 */ select `a`.`father` AS `h_id`,`a`.`mother` AS `w_id` from `coupled_ancestors` `a` where `a`.`father` is not null and `a`.`mother` is not null), coupled_ancestors as (/* select#3 */ select `test`.`folks`.`id` AS `id`,`test`.`folks`.`name` AS `name`,`test`.`folks`.`dob` AS `dob`,`test`.`folks`.`father` AS `father`,`test`.`folks`.`mother` AS `mother` from `test`.`folks` where `test`.`folks`.`name` = 'Me' union all /* select#4 */ select `test`.`p`.`id` AS `id`,`test`.`p`.`name` AS `name`,`test`.`p`.`dob` AS `dob`,`test`.`p`.`father` AS `father`,`test`.`p`.`mother` AS `mother` from `test`.`folks` `p` join `ancestor_couple_ids` `fa` where `test`.`p`.`id` = `fa`.`h_id` union all /* select#5 */ select `test`.`p`.`id` AS `id`,`test`.`p`.`name` AS `name`,`test`.`p`.`dob` AS `dob`,`test`.`p`.`father` AS `father`,`test`.`p`.`mother` AS `mother` from `test`.`folks` `p` join `ancestor_couple_ids` `ma` where `test`.`p`.`id` = `ma`.`w_id`)/* select#1 */ select `h`.`name` AS `name`,`h`.`dob` AS `dob`,`w`.`name` AS `name`,`w`.`dob` AS `dob` from `ancestor_couple_ids` `c` join `coupled_ancestors` `h` join `coupled_ancestors` `w` where `h`.`id` = `c`.`h_id` and `w`.`id` = `c`.`w_id`
+Note	1003	with recursive ancestor_couple_ids as (select `a`.`father` AS `h_id`,`a`.`mother` AS `w_id` from `coupled_ancestors` `a` where `a`.`father` is not null and `a`.`mother` is not null), coupled_ancestors as (select `test`.`folks`.`id` AS `id`,`test`.`folks`.`name` AS `name`,`test`.`folks`.`dob` AS `dob`,`test`.`folks`.`father` AS `father`,`test`.`folks`.`mother` AS `mother` from `test`.`folks` where `test`.`folks`.`name` = 'Me' union all select `test`.`p`.`id` AS `id`,`test`.`p`.`name` AS `name`,`test`.`p`.`dob` AS `dob`,`test`.`p`.`father` AS `father`,`test`.`p`.`mother` AS `mother` from `test`.`folks` `p` join `ancestor_couple_ids` `fa` where `test`.`p`.`id` = `fa`.`h_id` union all select `test`.`p`.`id` AS `id`,`test`.`p`.`name` AS `name`,`test`.`p`.`dob` AS `dob`,`test`.`p`.`father` AS `father`,`test`.`p`.`mother` AS `mother` from `test`.`folks` `p` join `ancestor_couple_ids` `ma` where `test`.`p`.`id` = `ma`.`w_id`)select `h`.`name` AS `name`,`h`.`dob` AS `dob`,`w`.`name` AS `name`,`w`.`dob` AS `dob` from `ancestor_couple_ids` `c` join `coupled_ancestors` `h` join `coupled_ancestors` `w` where `h`.`id` = `c`.`h_id` and `w`.`id` = `c`.`w_id`
 # simple mutual recursion
 with recursive
 ancestor_couple_ids(h_id, w_id)
@@ -882,7 +882,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 3	RECURSIVE UNION	<derived2>	ALL	NULL	NULL	NULL	NULL	12	100.00	Using where; Using join buffer (flat, BNL join)
 NULL	UNION RESULT	<union2,3>	ALL	NULL	NULL	NULL	NULL	NULL	NULL	
 Warnings:
-Note	1003	with recursive ancestors as (/* select#2 */ select `test`.`folks`.`id` AS `id`,`test`.`folks`.`name` AS `name`,`test`.`folks`.`dob` AS `dob`,`test`.`folks`.`father` AS `father`,`test`.`folks`.`mother` AS `mother` from `test`.`folks` where `test`.`folks`.`name` = 'Me' and `test`.`folks`.`dob` = DATE'2000-01-01' union /* select#3 */ select `p`.`id` AS `id`,`p`.`name` AS `name`,`p`.`dob` AS `dob`,`p`.`father` AS `father`,`p`.`mother` AS `mother` from `test`.`folks` `p` join `ancestors` `a` where `a`.`father` = `p`.`id` or `a`.`mother` = `p`.`id`)/* select#1 */ select `ancestors`.`id` AS `id`,`ancestors`.`name` AS `name`,`ancestors`.`dob` AS `dob`,`ancestors`.`father` AS `father`,`ancestors`.`mother` AS `mother` from `ancestors`
+Note	1003	with recursive ancestors as (select `test`.`folks`.`id` AS `id`,`test`.`folks`.`name` AS `name`,`test`.`folks`.`dob` AS `dob`,`test`.`folks`.`father` AS `father`,`test`.`folks`.`mother` AS `mother` from `test`.`folks` where `test`.`folks`.`name` = 'Me' and `test`.`folks`.`dob` = DATE'2000-01-01' union select `p`.`id` AS `id`,`p`.`name` AS `name`,`p`.`dob` AS `dob`,`p`.`father` AS `father`,`p`.`mother` AS `mother` from `test`.`folks` `p` join `ancestors` `a` where `a`.`father` = `p`.`id` or `a`.`mother` = `p`.`id`)select `ancestors`.`id` AS `id`,`ancestors`.`name` AS `name`,`ancestors`.`dob` AS `dob`,`ancestors`.`father` AS `father`,`ancestors`.`mother` AS `mother` from `ancestors`
 # recursive spec with two anchor selects and two recursive ones 
 with recursive
 ancestor_ids (id)
@@ -1365,7 +1365,6 @@ EXPLAIN
               {
                 "query_block": {
                   "select_id": 6,
-                  "operation": "UNION",
                   "table": {
                     "table_name": "<derived3>",
                     "access_type": "ALL",
@@ -1393,7 +1392,6 @@ EXPLAIN
                             {
                               "query_block": {
                                 "select_id": 2,
-                                "operation": "UNION",
                                 "table": {
                                   "table_name": "folks",
                                   "access_type": "ALL",
@@ -1425,7 +1423,6 @@ EXPLAIN
               {
                 "query_block": {
                   "select_id": 5,
-                  "operation": "UNION",
                   "table": {
                     "table_name": "<derived4>",
                     "access_type": "ALL",
@@ -1521,7 +1518,6 @@ EXPLAIN
               {
                 "query_block": {
                   "select_id": 2,
-                  "operation": "UNION",
                   "table": {
                     "table_name": "<derived4>",
                     "access_type": "ALL",
@@ -1765,7 +1761,6 @@ EXPLAIN
               {
                 "query_block": {
                   "select_id": 3,
-                  "operation": "UNION",
                   "table": {
                     "table_name": "<derived2>",
                     "access_type": "ALL",
@@ -2391,7 +2386,6 @@ ANALYZE
               {
                 "query_block": {
                   "select_id": 3,
-                  "operation": "UNION",
                   "r_loops": 10,
                   "r_total_time_ms": "REPLACED",
                   "table": {
@@ -2881,48 +2875,3 @@ f
 2
 set standard_compliant_cte=default;
 DROP TABLE t;
-#
-# mdev-14184: recursive CTE embedded into CTE with multiple references 
-#
-WITH
-cte1 AS (
-SELECT n FROM (
-WITH RECURSIVE rec_cte(n) AS (
-SELECT 1 as n1
-UNION ALL
-SELECT n+1 as n2 FROM rec_cte WHERE n < 3
-) SELECT n FROM rec_cte
-) AS X
-),
-cte2 as (
-SELECT 2 FROM cte1
-)
-SELECT *
-FROM cte1;
-n
-1
-2
-3
-#
-# MDEV-14217 [db crash] Recursive CTE when SELECT includes new field
-#
-CREATE TEMPORARY TABLE a_tbl (
-a VARCHAR(33) PRIMARY KEY,
-b VARCHAR(33)
-);
-INSERT INTO a_tbl VALUES ('block0', 'block0'), ('block1', NULL);
-WITH RECURSIVE Q0 AS (
-SELECT T0.a, T0.b, 5
-FROM a_tbl T0
-WHERE b IS NULL
-UNION ALL
-SELECT T1.a, T1.b
-FROM Q0
-JOIN a_tbl T1
-ON T1.a=Q0.a
-) SELECT distinct(Q0.a), Q0.b
-FROM Q0;
-ERROR 21000: The used SELECT statements have a different number of columns
-DROP TABLE a_tbl;
-WITH RECURSIVE x AS (SELECT 1,2 UNION ALL SELECT 1 FROM x) SELECT * FROM x;
-ERROR 21000: The used SELECT statements have a different number of columns

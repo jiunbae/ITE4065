@@ -990,8 +990,7 @@ int_table_flags(HA_NULL_IN_KEY | HA_CAN_FULLTEXT | HA_CAN_SQL_HANDLER |
                 HA_FILE_BASED | HA_CAN_GEOMETRY | CANNOT_ROLLBACK_FLAG |
                 HA_CAN_BIT_FIELD | HA_CAN_RTREEKEYS | HA_CAN_REPAIR |
                 HA_CAN_VIRTUAL_COLUMNS | HA_CAN_EXPORT |
-                HA_HAS_RECORDS | HA_STATS_RECORDS_IS_EXACT |
-                HA_CAN_TABLES_WITHOUT_ROLLBACK),
+                HA_HAS_RECORDS | HA_STATS_RECORDS_IS_EXACT),
 can_enable_indexes(1), bulk_insert_single_undo(BULK_INSERT_NONE)
 {}
 
@@ -2058,7 +2057,7 @@ int ha_maria::enable_indexes(uint mode)
   DBUG_EXECUTE_IF("maria_crash_enable_index",
                   {
                     DBUG_PRINT("maria_crash_enable_index", ("now"));
-                    DBUG_SUICIDE();
+                    DBUG_ABORT();
                   });
   return error;
 }
@@ -2213,23 +2212,14 @@ void ha_maria::start_bulk_insert(ha_rows rows, uint flags)
 
 int ha_maria::end_bulk_insert()
 {
-  int first_error, error;
-  my_bool abort= file->s->deleting;
+  int err;
   DBUG_ENTER("ha_maria::end_bulk_insert");
-
-  if ((first_error= maria_end_bulk_insert(file, abort)))
-    abort= 1;
-
-  if ((error= maria_extra(file, HA_EXTRA_NO_CACHE, 0)))
-  {
-    first_error= first_error ? first_error : error;
-    abort= 1;
-  }
-
-  if (!abort && can_enable_indexes)
-    if ((error= enable_indexes(HA_KEY_SWITCH_NONUNIQ_SAVE)))
-      first_error= first_error ? first_error : error;
-
+  maria_end_bulk_insert(file);
+  if ((err= maria_extra(file, HA_EXTRA_NO_CACHE, 0)))
+    goto end;
+  if (can_enable_indexes && !file->s->deleting)
+    err= enable_indexes(HA_KEY_SWITCH_NONUNIQ_SAVE);
+end:
   if (bulk_insert_single_undo != BULK_INSERT_NONE)
   {
     DBUG_ASSERT(can_enable_indexes);
@@ -2237,12 +2227,12 @@ int ha_maria::end_bulk_insert()
       Table was transactional just before start_bulk_insert().
       No need to flush pages if we did a repair (which already flushed).
     */
-    if ((error= _ma_reenable_logging_for_table(file,
-                                               bulk_insert_single_undo ==
-                                               BULK_INSERT_SINGLE_UNDO_AND_NO_REPAIR)))
-      first_error= first_error ? first_error : error;
+    err|=
+      _ma_reenable_logging_for_table(file,
+                                     bulk_insert_single_undo ==
+                                     BULK_INSERT_SINGLE_UNDO_AND_NO_REPAIR);
   }
-  DBUG_RETURN(first_error);
+  DBUG_RETURN(err);
 }
 
 
@@ -2283,7 +2273,7 @@ bool ha_maria::check_and_repair(THD *thd)
   if (!file->state->del && (maria_recover_options & HA_RECOVER_QUICK))
     check_opt.flags |= T_QUICK;
 
-  thd->set_query((char*) table->s->table_name.str,
+  thd->set_query(table->s->table_name.str,
                  (uint) table->s->table_name.length, system_charset_info);
 
   if (!(crashed= maria_is_crashed(file)))
@@ -2319,14 +2309,14 @@ bool ha_maria::is_crashed() const
 
 #define CHECK_UNTIL_WE_FULLY_IMPLEMENTED_VERSIONING(msg) \
   do { \
-    if (file->lock.type == TL_WRITE_CONCURRENT_INSERT && !table->s->sequence) \
+    if (file->lock.type == TL_WRITE_CONCURRENT_INSERT) \
     { \
       my_error(ER_CHECK_NOT_IMPLEMENTED, MYF(0), msg); \
       return 1; \
     } \
   } while(0)
 
-int ha_maria::update_row(const uchar * old_data, const uchar * new_data)
+int ha_maria::update_row(const uchar * old_data, uchar * new_data)
 {
   CHECK_UNTIL_WE_FULLY_IMPLEMENTED_VERSIONING("UPDATE in WRITE CONCURRENT");
   return maria_update(file, old_data, new_data);
@@ -3115,13 +3105,6 @@ int ha_maria::create(const char *name, register TABLE *table_arg,
                  ER_ILLEGAL_HA_CREATE_OPTION,
                  "Row format set to PAGE because of TRANSACTIONAL=1 option");
 
-  if (share->table_type == TABLE_TYPE_SEQUENCE)
-  {
-    /* For sequences, the simples record type is appropriate */
-    row_type= STATIC_RECORD;
-    ha_create_info->transactional= HA_CHOICE_NO;
-  }
-
   bzero((char*) &create_info, sizeof(create_info));
   if ((error= table2maria(table_arg, row_type, &keydef, &recinfo,
                           &record_count, &create_info)))
@@ -3418,7 +3401,7 @@ bool maria_show_status(handlerton *hton,
                        stat_print_fn *print,
                        enum ha_stat_type stat)
 {
-  const LEX_CSTRING *engine_name= hton_name(hton);
+  const LEX_STRING *engine_name= hton_name(hton);
   switch (stat) {
   case HA_ENGINE_LOGS:
   {
@@ -3658,7 +3641,7 @@ static int ha_maria_init(void *p)
     @retval FALSE An error occurred
 */
 
-my_bool ha_maria::register_query_cache_table(THD *thd, const char *table_name,
+my_bool ha_maria::register_query_cache_table(THD *thd, char *table_name,
 					     uint table_name_len,
 					     qc_engine_callback
 					     *engine_callback,
@@ -3941,36 +3924,6 @@ Item *ha_maria::idx_cond_push(uint keyno_arg, Item* idx_cond_arg)
   if (active_index == pushed_idx_cond_keyno)
     ma_set_index_cond_func(file, handler_index_cond_check, this);
   return NULL;
-}
-
-/**
-  Find record by unique constrain (used in temporary tables)
-
-  @param record          (IN|OUT) the record to find
-  @param constrain_no    (IN) number of constrain (for this engine)
-
-  @note It is like hp_search but uses function for raw where hp_search
-        uses functions for index.
-
-  @retval  0 OK
-  @retval  1 Not found
-  @retval -1 Error
-*/
-
-int ha_maria::find_unique_row(uchar *record, uint constrain_no)
-{
-  MARIA_UNIQUEDEF *def= file->s->uniqueinfo + constrain_no;
-  ha_checksum unique_hash= _ma_unique_hash(def, record);
-  int rc= _ma_check_unique(file, def, record, unique_hash, HA_OFFSET_ERROR);
-  if (rc)
-  {
-    file->cur_row.lastpos= file->dup_key_pos;
-    if ((*file->read_record)(file, record, file->cur_row.lastpos))
-      return -1;
-    file->update|= HA_STATE_AKTIV;                     /* Record is read */
-  }
-  // invert logic
-  return (rc ? 0 : 1);
 }
 
 struct st_mysql_storage_engine maria_storage_engine=

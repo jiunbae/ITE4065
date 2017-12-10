@@ -28,7 +28,6 @@
 #ifdef __WIN__
   #include <winsock2.h>
   #include <MSWSock.h>
-  #include <mstcpip.h>
   #pragma comment(lib, "ws2_32.lib")
 #endif
 #include "my_context.h"
@@ -523,63 +522,6 @@ int vio_keepalive(Vio* vio, my_bool set_keep_alive)
   DBUG_RETURN(r);
 }
 
-/*
-  Set socket options for keepalive e.g., TCP_KEEPCNT, TCP_KEEPIDLE/TCP_KEEPALIVE, TCP_KEEPINTVL
-*/
-int vio_set_keepalive_options(Vio* vio, const struct vio_keepalive_opts *opts)
-{
-#if defined _WIN32
-  struct tcp_keepalive s;
-  DWORD  nbytes;
-
-  if (vio->type == VIO_TYPE_NAMEDPIPE || vio->type == VIO_TYPE_SHARED_MEMORY)
-    return 0;
-
-  if (!opts->idle && !opts->interval)
-    return 0;
-
-  s.onoff= 1;
-  s.keepalivetime= opts->idle? opts->idle * 1000 : 7200;
-  s.keepaliveinterval= opts->interval?opts->interval * 1000 : 1;
-
-  return WSAIoctl(vio->mysql_socket.fd, SIO_KEEPALIVE_VALS, (LPVOID) &s, sizeof(s),
-           NULL, 0, &nbytes, NULL, NULL);
-
-#elif defined (TCP_KEEPIDLE) || defined (TCP_KEEPALIVE)
-
-  int ret= 0;
-  if (opts->idle)
-  {
-#ifdef TCP_KEEPIDLE // Linux only
-    ret= mysql_socket_setsockopt(vio->mysql_socket, IPPROTO_TCP, TCP_KEEPIDLE, (char *)&opts->idle, sizeof(opts->idle));
-#elif defined (TCP_KEEPALIVE)
-    ret= mysql_socket_setsockopt(vio->mysql_socket, IPPROTO_TCP, TCP_KEEPALIVE, (char *)&opts->idle, sizeof(opts->idle));
-#endif
-    if(ret)
-      return ret;
-  }
-
-#ifdef TCP_KEEPCNT // Linux only
-  if(opts->probes)
-  {
-    ret= mysql_socket_setsockopt(vio->mysql_socket, IPPROTO_TCP, TCP_KEEPCNT, (char *)&opts->probes, sizeof(opts->probes));
-    if(ret)
-      return ret;
-  }
-#endif
-
-#ifdef TCP_KEEPINTVL  // Linux only
-  if(opts->interval)
-  {
-    ret= mysql_socket_setsockopt(vio->mysql_socket, IPPROTO_TCP, TCP_KEEPINTVL, (char *)&opts->interval, sizeof(opts->interval));
-  }
-#endif
-  return ret;
-#else /*TCP_KEEPIDLE || TCP_KEEPALIVE */
-  return -1; 
-#endif
-}
-
 
 /**
   Indicate whether a I/O operation must be retried later.
@@ -685,7 +627,7 @@ my_socket vio_fd(Vio* vio)
   @param dst_length [out] actual length of the normalized IP address.
 */
 
-void vio_get_normalized_ip(const struct sockaddr *src,
+static void vio_get_normalized_ip(const struct sockaddr *src,
                                   int src_length,
                                   struct sockaddr *dst,
                                   int *dst_length)

@@ -26,7 +26,6 @@
   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <my_global.h>
 #include <sql_class.h>          // THD
 #include <table.h>              // ST_SCHEMA_TABLE
 #include <mysql/plugin.h>

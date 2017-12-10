@@ -3,8 +3,6 @@
 #
 --source include/have_innodb.inc
 
-set in_subquery_conversion_threshold=10000;
-
 --disable_warnings
 drop table if exists t1, t2, t3, t10, t100;
 --enable_warnings
@@ -2051,4 +2049,3 @@ drop table t1,t2,t3;
 --echo # End of 10.2 tests
 --echo #
 
-set in_subquery_conversion_threshold=default;

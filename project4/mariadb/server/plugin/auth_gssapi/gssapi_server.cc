@@ -2,8 +2,9 @@
 #include <gssapi/gssapi.h>
 #include <stdio.h>
 #include <mysql/plugin_auth.h>
+#include <my_sys.h>
 #include <mysqld_error.h>
-#include <string.h>
+#include <log.h>
 #include "server_plugin.h"
 #include "gssapi_errmsg.h"
 
@@ -17,11 +18,11 @@ static void log_error( OM_uint32 major, OM_uint32 minor, const char *msg)
     char sysmsg[1024];
     gssapi_errmsg(major, minor, sysmsg, sizeof(sysmsg));
     my_printf_error(ER_UNKNOWN_ERROR,"Server GSSAPI error (major %u, minor %u) : %s -%s",
-      0, major, minor, msg, sysmsg);
+      MYF(0), major, minor, msg, sysmsg);
   }
   else
   {
-    my_printf_error(ER_UNKNOWN_ERROR, "Server GSSAPI error : %s", 0, msg);
+    my_printf_error(ER_UNKNOWN_ERROR, "Server GSSAPI error : %s", MYF(0), msg);
   }
 }
 
@@ -196,7 +197,7 @@ int auth_server(MYSQL_PLUGIN_VIO *vio,const char *user, size_t userlen, int use_
     /* send token to peer */
     if (output.length)
     {
-      if (vio->write_packet(vio, (const unsigned char *) output.value, output.length))
+      if (vio->write_packet(vio, (const uchar *) output.value, output.length))
       {
         gss_release_buffer(&minor, &output);
         log_error(major, minor, "communication error(write)");
@@ -236,7 +237,7 @@ int auth_server(MYSQL_PLUGIN_VIO *vio,const char *user, size_t userlen, int use_
   {
     my_printf_error(ER_ACCESS_DENIED_ERROR,
       "GSSAPI name mismatch, requested '%s', actual name '%.*s'",
-      0, user, (int)client_name_buf.length, client_name_str);
+      MYF(0), user, (int)client_name_buf.length, client_name_str);
   }
 
   gss_release_buffer(&minor, &client_name_buf);

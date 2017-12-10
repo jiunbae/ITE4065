@@ -16,6 +16,8 @@
 #ifndef PASSWORD_INCLUDED
 #define PASSWORD_INCLUDED
 
+#include "my_global.h"
+
 C_MODE_START
 
 void my_make_scrambled_password_323(char *to, const char *password,

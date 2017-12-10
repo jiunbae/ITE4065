@@ -78,7 +78,7 @@ struct Query_cache_tls;
 struct LEX;
 class THD;
 
-typedef my_bool (*qc_engine_callback)(THD *thd, const char *table_key,
+typedef my_bool (*qc_engine_callback)(THD *thd, char *table_key,
                                       uint key_length,
                                       ulonglong *engine_data);
 
@@ -159,7 +159,6 @@ struct Query_cache_query
   unsigned int last_pkt_nr;
   uint8 tbls_type;
   uint8 ready;
-  ulonglong hit_count;
 
   Query_cache_query() {}                      /* Remove gcc warning */
   inline void init_n_lock();
@@ -185,8 +184,6 @@ struct Query_cache_query
   */
   inline void set_results_ready()          { ready= 1; }
   inline bool is_results_ready()           { return ready; }
-  inline void increment_hits() { hit_count++; }
-  inline ulonglong hits() { return hit_count; }
   void lock_writing();
   void lock_reading();
   bool try_lock_writing();
@@ -485,7 +482,7 @@ protected:
 		  my_bool using_transactions);
 
   /* Remove all queries that uses any of the tables in following database */
-  void invalidate(THD *thd, const char *db);
+  void invalidate(THD *thd, char *db);
 
   /* Remove all queries that uses any of the listed following table */
   void invalidate_by_MyISAM_filename(const char *filename);

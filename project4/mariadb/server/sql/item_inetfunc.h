@@ -24,12 +24,10 @@
   Item_func_inet_aton implements INET_ATON() SQL-function.
 *************************************************************************/
 
-class Item_func_inet_aton : public Item_longlong_func
+class Item_func_inet_aton : public Item_int_func
 {
-  bool check_arguments() const
-  { return check_argument_types_can_return_text(0, arg_count); }
 public:
-  Item_func_inet_aton(THD *thd, Item *a): Item_longlong_func(thd, a) {}
+  Item_func_inet_aton(THD *thd, Item *a): Item_int_func(thd, a) {}
   longlong val_int();
   const char *func_name() const { return "inet_aton"; }
   void fix_length_and_dec()
@@ -105,7 +103,7 @@ public:
   virtual String *val_str_ascii(String *buffer);
 
 protected:
-  virtual bool calc_value(const String *arg, String *buffer) = 0;
+  virtual bool calc_value(String *arg, String *buffer) = 0;
 };
 
 
@@ -134,7 +132,7 @@ public:
   { return get_item_copy<Item_func_inet6_aton>(thd, mem_root, this); }
 
 protected:
-  virtual bool calc_value(const String *arg, String *buffer);
+  virtual bool calc_value(String *arg, String *buffer);
 };
 
 
@@ -168,7 +166,7 @@ public:
   { return get_item_copy<Item_func_inet6_ntoa>(thd, mem_root, this); }
 
 protected:
-  virtual bool calc_value(const String *arg, String *buffer);
+  virtual bool calc_value(String *arg, String *buffer);
 };
 
 

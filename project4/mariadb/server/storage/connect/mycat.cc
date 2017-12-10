@@ -28,16 +28,20 @@
 /***********************************************************************/
 /*  Include relevant MariaDB header file.                              */
 /***********************************************************************/
-#define DONT_DEFINE_VOID
-#include <my_global.h>
+#include <my_config.h>
 
 #if defined(__WIN__)
 //#include <windows.h>
 //#include <sqlext.h>
 #elif defined(UNIX)
+#include <sys/types.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #endif
+#define DONT_DEFINE_VOID
+//#include <mysql/plugin.h>
 #include "handler.h"
 #undef  OFFSET
 

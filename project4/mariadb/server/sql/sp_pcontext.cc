@@ -13,7 +13,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "unireg.h"
 #ifdef USE_PRAGMA_IMPLEMENTATION
@@ -27,50 +27,19 @@ bool sp_condition_value::equals(const sp_condition_value *cv) const
 {
   DBUG_ASSERT(cv);
 
-  /*
-    The following test disallows duplicate handlers,
-    including user defined exceptions with the same WHEN clause:
-      DECLARE
-        a EXCEPTION;
-        b EXCEPTION;
-      BEGIN
-        RAUSE a;
-      EXCEPTION
-        WHEN a THEN RETURN 'a0';
-        WHEN a THEN RETURN 'a1';
-      END
-  */
   if (this == cv)
     return true;
 
-  /*
-    The test below considers two conditions of the same type as equal
-    (except for the user defined exceptions) to avoid declaring duplicate
-    handlers.
-
-    All user defined conditions have type==SQLSTATE
-    with the same SQL state and error code.
-    It's OK to have multiple user defined conditions:
-    DECLARE
-      a EXCEPTION;
-      b EXCEPTION;
-    BEGIN
-      RAISE a;
-    EXCEPTION
-      WHEN a THEN RETURN 'a';
-      WHEN b THEN RETURN 'b';
-    END;
-  */
-  if (type != cv->type || m_is_user_defined || cv->m_is_user_defined)
+  if (type != cv->type)
     return false;
 
   switch (type)
   {
   case sp_condition_value::ERROR_CODE:
-    return (get_sql_errno() == cv->get_sql_errno());
+    return (mysqlerr == cv->mysqlerr);
 
   case sp_condition_value::SQLSTATE:
-    return Sql_state::eq(cv);
+    return (strcmp(sql_state, cv->sql_state) == 0);
 
   default:
     return true;
@@ -87,7 +56,6 @@ void sp_pcontext::init(uint var_offset,
   m_num_case_exprs= num_case_expressions;
 
   m_labels.empty();
-  m_goto_labels.empty();
 }
 
 
@@ -130,12 +98,6 @@ sp_pcontext *sp_pcontext::push_context(THD *thd, sp_pcontext::enum_scope scope)
 }
 
 
-bool cmp_labels(sp_label *a, sp_label *b)
-{
-  return (lex_string_cmp(system_charset_info, &a->name, &b->name) == 0 &&
-          a->type == b->type);
-}
-
 sp_pcontext *sp_pcontext::pop_context()
 {
   m_parent->m_max_var_index+= m_max_var_index;
@@ -147,18 +109,6 @@ sp_pcontext *sp_pcontext::pop_context()
   if (m_num_case_exprs > m_parent->m_num_case_exprs)
     m_parent->m_num_case_exprs= m_num_case_exprs;
 
-  /*
-  ** Push unresolved goto label to parent context
-  */
-  sp_label *label;
-  List_iterator_fast<sp_label> li(m_goto_labels);
-  while ((label= li++))
-  {
-    if (label->ip == 0)
-    {
-      m_parent->m_goto_labels.add_unique(label, &cmp_labels);
-    }
-  }
   return m_parent;
 }
 
@@ -199,7 +149,7 @@ uint sp_pcontext::diff_cursors(const sp_pcontext *ctx, bool exclusive) const
 }
 
 
-sp_variable *sp_pcontext::find_variable(const LEX_CSTRING *name,
+sp_variable *sp_pcontext::find_variable(LEX_STRING name,
                                         bool current_scope_only) const
 {
   uint i= m_vars.elements() - m_pboundary;
@@ -209,7 +159,7 @@ sp_variable *sp_pcontext::find_variable(const LEX_CSTRING *name,
     sp_variable *p= m_vars.at(i);
 
     if (my_strnncoll(system_charset_info,
-		     (const uchar *)name->str, name->length,
+		     (const uchar *)name.str, name.length,
 		     (const uchar *)p->name.str, p->name.length) == 0)
     {
       return p;
@@ -222,46 +172,10 @@ sp_variable *sp_pcontext::find_variable(const LEX_CSTRING *name,
 }
 
 
-/*
-  Find a variable by its run-time offset.
-  If the variable with a desired run-time offset is not found in this
-  context frame, it's recursively searched on parent context frames.
-
-  Note, context frames can have holes:
-    CREATE PROCEDURE p1() AS
-      x0 INT:=100;
-      CURSOR cur(p0 INT, p1 INT) IS SELECT p0, p1;
-      x1 INT:=101;
-    BEGIN
-      ...
-    END;
-  The variables (x0 and x1) and the cursor parameters (p0 and p1)
-  reside in separate parse context frames.
-
-  The variables reside on the top level parse context frame:
-  - x0 has frame offset 0 and run-time offset 0
-  - x1 has frame offset 1 and run-time offset 3
-
-  The cursor parameters reside on the second level parse context frame:
-  - p0 has frame offset 0 and run-time offset 1
-  - p1 has frame offset 1 and run-time offset 2
-
-  Run-time offsets on a frame can have holes, but offsets monotonocally grow,
-  so run-time offsets of all variables are not greater than the run-time offset
-  of the very last variable in this frame.
-*/
 sp_variable *sp_pcontext::find_variable(uint offset) const
 {
-  if (m_var_offset <= offset &&
-      m_vars.elements() &&
-      offset <= get_last_context_variable()->offset)
-  {
-    for (uint i= 0; i < m_vars.elements(); i++)
-    {
-      if (m_vars.at(i)->offset == offset)
-        return m_vars.at(i); // This frame
-    }
-  }
+  if (m_var_offset <= offset && offset < m_var_offset + m_vars.elements())
+    return m_vars.at(offset - m_var_offset);  // This frame
 
   return m_parent ?
          m_parent->find_variable(offset) :    // Some previous frame
@@ -269,10 +183,10 @@ sp_variable *sp_pcontext::find_variable(uint offset) const
 }
 
 
-sp_variable *sp_pcontext::add_variable(THD *thd, const LEX_CSTRING *name)
+sp_variable *sp_pcontext::add_variable(THD *thd, LEX_STRING name)
 {
   sp_variable *p=
-    new (thd->mem_root) sp_variable(name, m_var_offset + m_max_var_index);
+    new (thd->mem_root) sp_variable(name, current_var_count());
 
   if (!p)
     return NULL;
@@ -282,66 +196,29 @@ sp_variable *sp_pcontext::add_variable(THD *thd, const LEX_CSTRING *name)
   return m_vars.append(p) ? NULL : p;
 }
 
-sp_label *sp_pcontext::push_label(THD *thd, const LEX_CSTRING *name, uint ip,
-                                  sp_label::enum_type type,
-                                  List<sp_label> *list)
+
+sp_label *sp_pcontext::push_label(THD *thd, LEX_STRING name, uint ip)
 {
   sp_label *label=
-    new (thd->mem_root) sp_label(name, ip, type, this);
+    new (thd->mem_root) sp_label(name, ip, sp_label::IMPLICIT, this);
 
   if (!label)
     return NULL;
 
-  list->push_front(label, thd->mem_root);
+  m_labels.push_front(label, thd->mem_root);
 
   return label;
 }
 
-sp_label *sp_pcontext::find_goto_label(const LEX_CSTRING *name, bool recusive)
-{
-  List_iterator_fast<sp_label> li(m_goto_labels);
-  sp_label *lab;
 
-  while ((lab= li++))
-  {
-    if (lex_string_cmp(system_charset_info, name, &lab->name) == 0)
-      return lab;
-  }
-
-  if (!recusive)
-    return NULL;
-
-  /*
-    Note about exception handlers.
-    See SQL:2003 SQL/PSM (ISO/IEC 9075-4:2003),
-    section 13.1 <compound statement>,
-    syntax rule 4.
-    In short, a DECLARE HANDLER block can not refer
-    to labels from the parent context, as they are out of scope.
-  */
-  if (m_scope == HANDLER_SCOPE && m_parent)
-  {
-    if (m_parent->m_parent)
-    {
-      // Skip the parent context
-      return m_parent->m_parent->find_goto_label(name);
-    }
-  }
-
-  return m_parent && (m_scope == REGULAR_SCOPE) ?
-         m_parent->find_goto_label(name) :
-         NULL;
-}
-
-
-sp_label *sp_pcontext::find_label(const LEX_CSTRING *name)
+sp_label *sp_pcontext::find_label(LEX_STRING name)
 {
   List_iterator_fast<sp_label> li(m_labels);
   sp_label *lab;
 
   while ((lab= li++))
   {
-    if (lex_string_cmp(system_charset_info, name, &lab->name) == 0)
+    if (my_strcasecmp(system_charset_info, name.str, lab->name.str) == 0)
       return lab;
   }
 
@@ -359,25 +236,8 @@ sp_label *sp_pcontext::find_label(const LEX_CSTRING *name)
 }
 
 
-sp_label *sp_pcontext::find_label_current_loop_start()
-{
-  List_iterator_fast<sp_label> li(m_labels);
-  sp_label *lab;
-
-  while ((lab= li++))
-  {
-    if (lab->type == sp_label::ITERATION)
-      return lab;
-  }
-  // See a comment in sp_pcontext::find_label()
-  return (m_parent && (m_scope == REGULAR_SCOPE)) ?
-         m_parent->find_label_current_loop_start() :
-         NULL;
-}
-
-
 bool sp_pcontext::add_condition(THD *thd,
-                                const LEX_CSTRING *name,
+                                LEX_STRING name,
                                 sp_condition_value *value)
 {
   sp_condition *p= new (thd->mem_root) sp_condition(name, value);
@@ -389,7 +249,7 @@ bool sp_pcontext::add_condition(THD *thd,
 }
 
 
-sp_condition_value *sp_pcontext::find_condition(const LEX_CSTRING *name,
+sp_condition_value *sp_pcontext::find_condition(LEX_STRING name,
                                                 bool current_scope_only) const
 {
   uint i= m_conditions.elements();
@@ -398,7 +258,9 @@ sp_condition_value *sp_pcontext::find_condition(const LEX_CSTRING *name,
   {
     sp_condition *p= m_conditions.at(i);
 
-    if (p->eq_name(name))
+    if (my_strnncoll(system_charset_info,
+		     (const uchar *) name.str, name.length,
+		     (const uchar *) p->name.str, p->name.length) == 0)
     {
       return p->value;
     }
@@ -407,40 +269,6 @@ sp_condition_value *sp_pcontext::find_condition(const LEX_CSTRING *name,
   return (!current_scope_only && m_parent) ?
     m_parent->find_condition(name, false) :
     NULL;
-}
-
-
-static sp_condition_value
-  // Warnings
-  cond_no_data_found(ER_SP_FETCH_NO_DATA, "01000"),
-  // Errors
-  cond_invalid_cursor(ER_SP_CURSOR_NOT_OPEN, "24000"),
-  cond_dup_val_on_index(ER_DUP_ENTRY, "23000"),
-  cond_dup_val_on_index2(ER_DUP_ENTRY_WITH_KEY_NAME, "23000"),
-  cond_too_many_rows(ER_TOO_MANY_ROWS, "42000");
-
-
-static sp_condition sp_predefined_conditions[]=
-{
-  // Warnings
-  sp_condition(C_STRING_WITH_LEN("NO_DATA_FOUND"), &cond_no_data_found),
-  // Errors
-  sp_condition(C_STRING_WITH_LEN("INVALID_CURSOR"), &cond_invalid_cursor),
-  sp_condition(C_STRING_WITH_LEN("DUP_VAL_ON_INDEX"), &cond_dup_val_on_index),
-  sp_condition(C_STRING_WITH_LEN("DUP_VAL_ON_INDEX"), &cond_dup_val_on_index2),
-  sp_condition(C_STRING_WITH_LEN("TOO_MANY_ROWS"), &cond_too_many_rows)
-};
-
-
-sp_condition_value *
-sp_pcontext::find_predefined_condition(const LEX_CSTRING *name) const
-{
-  for (uint i= 0; i < array_elements(sp_predefined_conditions) ; i++)
-  {
-    if (sp_predefined_conditions[i].eq_name(name))
-      return sp_predefined_conditions[i].value;
-  }
-  return NULL;
 }
 
 
@@ -477,57 +305,10 @@ bool sp_pcontext::check_duplicate_handler(
 }
 
 
-bool sp_condition_value::matches(const Sql_condition_identity &value,
-                                 const sp_condition_value *found_cv) const
-{
-  bool user_value_matched= !value.get_user_condition_value() ||
-                           this == value.get_user_condition_value();
-
-  switch (type)
-  {
-  case sp_condition_value::ERROR_CODE:
-    return user_value_matched &&
-           value.get_sql_errno() == get_sql_errno() &&
-           (!found_cv || found_cv->type > sp_condition_value::ERROR_CODE);
-
-  case sp_condition_value::SQLSTATE:
-    return user_value_matched &&
-           Sql_state::eq(&value) &&
-           (!found_cv || found_cv->type > sp_condition_value::SQLSTATE);
-
-  case sp_condition_value::WARNING:
-    return user_value_matched &&
-           (value.Sql_state::is_warning() ||
-            value.get_level() == Sql_condition::WARN_LEVEL_WARN) &&
-           !found_cv;
-
-  case sp_condition_value::NOT_FOUND:
-    return user_value_matched &&
-           value.Sql_state::is_not_found() &&
-           !found_cv;
-
-  case sp_condition_value::EXCEPTION:
-    /*
-      In sql_mode=ORACLE this construct should catch both errors and warnings:
-        EXCEPTION
-          WHEN OTHERS THEN ...;
-      E.g. NO_DATA_FOUND is more like a warning than an error,
-      and it should be caught.
-
-      We don't check user_value_matched here.
-      "WHEN OTHERS" catches all user defined exception.
-    */
-    return (((current_thd->variables.sql_mode & MODE_ORACLE) ||
-           (value.Sql_state::is_exception() &&
-            value.get_level() == Sql_condition::WARN_LEVEL_ERROR)) &&
-           !found_cv);
-  }
-  return false;
-}
-
-
 sp_handler*
-sp_pcontext::find_handler(const Sql_condition_identity &value) const
+sp_pcontext::find_handler(const char *sql_state,
+                          uint sql_errno,
+                          Sql_condition::enum_warning_level level) const
 {
   sp_handler *found_handler= NULL;
   sp_condition_value *found_cv= NULL;
@@ -541,10 +322,53 @@ sp_pcontext::find_handler(const Sql_condition_identity &value) const
 
     while ((cv= li++))
     {
-      if (cv->matches(value, found_cv))
+      switch (cv->type)
       {
-        found_cv= cv;
-        found_handler= h;
+      case sp_condition_value::ERROR_CODE:
+        if (sql_errno == cv->mysqlerr &&
+            (!found_cv ||
+             found_cv->type > sp_condition_value::ERROR_CODE))
+        {
+          found_cv= cv;
+          found_handler= h;
+        }
+        break;
+
+      case sp_condition_value::SQLSTATE:
+        if (strcmp(sql_state, cv->sql_state) == 0 &&
+            (!found_cv ||
+             found_cv->type > sp_condition_value::SQLSTATE))
+        {
+          found_cv= cv;
+          found_handler= h;
+        }
+        break;
+
+      case sp_condition_value::WARNING:
+        if ((is_sqlstate_warning(sql_state) ||
+             level == Sql_condition::WARN_LEVEL_WARN) && !found_cv)
+        {
+          found_cv= cv;
+          found_handler= h;
+        }
+        break;
+
+      case sp_condition_value::NOT_FOUND:
+        if (is_sqlstate_not_found(sql_state) && !found_cv)
+        {
+          found_cv= cv;
+          found_handler= h;
+        }
+        break;
+
+      case sp_condition_value::EXCEPTION:
+        if (is_sqlstate_exception(sql_state) &&
+            level == Sql_condition::WARN_LEVEL_ERROR && !found_cv)
+        {
+          found_cv= cv;
+          found_handler= h;
+        }
+        break;
       }
     }
   }
@@ -587,98 +411,64 @@ sp_pcontext::find_handler(const Sql_condition_identity &value) const
   if (!p || !p->m_parent)
     return NULL;
 
-  return p->m_parent->find_handler(value);
+  return p->m_parent->find_handler(sql_state, sql_errno, level);
 }
 
 
-bool sp_pcontext::add_cursor(const LEX_CSTRING *name, sp_pcontext *param_ctx,
-                             sp_lex_cursor *lex)
+bool sp_pcontext::add_cursor(LEX_STRING name)
 {
   if (m_cursors.elements() == m_max_cursor_index)
     ++m_max_cursor_index;
 
-  return m_cursors.append(sp_pcursor(name, param_ctx, lex));
+  return m_cursors.append(name);
 }
 
 
-const sp_pcursor *sp_pcontext::find_cursor(const LEX_CSTRING *name,
-                                           uint *poff,
-                                           bool current_scope_only) const
+bool sp_pcontext::find_cursor(LEX_STRING name,
+                              uint *poff,
+                              bool current_scope_only) const
 {
   uint i= m_cursors.elements();
 
   while (i--)
   {
-    LEX_CSTRING n= m_cursors.at(i);
+    LEX_STRING n= m_cursors.at(i);
 
     if (my_strnncoll(system_charset_info,
-		     (const uchar *) name->str, name->length,
+		     (const uchar *) name.str, name.length,
 		     (const uchar *) n.str, n.length) == 0)
     {
       *poff= m_cursor_offset + i;
-      return &m_cursors.at(i);
+      return true;
     }
   }
 
   return (!current_scope_only && m_parent) ?
     m_parent->find_cursor(name, poff, false) :
-    NULL;
+    false;
 }
 
 
 void sp_pcontext::retrieve_field_definitions(
-  List<Spvar_definition> *field_def_lst) const
+  List<Column_definition> *field_def_lst) const
 {
   /* Put local/context fields in the result list. */
 
-  size_t next_child= 0;
   for (size_t i= 0; i < m_vars.elements(); ++i)
   {
     sp_variable *var_def= m_vars.at(i);
 
-    /*
-      The context can have holes in run-time offsets,
-      the missing offsets reside on the children contexts in such cases.
-      Example:
-        CREATE PROCEDURE p1() AS
-          x0 INT:=100;        -- context 0, position 0, run-time 0
-          CURSOR cur(
-            p0 INT,           -- context 1, position 0, run-time 1
-            p1 INT            -- context 1, position 1, run-time 2
-          ) IS SELECT p0, p1;
-          x1 INT:=101;        -- context 0, position 1, run-time 3
-        BEGIN
-          ...
-        END;
-      See more comments in sp_pcontext::find_variable().
-      We must retrieve the definitions in the order of their run-time offsets.
-      Check that there are children that should go before the current variable.
-    */
-    for ( ; next_child < m_children.elements(); next_child++)
-    {
-      sp_pcontext *child= m_children.at(next_child);
-      if (!child->context_var_count() ||
-          child->get_context_variable(0)->offset > var_def->offset)
-        break;
-      /*
-        All variables on the embedded context (that fills holes of the parent)
-        should have the run-time offset strictly less than var_def.
-      */
-      DBUG_ASSERT(child->get_context_variable(0)->offset < var_def->offset);
-      DBUG_ASSERT(child->get_last_context_variable()->offset < var_def->offset);
-      child->retrieve_field_definitions(field_def_lst);
-    }
     field_def_lst->push_back(&var_def->field_def);
   }
 
-  /* Put the fields of the remaining enclosed contexts in the result list. */
+  /* Put the fields of the enclosed contexts in the result list. */
 
-  for (size_t i= next_child; i < m_children.elements(); ++i)
+  for (size_t i= 0; i < m_children.elements(); ++i)
     m_children.at(i)->retrieve_field_definitions(field_def_lst);
 }
 
 
-const sp_pcursor *sp_pcontext::find_cursor(uint offset) const
+const LEX_STRING *sp_pcontext::find_cursor(uint offset) const
 {
   if (m_cursor_offset <= offset &&
       offset < m_cursor_offset + m_cursors.elements())
@@ -689,36 +479,4 @@ const sp_pcursor *sp_pcontext::find_cursor(uint offset) const
   return m_parent ?
          m_parent->find_cursor(offset) :  // Some previous frame
          NULL;                            // Index out of bounds
-}
-
-
-bool sp_pcursor::check_param_count_with_error(uint param_count) const
-{
-  if (param_count != (m_param_context ?
-                      m_param_context->context_var_count() : 0))
-  {
-    my_error(ER_WRONG_PARAMCOUNT_TO_CURSOR, MYF(0), LEX_CSTRING::str);
-    return true;
-  }
-  return false;
-}
-
-
-const Spvar_definition *
-sp_variable::find_row_field(const LEX_CSTRING *var_name,
-                            const LEX_CSTRING *field_name,
-                            uint *row_field_offset)
-{
-  if (!field_def.is_row())
-  {
-    my_printf_error(ER_UNKNOWN_ERROR,
-                    "'%s' is not a row variable", MYF(0), var_name->str);
-    return NULL;
-  }
-  const Spvar_definition *def;
-  if ((def= field_def.find_row_field_by_name(field_name, row_field_offset)))
-    return def;
-  my_error(ER_ROW_VARIABLE_DOES_NOT_HAVE_FIELD, MYF(0),
-           var_name->str, field_name->str);
-  return NULL;
 }

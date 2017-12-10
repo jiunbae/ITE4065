@@ -23,7 +23,7 @@
   @{
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_base.h"
 #include "key.h"
 #include "sql_statistics.h"
@@ -471,9 +471,9 @@ protected:
   
   /* Table for which statistical data is read / updated */
   TABLE *table;
-  TABLE_SHARE *table_share; /* Table share for 'table */
-  LEX_CSTRING *db_name;      /* Name of the database containing 'table' */
-  LEX_CSTRING *table_name;   /* Name of the table 'table' */
+  TABLE_SHARE *table_share; /* Table share for 'table */    
+  LEX_STRING *db_name;      /* Name of the database containing 'table' */ 
+  LEX_STRING *table_name;   /* Name of the table 'table' */
 
   void store_record_for_update()
   {
@@ -528,7 +528,7 @@ public:
     by the database name 'db' and the table name 'tab'.
   */  
   
-  Stat_table(TABLE *stat, LEX_CSTRING *db, LEX_CSTRING *tab)
+  Stat_table(TABLE *stat, LEX_STRING *db, LEX_STRING *tab)
     :stat_table(stat), table_share(NULL)
   {
     common_init_stat_table();
@@ -553,7 +553,7 @@ public:
     The method is called by the update_table_name_key_parts function.
   */      
 
- virtual void change_full_table_name(LEX_CSTRING *db, LEX_CSTRING *tab)= 0;
+ virtual void change_full_table_name(LEX_STRING *db, LEX_STRING *tab)= 0;
 
  
   /**
@@ -666,22 +666,16 @@ public:
   {
     if (find_stat())
     {    
-      bool res;
       store_record_for_update();
       store_stat_fields();
-      res= update_record();
-      DBUG_ASSERT(res == 0);
-      return res;
+      return update_record();
     }
     else
     {
       int err;
       store_stat_fields();
       if ((err= stat_file->ha_write_row(record[0])))
-      {
-        DBUG_ASSERT(0);
 	return TRUE;
-      }
       /* Make change permanent and avoid 'table is marked as crashed' errors */
       stat_file->extra(HA_EXTRA_FLUSH);
     } 
@@ -709,7 +703,7 @@ public:
     to store the new names in the record buffer used for updates.
   */
 
-  bool update_table_name_key_parts(LEX_CSTRING *db, LEX_CSTRING *tab)
+  bool update_table_name_key_parts(LEX_STRING *db, LEX_STRING *tab)
   {
     store_record_for_update();
     change_full_table_name(db, tab);
@@ -771,7 +765,7 @@ private:
     table_name_field= stat_table->field[TABLE_STAT_TABLE_NAME];
   }
 
-  void change_full_table_name(LEX_CSTRING *db, LEX_CSTRING *tab)
+  void change_full_table_name(LEX_STRING *db, LEX_STRING *tab)
   {
     db_name_field->store(db->str, db->length, system_charset_info);
     table_name_field->store(tab->str, tab->length, system_charset_info);
@@ -801,7 +795,7 @@ public:
     from the database 'db'.
   */
 
-  Table_stat(TABLE *stat, LEX_CSTRING *db, LEX_CSTRING *tab)
+  Table_stat(TABLE *stat, LEX_STRING *db, LEX_STRING *tab) 
     :Stat_table(stat, db, tab)
   {
     common_init_table_stat();
@@ -915,7 +909,7 @@ private:
     column_name_field= stat_table->field[COLUMN_STAT_COLUMN_NAME];
   } 
 
-  void change_full_table_name(LEX_CSTRING *db, LEX_CSTRING *tab)
+  void change_full_table_name(LEX_STRING *db, LEX_STRING *tab)
   {
      db_name_field->store(db->str, db->length, system_charset_info);
      table_name_field->store(tab->str, tab->length, system_charset_info);
@@ -945,7 +939,7 @@ public:
     from the database 'db'. 
   */
 
-  Column_stat(TABLE *stat, LEX_CSTRING *db, LEX_CSTRING *tab)
+  Column_stat(TABLE *stat, LEX_STRING *db, LEX_STRING *tab) 
     :Stat_table(stat, db, tab)
   {
     common_init_column_stat_table();
@@ -989,7 +983,8 @@ public:
   void set_key_fields(Field *col)
   {
     set_full_table_name();
-    column_name_field->store(col->field_name.str, col->field_name.length,
+    const char *column_name= col->field_name;
+    column_name_field->store(column_name, strlen(column_name),
                              system_charset_info);  
     table_field= col;
   }
@@ -1250,7 +1245,7 @@ private:
     prefix_arity_field= stat_table->field[INDEX_STAT_PREFIX_ARITY];
   } 
 
-  void change_full_table_name(LEX_CSTRING *db, LEX_CSTRING *tab)
+  void change_full_table_name(LEX_STRING *db, LEX_STRING *tab)
   {
      db_name_field->store(db->str, db->length, system_charset_info);
      table_name_field->store(tab->str, tab->length, system_charset_info);
@@ -1282,7 +1277,7 @@ public:
     from the database 'db'. 
   */
 
-  Index_stat(TABLE *stat, LEX_CSTRING *db, LEX_CSTRING *tab)
+  Index_stat(TABLE *stat, LEX_STRING *db, LEX_STRING *tab) 
     :Stat_table(stat, db, tab)
   {
     common_init_index_stat_table();
@@ -1325,8 +1320,8 @@ public:
   void set_index_prefix_key_fields(KEY *index_info)
   {
     set_full_table_name();
-    const char *index_name= index_info->name.str;
-    index_name_field->store(index_name, index_info->name.length,
+    char *index_name= index_info->name;
+    index_name_field->store(index_name, strlen(index_name),
                             system_charset_info);
     table_key_info= index_info;
   }
@@ -1966,7 +1961,7 @@ void create_min_max_statistical_fields_for_table(TABLE *table)
 
     for (uint i=0; i < 2; i++, record+= rec_buff_length)
     {
-      for (Field **field_ptr= table->field; *field_ptr; field_ptr++)
+      for (Field **field_ptr= table->field; *field_ptr; field_ptr++) 
       {
         Field *fld;
         Field *table_field= *field_ptr;
@@ -2035,7 +2030,7 @@ void create_min_max_statistical_fields_for_table_share(THD *thd,
 
     for (uint i=0; i < 2; i++, record+= rec_buff_length)
     {
-      for (Field **field_ptr= table_share->field; *field_ptr; field_ptr++)
+      for (Field **field_ptr= table_share->field; *field_ptr; field_ptr++) 
       {
         Field *fld;
         Field *table_field= *field_ptr;
@@ -2498,7 +2493,7 @@ bool Column_statistics_collected::add(ha_rows rowno)
       set_not_null(COLUMN_STAT_MIN_VALUE);
     if (max_value && column->update_max(max_value, rowno == nulls))
       set_not_null(COLUMN_STAT_MAX_VALUE);
-    if (count_distinct)
+    if (count_distinct) 
       err= count_distinct->add();
   } 
   return err;
@@ -3288,7 +3283,7 @@ int read_statistics_for_tables_if_needed(THD *thd, TABLE_LIST *tables)
   The function is called when executing the statement DROP TABLE 'tab'.
 */
 
-int delete_statistics_for_table(THD *thd, LEX_CSTRING *db, LEX_CSTRING *tab)
+int delete_statistics_for_table(THD *thd, LEX_STRING *db, LEX_STRING *tab)
 {
   int err;
   enum_binlog_format save_binlog_format;
@@ -3526,8 +3521,8 @@ int delete_statistics_for_index(THD *thd, TABLE *tab, KEY *key_info,
   The function is called when executing any statement that renames a table
 */
 
-int rename_table_in_stat_tables(THD *thd, LEX_CSTRING *db, LEX_CSTRING *tab,
-                                LEX_CSTRING *new_db, LEX_CSTRING *new_tab)
+int rename_table_in_stat_tables(THD *thd, LEX_STRING *db, LEX_STRING *tab,
+                                LEX_STRING *new_db, LEX_STRING *new_tab)
 {
   int err;
   enum_binlog_format save_binlog_format;

@@ -14,8 +14,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "mariadb.h"
-#include "sql_class.h"                       // THD
+#include "sql_class.h"                       // THD and my_global.h
 #include "keycaches.h"                       // get_key_cache
 #include "sql_base.h"                        // Open_table_context
 #include "lock.h"                            // MYSQL_OPEN_*
@@ -189,7 +188,7 @@ static int prepare_for_repair(THD *thd, TABLE_LIST *table_list,
   if (!mysql_file_stat(key_file_misc, from, &stat_info, MYF(0)))
     goto end;				// Can't use USE_FRM flag
 
-  my_snprintf(tmp, sizeof(tmp), "%s-%lx_%llx",
+  my_snprintf(tmp, sizeof(tmp), "%s-%lx_%lx",
 	      from, current_pid, thd->thread_id);
 
   if (table_list->table)
@@ -341,17 +340,16 @@ static bool open_only_one_table(THD* thd, TABLE_LIST* table,
   if (lex->alter_info.flags & Alter_info::ALTER_ADMIN_PARTITION ||
       !is_view_operator_func)
   {
-    table->required_type= TABLE_TYPE_NORMAL;
-    DBUG_ASSERT(lex->table_type != TABLE_TYPE_VIEW);
+    table->required_type=FRMTYPE_TABLE;
+    DBUG_ASSERT(!lex->only_view);
   }
-  else if (lex->table_type == TABLE_TYPE_VIEW)
+  else if (lex->only_view)
   {
-    table->required_type= lex->table_type;
+    table->required_type= FRMTYPE_VIEW;
   }
-  else if ((lex->table_type != TABLE_TYPE_VIEW) &&
-           lex->sql_command == SQLCOM_REPAIR)
+  else if (!lex->only_view && lex->sql_command == SQLCOM_REPAIR)
   {
-    table->required_type= TABLE_TYPE_NORMAL;
+    table->required_type= FRMTYPE_TABLE;
   }
 
   if (lex->sql_command == SQLCOM_CHECK ||
@@ -393,7 +391,6 @@ static bool open_only_one_table(THD* thd, TABLE_LIST* table,
     open_error= (thd->open_temporary_tables(table) ||
                  open_and_lock_tables(thd, table, TRUE, 0));
   }
-
 #ifndef DBUG_OFF
 dbug_err:
 #endif
@@ -448,10 +445,9 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
   int compl_result_code;
   bool need_repair_or_alter= 0;
   wait_for_commit* suspended_wfc;
+
   DBUG_ENTER("mysql_admin_table");
   DBUG_PRINT("enter", ("extra_open_options: %u", extra_open_options));
-
-  thd->prepare_logs_for_admin_command();
 
   field_list.push_back(item= new (thd->mem_root)
                        Item_empty_string(thd, "Table",
@@ -492,7 +488,7 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
   for (table= tables; table; table= table->next_local)
   {
     char table_name[SAFE_NAME_LEN*2+2];
-    const char *db= table->db;
+    char* db = table->db;
     bool fatal_error=0;
     bool open_error;
     bool collect_eis=  FALSE;
@@ -810,7 +806,7 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
         Here we close and reopen table in read mode because operation of
         collecting statistics is long and it will be better do not block
         the table completely.
-        InnoDB will allow read/write and MyISAM read/insert.
+        InnoDB/XtraDB will allow read/write and MyISAM read/insert.
       */
       trans_commit_stmt(thd);
       trans_commit(thd);
@@ -845,7 +841,7 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
               push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                                   ER_NO_EIS_FOR_FIELD,
                                   ER_THD(thd, ER_NO_EIS_FOR_FIELD),
-                                  (*field_ptr)->field_name.str);
+                                  (*field_ptr)->field_name);
           }
         }
         else
@@ -1237,7 +1233,7 @@ err2:
 */
 
 bool mysql_assign_to_keycache(THD* thd, TABLE_LIST* tables,
-			     const LEX_CSTRING *key_cache_name)
+			     LEX_STRING *key_cache_name)
 {
   HA_CHECK_OPT check_opt;
   KEY_CACHE *key_cache;
@@ -1304,6 +1300,7 @@ bool Sql_cmd_analyze_table::execute(THD *thd)
                          FALSE, UINT_MAX, FALSE))
     goto error;
   WSREP_TO_ISOLATION_BEGIN_WRTCHK(NULL, NULL, first_table);
+  thd->enable_slow_log= opt_log_slow_admin_statements;
   res= mysql_admin_table(thd, first_table, &m_lex->check_opt,
                          "analyze", lock_type, 1, 0, 0, 0,
                          &handler::ha_analyze, 0);
@@ -1334,6 +1331,7 @@ bool Sql_cmd_check_table::execute(THD *thd)
   if (check_table_access(thd, SELECT_ACL, first_table,
                          TRUE, UINT_MAX, FALSE))
     goto error; /* purecov: inspected */
+  thd->enable_slow_log= opt_log_slow_admin_statements;
 
   res= mysql_admin_table(thd, first_table, &m_lex->check_opt, "check",
                          lock_type, 0, 0, HA_OPEN_FOR_REPAIR, 0,
@@ -1358,7 +1356,7 @@ bool Sql_cmd_optimize_table::execute(THD *thd)
                          FALSE, UINT_MAX, FALSE))
     goto error; /* purecov: inspected */
   WSREP_TO_ISOLATION_BEGIN_WRTCHK(NULL, NULL, first_table);
-
+  thd->enable_slow_log= opt_log_slow_admin_statements;
   res= (specialflag & SPECIAL_NO_NEW_FUNC) ?
     mysql_recreate_table(thd, first_table, true) :
     mysql_admin_table(thd, first_table, &m_lex->check_opt,
@@ -1390,8 +1388,7 @@ bool Sql_cmd_repair_table::execute(THD *thd)
   if (check_table_access(thd, SELECT_ACL | INSERT_ACL, first_table,
                          FALSE, UINT_MAX, FALSE))
     goto error; /* purecov: inspected */
-  thd->enable_slow_log&= !MY_TEST(thd->variables.log_slow_disabled_statements &
-                                  LOG_SLOW_DISABLE_ADMIN);
+  thd->enable_slow_log= opt_log_slow_admin_statements;
   WSREP_TO_ISOLATION_BEGIN_WRTCHK(NULL, NULL, first_table);
   res= mysql_admin_table(thd, first_table, &m_lex->check_opt, "repair",
                          TL_WRITE, 1,

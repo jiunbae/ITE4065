@@ -42,11 +42,6 @@ enum {
 	/** sys fields will be found in the update vector or inserted
 	entry */
 	BTR_KEEP_SYS_FLAG = 4,
-
-	/** no rollback */
-	BTR_NO_ROLLBACK = BTR_NO_UNDO_LOG_FLAG
-		| BTR_NO_LOCKING_FLAG | BTR_KEEP_SYS_FLAG,
-
 	/** btr_cur_pessimistic_update() must keep cursor position
 	when moving columns to big_rec */
 	BTR_KEEP_POS_FLAG = 8,
@@ -131,24 +126,6 @@ btr_cur_position(
 	rec_t*		rec,	/*!< in: record in tree */
 	buf_block_t*	block,	/*!< in: buffer block of rec */
 	btr_cur_t*	cursor);/*!< in: cursor */
-
-/** Load the instant ALTER TABLE metadata from the clustered index
-when loading a table definition.
-@param[in,out]	table	table definition from the data dictionary
-@return	error code
-@retval	DB_SUCCESS	if no error occurred */
-dberr_t
-btr_cur_instant_init(dict_table_t* table)
-	ATTRIBUTE_COLD __attribute__((nonnull, warn_unused_result));
-
-/** Initialize the n_core_null_bytes on first access to a clustered
-index root page.
-@param[in]	index	clustered index that is on its first access
-@param[in]	page	clustered index root page
-@return	whether the page is corrupted */
-bool
-btr_cur_instant_root_init(dict_index_t* index, const page_t* page)
-	ATTRIBUTE_COLD __attribute__((nonnull, warn_unused_result));
 
 /** Optimistically latches the leaf page or pages requested.
 @param[in]	block		guessed buffer block

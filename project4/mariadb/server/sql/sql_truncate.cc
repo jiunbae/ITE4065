@@ -14,7 +14,6 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "mariadb.h"
 #include "debug_sync.h"  // DEBUG_SYNC
 #include "table.h"       // TABLE, FOREIGN_KEY_INFO
 #include "sql_class.h"   // THD
@@ -39,11 +38,11 @@
 */
 
 static bool fk_info_append_fields(THD *thd, String *str,
-                                  List<LEX_CSTRING> *fields)
+                                  List<LEX_STRING> *fields)
 {
   bool res= FALSE;
-  LEX_CSTRING *field;
-  List_iterator_fast<LEX_CSTRING> it(*fields);
+  LEX_STRING *field;
+  List_iterator_fast<LEX_STRING> it(*fields);
 
   while ((field= it++))
   {
@@ -151,18 +150,18 @@ fk_truncate_illegal_if_parent(THD *thd, TABLE *table)
   /* Loop over the set of foreign keys for which this table is a parent. */
   while ((fk_info= it++))
   {
-    DBUG_ASSERT(!lex_string_cmp(system_charset_info,
-                                fk_info->referenced_db,
-                                &table->s->db));
+    DBUG_ASSERT(!my_strcasecmp(system_charset_info,
+                               fk_info->referenced_db->str,
+                               table->s->db.str));
 
-    DBUG_ASSERT(!lex_string_cmp(system_charset_info,
-                                fk_info->referenced_table,
-                                &table->s->table_name));
+    DBUG_ASSERT(!my_strcasecmp(system_charset_info,
+                               fk_info->referenced_table->str,
+                               table->s->table_name.str));
 
-    if (lex_string_cmp(system_charset_info, fk_info->foreign_db,
-                       &table->s->db) ||
-        lex_string_cmp(system_charset_info, fk_info->foreign_table,
-                       &table->s->table_name))
+    if (my_strcasecmp(system_charset_info, fk_info->foreign_db->str,
+                      table->s->db.str) ||
+        my_strcasecmp(system_charset_info, fk_info->foreign_table->str,
+                      table->s->table_name.str))
       break;
   }
 
@@ -217,7 +216,7 @@ Sql_cmd_truncate_table::handler_truncate(THD *thd, TABLE_LIST *table_ref,
       or writing into the table. Yet, to open a write cursor we need
       a thr_lock lock. Allow to open base tables only.
     */
-    table_ref->required_type= TABLE_TYPE_NORMAL;
+    table_ref->required_type= FRMTYPE_TABLE;
     /*
       Ignore pending FLUSH TABLES since we don't want to release
       the MDL lock taken above and otherwise there is no way to
@@ -249,8 +248,8 @@ Sql_cmd_truncate_table::handler_truncate(THD *thd, TABLE_LIST *table_ref,
     table_ref->table->file->print_error(error, MYF(0));
     /*
       If truncate method is not implemented then we don't binlog the
-      statement. If truncation has failed in a transactional engine then also
-      we don't binlog the statment. Only in non transactional engine we binlog
+      statement. If truncation has failed in a transactional engine then also we
+      donot binlog the statment. Only in non transactional engine we binlog
       inspite of errors.
      */
     if (error == HA_ERR_WRONG_COMMAND ||
@@ -312,17 +311,14 @@ bool Sql_cmd_truncate_table::lock_table(THD *thd, TABLE_LIST *table_ref,
   }
   else
   {
-    handlerton *hton;
-    bool is_sequence;
-
     /* Acquire an exclusive lock. */
     DBUG_ASSERT(table_ref->next_global == NULL);
     if (lock_table_names(thd, table_ref, NULL,
                          thd->variables.lock_wait_timeout, 0))
       DBUG_RETURN(TRUE);
 
-    if (!ha_table_exists(thd, table_ref->db, table_ref->table_name,
-                         &hton, &is_sequence) ||
+    handlerton *hton;
+    if (!ha_table_exists(thd, table_ref->db, table_ref->table_name, &hton) ||
         hton == view_pseudo_hton)
     {
       my_error(ER_NO_SUCH_TABLE, MYF(0), table_ref->db, table_ref->table_name);
@@ -341,7 +337,7 @@ bool Sql_cmd_truncate_table::lock_table(THD *thd, TABLE_LIST *table_ref,
       *hton_can_recreate= false;
     }
     else
-      *hton_can_recreate= !is_sequence && hton->flags & HTON_CAN_RECREATE;
+      *hton_can_recreate= hton->flags & HTON_CAN_RECREATE;
   }
 
   /*

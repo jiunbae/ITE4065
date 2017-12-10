@@ -950,10 +950,10 @@ sec_to_time(1) + 0, from_unixtime(1) + 0;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `now() - now()` bigint(16) NOT NULL,
-  `curtime() - curtime()` int(9) NOT NULL,
-  `sec_to_time(1) + 0` int(9) DEFAULT NULL,
-  `from_unixtime(1) + 0` bigint(16) DEFAULT NULL
+  `now() - now()` bigint(21) NOT NULL,
+  `curtime() - curtime()` bigint(12) NOT NULL,
+  `sec_to_time(1) + 0` bigint(12) DEFAULT NULL,
+  `from_unixtime(1) + 0` bigint(21) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 drop table t1;
 SELECT SEC_TO_TIME(3300000);
@@ -2054,11 +2054,11 @@ SEC_TO_TIME(1.123456)+0.1,
 SEC_TO_TIME(1.1234567)+0.1;
 SHOW COLUMNS FROM t1;
 Field	Type	Null	Key	Default	Extra
-SEC_TO_TIME(1)+0.1	decimal(9,1)	YES		NULL	
-SEC_TO_TIME(1.1)+0.1	decimal(9,1)	YES		NULL	
-SEC_TO_TIME(1.12)+0.1	decimal(10,2)	YES		NULL	
-SEC_TO_TIME(1.123456)+0.1	decimal(14,6)	YES		NULL	
-SEC_TO_TIME(1.1234567)+0.1	decimal(14,6)	YES		NULL	
+SEC_TO_TIME(1)+0.1	decimal(12,1)	YES		NULL	
+SEC_TO_TIME(1.1)+0.1	decimal(13,1)	YES		NULL	
+SEC_TO_TIME(1.12)+0.1	decimal(14,2)	YES		NULL	
+SEC_TO_TIME(1.123456)+0.1	decimal(18,6)	YES		NULL	
+SEC_TO_TIME(1.1234567)+0.1	decimal(18,6)	YES		NULL	
 DROP TABLE t1;
 CREATE TABLE t1 (a DATE) ENGINE=MyISAM;
 INSERT INTO t1 VALUES ('2005-05-04'),('2000-02-23');
@@ -3236,118 +3236,3 @@ DROP TABLE t1,t2;
 #
 # End of 10.1 tests
 #
-#
-# Start of 10.3 tests
-#
-#
-#  MDEV-12515 Wrong value when storing DATE_ADD() and ADDTIME() to a numeric field
-#
-SET sql_mode='';
-CREATE TABLE t1 AS SELECT
-DATE_ADD('2001-01-01',INTERVAL 1 DAY) AS c1,
-ADDTIME('10:20:30',1) AS c2;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `c1` varchar(19) DEFAULT NULL,
-  `c2` varchar(26) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-SELECT * FROM t1;
-c1	c2
-2001-01-02	10:20:31
-DROP TABLE t1;
-CREATE TABLE t2 (c INT);
-INSERT INTO t2 SELECT DATE_ADD('2001-01-01',INTERVAL 1 DAY);
-Warnings:
-Warning	1265	Data truncated for column 'c' at row 1
-INSERT INTO t2 VALUES ('2001-01-02');
-Warnings:
-Warning	1265	Data truncated for column 'c' at row 1
-SELECT * FROM t2;
-c
-2001
-2001
-DROP TABLE t2;
-CREATE TABLE t2 (a INT);
-INSERT INTO t2 VALUES (ADDTIME('10:20:30',1));
-Warnings:
-Warning	1265	Data truncated for column 'a' at row 1
-INSERT INTO t2 VALUES ('10:20:31');
-Warnings:
-Warning	1265	Data truncated for column 'a' at row 1
-SELECT * FROM t2;
-a
-10
-10
-DROP TABLE t2;
-SET sql_mode=DEFAULT;
-#
-# MDEV-12860 Out-of-range error on CREATE..SELECT with a view using MAX and EXTRACT(MINUTE_MICROSECOND..)
-#
-SET sql_mode=STRICT_ALL_TABLES;
-CREATE TABLE t1 (
-id bigint(11) NOT NULL PRIMARY KEY,
-dt datetime(6)
-);
-INSERT INTO t1 VALUES (1,'2001-01-01 11:22:33.123456');
-CREATE OR REPLACE VIEW v1 AS SELECT EXTRACT(MINUTE_MICROSECOND FROM dt) AS dt2 FROM t1;
-DESCRIBE v1;
-Field	Type	Null	Key	Default	Extra
-dt2	bigint(11)	YES		NULL	
-SELECT * FROM v1;
-dt2
-2233123456
-CREATE TABLE t2 AS SELECT MAX(dt2) FROM v1;
-DESCRIBE t2;
-Field	Type	Null	Key	Default	Extra
-MAX(dt2)	bigint(11)	YES		NULL	
-SELECT * FROM t2;
-MAX(dt2)
-2233123456
-DROP TABLE t2;
-DROP VIEW v1;
-DROP TABLE t1;
-SET sql_mode=DEFAULT;
-#
-# MDEV-12866 Out-of-range error with CREATE..SELECT..TO_SECONDS(NOW())
-#
-SET sql_mode=STRICT_ALL_TABLES;
-CREATE TABLE t1 AS SELECT TO_SECONDS('9999-12-31 23:59:59');
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `TO_SECONDS('9999-12-31 23:59:59')` bigint(12) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t1;
-SET sql_mode=DEFAULT;
-#
-# MDEV-13966 Parameter data type control for Item_temporal_func
-#
-SELECT FROM_DAYS(ROW(1,1));
-ERROR HY000: Illegal parameter data type row for operation 'from_days'
-SELECT MAKEDATE(ROW(1,1),1);
-ERROR HY000: Illegal parameter data type row for operation 'makedate'
-SELECT MAKEDATE(1, ROW(1,1));
-ERROR HY000: Illegal parameter data type row for operation 'makedate'
-SELECT LAST_DAY(ROW(1,1));
-ERROR HY000: Illegal parameter data type row for operation 'last_day'
-SELECT SEC_TO_TIME(ROW(1,1));
-ERROR HY000: Illegal parameter data type row for operation 'sec_to_time'
-SELECT TIMEDIFF(ROW(1,1),1);
-ERROR HY000: Illegal parameter data type row for operation 'timediff'
-SELECT TIMEDIFF(1, ROW(1,1));
-ERROR HY000: Illegal parameter data type row for operation 'timediff'
-SELECT MAKETIME(ROW(1,1),1,1);
-ERROR HY000: Illegal parameter data type row for operation 'maketime'
-SELECT MAKETIME(1, ROW(1,1), 1);
-ERROR HY000: Illegal parameter data type row for operation 'maketime'
-SELECT MAKETIME(1, 1, ROW(1,1));
-ERROR HY000: Illegal parameter data type row for operation 'maketime'
-SELECT FROM_UNIXTIME(ROW(1,1));
-ERROR HY000: Illegal parameter data type row for operation 'from_unixtime'
-SELECT CONVERT_TZ(ROW(1,1),1,1);
-ERROR HY000: Illegal parameter data type row for operation 'convert_tz'
-SELECT CONVERT_TZ(1, ROW(1,1), 1);
-ERROR HY000: Illegal parameter data type row for operation 'convert_tz'
-SELECT CONVERT_TZ(1, 1, ROW(1,1));
-ERROR HY000: Illegal parameter data type row for operation 'convert_tz'

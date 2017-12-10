@@ -83,6 +83,7 @@ Created 2/16/1996 Heikki Tuuri
 #include "os0proc.h"
 #include "buf0flu.h"
 #include "buf0rea.h"
+#include "buf0mtflu.h"
 #include "dict0boot.h"
 #include "dict0load.h"
 #include "dict0stats_bg.h"
@@ -190,7 +191,9 @@ static ulint		n[SRV_MAX_N_IO_THREADS + 6];
 /** io_handler_thread identifiers, 32 is the maximum number of purge threads  */
 /** 6 is the ? */
 #define	START_OLD_THREAD_CNT	(SRV_MAX_N_IO_THREADS + 6 + 32)
-static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6 + 32];
+static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6 + 32 + MTFLUSH_MAX_WORKER];
+/* Thread contex data for multi-threaded flush */
+void *mtflush_ctx=NULL;
 
 /** Thead handles */
 static os_thread_t	thread_handles[SRV_MAX_N_IO_THREADS + 6 + 32];
@@ -1097,22 +1100,21 @@ srv_undo_tablespaces_init(bool create_new_db)
 		mtr_commit(&mtr);
 
 		/* Step-2: Flush the dirty pages from the buffer pool. */
-		trx_t* trx = trx_allocate_for_background();
-
 		for (undo::undo_spaces_t::const_iterator it
 			     = undo::Truncate::s_fix_up_spaces.begin();
 		     it != undo::Truncate::s_fix_up_spaces.end();
 		     ++it) {
 
-			buf_LRU_flush_or_remove_pages(TRX_SYS_SPACE, trx);
+			buf_LRU_flush_or_remove_pages(
+				TRX_SYS_SPACE, BUF_REMOVE_FLUSH_WRITE, NULL);
 
-			buf_LRU_flush_or_remove_pages(*it, trx);
+			buf_LRU_flush_or_remove_pages(
+				*it, BUF_REMOVE_FLUSH_WRITE, NULL);
 
 			/* Remove the truncate redo log file. */
 			undo::Truncate	undo_trunc;
 			undo_trunc.done_logging(*it);
 		}
-		trx_free_for_background(trx);
 	}
 
 	return(DB_SUCCESS);
@@ -1305,6 +1307,10 @@ srv_shutdown_all_bg_threads()
 			}
 
 			os_event_set(buf_flush_event);
+
+			if (srv_use_mtflush) {
+				buf_mtflu_io_thread_exit();
+			}
 		}
 
 		if (!os_thread_count) {
@@ -1871,10 +1877,9 @@ innobase_start_or_create_for_mysql()
 		os_thread_create(buf_flush_page_cleaner_coordinator,
 				 NULL, NULL);
 
-		/* Create page cleaner workers if needed. For example
-		mariabackup could set srv_n_page_cleaners = 0. */
-		if (srv_n_page_cleaners > 1) {
-			buf_flush_set_page_cleaner_thread_cnt(srv_n_page_cleaners);
+		for (i = 1; i < srv_n_page_cleaners; ++i) {
+			os_thread_create(buf_flush_page_cleaner_worker,
+					 NULL, NULL);
 		}
 
 #ifdef UNIV_LINUX
@@ -2140,6 +2145,8 @@ files_checked:
 		dict_stats_thread_init();
 	}
 
+	trx_sys_file_format_init();
+
 	trx_sys_create();
 
 	if (create_new_db) {
@@ -2194,6 +2201,26 @@ files_checked:
 			return(srv_init_abort(err));
 		}
 	} else {
+
+		/* Check if we support the max format that is stamped
+		on the system tablespace.
+		Note:  We are NOT allowed to make any modifications to
+		the TRX_SYS_PAGE_NO page before recovery  because this
+		page also contains the max_trx_id etc. important system
+		variables that are required for recovery.  We need to
+		ensure that we return the system to a state where normal
+		recovery is guaranteed to work. We do this by
+		invalidating the buffer cache, this will force the
+		reread of the page and restoration to its last known
+		consistent state, this is REQUIRED for the recovery
+		process to work. */
+		err = trx_sys_file_format_max_check(
+			srv_max_file_format_at_startup);
+
+		if (err != DB_SUCCESS) {
+			return(srv_init_abort(err));
+		}
+
 		/* Invalidate the buffer pool to ensure that we reread
 		the page that we read above, during recovery.
 		Note that this is not as heavy weight as it seems. At
@@ -2509,6 +2536,13 @@ files_checked:
 
 		recv_recovery_rollback_active();
 		srv_startup_is_before_trx_rollback_phase = FALSE;
+
+		/* It is possible that file_format tag has never
+		been set. In this case we initialize it to minimum
+		value.  Important to note that we can do it ONLY after
+		we have finished the recovery process so that the
+		image of TRX_SYS_PAGE_NO is not stale. */
+		trx_sys_file_format_tag_init();
 	}
 
 	ut_ad(err == DB_SUCCESS);
@@ -2566,20 +2600,6 @@ files_checked:
 		thread_started[4 + SRV_MAX_N_IO_THREADS] = true;
 		srv_start_state |= SRV_START_STATE_LOCK_SYS
 			| SRV_START_STATE_MONITOR;
-
-		ut_a(trx_purge_state() == PURGE_STATE_INIT);
-
-		if (srv_force_recovery < SRV_FORCE_NO_BACKGROUND) {
-			srv_undo_sources = true;
-			/* Create the dict stats gathering thread */
-			srv_dict_stats_thread_active = true;
-			dict_stats_thread_handle = os_thread_create(
-				dict_stats_thread, NULL, NULL);
-
-			/* Create the thread that will optimize the
-			FULLTEXT search index subsystem. */
-			fts_optimize_init();
-		}
 	}
 
 	/* Create the SYS_FOREIGN and SYS_FOREIGN_COLS system tables */
@@ -2613,7 +2633,16 @@ files_checked:
 		}
 
 		trx_temp_rseg_create();
+	}
 
+	srv_is_being_started = false;
+
+	ut_a(trx_purge_state() == PURGE_STATE_INIT);
+
+	/* Create the master thread which does purge and other utility
+	operations */
+
+	if (!srv_read_only_mode) {
 		thread_handles[1 + SRV_MAX_N_IO_THREADS] = os_thread_create(
 			srv_master_thread,
 			NULL, thread_ids + (1 + SRV_MAX_N_IO_THREADS));
@@ -2621,10 +2650,16 @@ files_checked:
 		srv_start_state_set(SRV_START_STATE_MASTER);
 	}
 
-	srv_is_being_started = false;
-
 	if (!srv_read_only_mode && srv_operation == SRV_OPERATION_NORMAL
 	    && srv_force_recovery < SRV_FORCE_NO_BACKGROUND) {
+		srv_undo_sources = true;
+		/* Create the dict stats gathering thread */
+		srv_dict_stats_thread_active = true;
+		dict_stats_thread_handle = os_thread_create(
+			dict_stats_thread, NULL, NULL);
+
+		/* Create the thread that will optimize the FTS sub-system. */
+		fts_optimize_init();
 
 		thread_handles[5 + SRV_MAX_N_IO_THREADS] = os_thread_create(
 			srv_purge_coordinator_thread,
@@ -2653,6 +2688,19 @@ files_checked:
 	if (!srv_read_only_mode) {
 		/* wake main loop of page cleaner up */
 		os_event_set(buf_flush_event);
+
+		if (srv_use_mtflush) {
+			/* Start multi-threaded flush threads */
+			mtflush_ctx = buf_mtflu_handler_init(
+				srv_mtflush_threads,
+				srv_buf_pool_instances);
+
+			/* Set up the thread ids */
+			buf_mtflu_set_thread_ids(
+				srv_mtflush_threads,
+				mtflush_ctx,
+				(thread_ids + 6 + 32));
+		}
 	}
 
 	if (srv_print_verbose_log) {
@@ -2854,6 +2902,7 @@ innodb_shutdown()
 		log_shutdown();
 	}
 	if (trx_sys) {
+		trx_sys_file_format_close();
 		trx_sys_close();
 	}
 	UT_DELETE(purge_sys);

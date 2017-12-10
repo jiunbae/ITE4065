@@ -40,7 +40,7 @@ permission notice:
 
 *******************************************************/
 
-#include <my_global.h>
+#include <mysql_version.h>
 #include <my_base.h>
 #include <handler.h>
 #include <trx0sys.h>

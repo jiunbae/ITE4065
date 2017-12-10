@@ -2,6 +2,11 @@
 -- source include/have_file_key_management_plugin.inc
 -- source include/not_embedded.inc
 
+--disable_warnings
+SET GLOBAL innodb_file_format = `Barracuda`;
+SET GLOBAL innodb_file_per_table = ON;
+--enable_warnings
+
 FLUSH STATUS;
 
 create database innodb_test;

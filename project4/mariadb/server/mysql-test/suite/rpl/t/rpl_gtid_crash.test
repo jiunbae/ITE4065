@@ -161,8 +161,8 @@ EOF
 --write_file $MYSQLTEST_VARDIR/tmp/mysqld.2.expect
 wait
 EOF
-START SLAVE;
 SET GLOBAL debug_dbug="+d,crash_commit_before";
+START SLAVE;
 
 --connection server_1
 INSERT INTO t1 VALUES (5);
@@ -185,8 +185,8 @@ EOF
 --write_file $MYSQLTEST_VARDIR/tmp/mysqld.2.expect
 wait
 EOF
-START SLAVE;
 SET GLOBAL debug_dbug="+d,crash_commit_after";
+START SLAVE;
 
 --connection server_1
 INSERT INTO t1 VALUES (6);

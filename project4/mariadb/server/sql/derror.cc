@@ -21,7 +21,7 @@
   Read language depeneded messagefile
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "unireg.h"
 #include "derror.h"

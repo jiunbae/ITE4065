@@ -22,7 +22,7 @@
   Sorts a database
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "filesort.h"
 #ifdef HAVE_STDDEF_H
@@ -37,6 +37,7 @@
 #include "bounded_queue.h"
 #include "filesort_utils.h"
 #include "sql_select.h"
+#include "log_slow.h"
 #include "debug_sync.h"
 
 /// How to write record_ref.
@@ -563,8 +564,7 @@ const char* dbug_print_table_row(TABLE *table)
     else
       output.append(",");
 
-    output.append((*pfield)->field_name.str ?
-                  (*pfield)->field_name.str: "NULL");
+    output.append((*pfield)->field_name? (*pfield)->field_name: "NULL");
   }
 
   output.append(")=(");
@@ -615,8 +615,7 @@ static void dbug_print_record(TABLE *table, bool print_rowid)
   
   fprintf(DBUG_FILE, "record (");
   for (pfield= table->field; *pfield ; pfield++)
-    fprintf(DBUG_FILE, "%s%s", (*pfield)->field_name.str,
-            (pfield[1])? ", ":"");
+    fprintf(DBUG_FILE, "%s%s", (*pfield)->field_name, (pfield[1])? ", ":"");
   fprintf(DBUG_FILE, ") = ");
 
   fprintf(DBUG_FILE, "(");
@@ -1180,8 +1179,7 @@ static void make_sortkey(register Sort_param *param,
     }
     else
     {						// Item
-      sort_field->item->type_handler()->make_sort_key(to, sort_field->item,
-                                                      sort_field, param);
+      sort_field->item->make_sort_key(to, sort_field->item, sort_field, param);
       if ((maybe_null= sort_field->item->maybe_null))
         to++;
     }
@@ -1970,8 +1968,7 @@ sortlength(THD *thd, SORT_FIELD *sortorder, uint s_length,
     }
     else
     {
-      sortorder->item->type_handler()->sortlength(thd, sortorder->item,
-                                                  sortorder);
+      sortorder->item->sortlength(thd, sortorder->item, sortorder);
       if (use_strnxfrm(sortorder->item->collation.collation))
       {
         *multi_byte_charset= true;

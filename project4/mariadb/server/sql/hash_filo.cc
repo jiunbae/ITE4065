@@ -23,7 +23,7 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "hash_filo.h"
 

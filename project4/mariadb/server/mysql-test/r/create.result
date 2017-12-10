@@ -482,41 +482,19 @@ from t1;
 explain t2;
 Field	Type	Null	Key	Default	Extra
 a	int(11)	YES		NULL	
-b	int(11)	NO		NULL	
-c	int(10) unsigned	NO		NULL	
+b	bigint(11)	NO		NULL	
+c	bigint(10) unsigned	NO		NULL	
 d	date	YES		NULL	
 e	varchar(1)	YES		NULL	
 f	datetime	YES		NULL	
 g	time	YES		NULL	
-h	blob	YES		NULL	
+h	longblob	YES		NULL	
 dd	time	YES		NULL	
 select * from t2;
 a	b	c	d	e	f	g	h	dd
 1	-7	7	2000-01-01	b	2000-01-01 00:00:00	05:04:03	yet another binary data	02:00:00
 2	-2	2	1825-12-14	a	2003-01-01 03:02:01	04:03:02	binary data	02:00:00
 drop table t1, t2;
-CREATE TABLE t1 (
-c_tinytext tinytext,
-c_text text,
-c_mediumtext mediumtext,
-c_longtext longtext
-);
-CREATE TABLE t2 AS SELECT
-ifnull(c_tinytext,   CAST('yet another binary data' AS BINARY)),
-ifnull(c_text,       CAST('yet another binary data' AS BINARY)),
-ifnull(c_mediumtext, CAST('yet another binary data' AS BINARY)),
-ifnull(c_longtext,   CAST('yet another binary data' AS BINARY))
-FROM t1;
-SHOW CREATE TABLE t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `ifnull(c_tinytext,   CAST('yet another binary data' AS BINARY))` tinyblob DEFAULT NULL,
-  `ifnull(c_text,       CAST('yet another binary data' AS BINARY))` blob DEFAULT NULL,
-  `ifnull(c_mediumtext, CAST('yet another binary data' AS BINARY))` mediumblob DEFAULT NULL,
-  `ifnull(c_longtext,   CAST('yet another binary data' AS BINARY))` longblob DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
-DROP TABLE t2;
-DROP TABLE t1;
 create table t1 (a tinyint, b smallint, c mediumint, d int, e bigint, f float(3,2), g double(4,3), h decimal(5,4), i year, j date, k timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, l datetime, m enum('a','b'), n set('a','b'), o char(10));
 create table t2 select ifnull(a,a), ifnull(b,b), ifnull(c,c), ifnull(d,d), ifnull(e,e), ifnull(f,f), ifnull(g,g), ifnull(h,h), ifnull(i,i), ifnull(j,j), ifnull(k,k), ifnull(l,l), ifnull(m,m), ifnull(n,n), ifnull(o,o) from t1;
 show create table t2;
@@ -667,7 +645,7 @@ create table t1 (a int);
 create table t1 select * from t1;
 ERROR 42S01: Table 't1' already exists
 create table t2 union = (t1) select * from t1;
-ERROR HY000: 'test.t2' is not of type 'BASE TABLE'
+ERROR HY000: 'test.t2' is not BASE TABLE
 flush tables with read lock;
 unlock tables;
 drop table t1;
@@ -701,7 +679,7 @@ create database mysqltest;
 use mysqltest;
 create view v1 as select 'foo' from dual;
 create table t1 like v1;
-ERROR HY000: 'mysqltest.v1' is not of type 'BASE TABLE'
+ERROR HY000: 'mysqltest.v1' is not BASE TABLE
 drop view v1;
 drop database mysqltest;
 create database mysqltest;
@@ -1173,7 +1151,6 @@ t1	CREATE TABLE `t1` (
   `MAX_STAGE` tinyint(2) NOT NULL DEFAULT 0,
   `PROGRESS` decimal(7,3) NOT NULL DEFAULT 0.000,
   `MEMORY_USED` bigint(7) NOT NULL DEFAULT 0,
-  `MAX_MEMORY_USED` bigint(7) NOT NULL DEFAULT 0,
   `EXAMINED_ROWS` int(7) NOT NULL DEFAULT 0,
   `QUERY_ID` bigint(4) NOT NULL DEFAULT 0,
   `INFO_BINARY` blob DEFAULT NULL,
@@ -1197,7 +1174,6 @@ t1	CREATE TEMPORARY TABLE `t1` (
   `MAX_STAGE` tinyint(2) NOT NULL DEFAULT 0,
   `PROGRESS` decimal(7,3) NOT NULL DEFAULT 0.000,
   `MEMORY_USED` bigint(7) NOT NULL DEFAULT 0,
-  `MAX_MEMORY_USED` bigint(7) NOT NULL DEFAULT 0,
   `EXAMINED_ROWS` int(7) NOT NULL DEFAULT 0,
   `QUERY_ID` bigint(4) NOT NULL DEFAULT 0,
   `INFO_BINARY` blob DEFAULT NULL,
@@ -1375,7 +1351,7 @@ CREATE TRIGGER f BEFORE INSERT ON t1 FOR EACH ROW
 BEGIN 
 UPDATE A SET `pk`=1 WHERE `pk`=0 ; 
 END ;|
-ERROR HY000: Trigger 'test.f' already exists
+ERROR HY000: Trigger already exists
 CREATE TRIGGER f1 BEFORE INSERT ON t1 FOR EACH ROW 
 BEGIN 
 UPDATE A SET `pk`=1 WHERE `pk`=0 ; 

@@ -56,6 +56,22 @@ trx_undo_rec_get_type(
 /*==================*/
 	const trx_undo_rec_t*	undo_rec);	/*!< in: undo log record */
 /**********************************************************************//**
+Reads from an undo log record the record compiler info.
+@return compiler info */
+UNIV_INLINE
+ulint
+trx_undo_rec_get_cmpl_info(
+/*=======================*/
+	const trx_undo_rec_t*	undo_rec);	/*!< in: undo log record */
+/**********************************************************************//**
+Returns TRUE if an undo log record contains an extern storage field.
+@return TRUE if extern */
+UNIV_INLINE
+ibool
+trx_undo_rec_get_extern_storage(
+/*============================*/
+	const trx_undo_rec_t*	undo_rec);	/*!< in: undo log record */
+/**********************************************************************//**
 Reads the undo log record number.
 @return undo no */
 UNIV_INLINE
@@ -98,7 +114,7 @@ trx_undo_rec_get_row_ref(
 				used, as we do NOT copy the data in the
 				record! */
 	dict_index_t*	index,	/*!< in: clustered index */
-	const dtuple_t**ref,	/*!< out, own: row reference */
+	dtuple_t**	ref,	/*!< out, own: row reference */
 	mem_heap_t*	heap);	/*!< in: memory heap from which the memory
 				needed is allocated */
 /**********************************************************************//**
@@ -276,13 +292,15 @@ trx_undo_rec_get_col_val(
 @param[in]	table		the table
 @param[in]	ptr		undo log pointer
 @param[in,out]	row		the dtuple to fill
-@param[in]	in_purge	whether this is called by purge */
+@param[in]	in_purge        called by purge thread
+@param[in]	col_map		online rebuild column map */
 void
 trx_undo_read_v_cols(
 	const dict_table_t*	table,
 	const byte*		ptr,
 	const dtuple_t*		row,
-	bool			in_purge);
+	bool			in_purge,
+	const ulint*		col_map);
 
 /** Read virtual column index from undo log if the undo log contains such
 info, and verify the column is still indexed, and output its position
@@ -307,8 +325,6 @@ trx_undo_read_v_idx(
 compilation info multiplied by 16 is ORed to this value in an undo log
 record */
 
-#define TRX_UNDO_INSERT_DEFAULT	10	/* insert a "default value"
-					pseudo-record for instant ALTER */
 #define	TRX_UNDO_INSERT_REC	11	/* fresh insert into clustered index */
 #define	TRX_UNDO_UPD_EXIST_REC	12	/* update of a non-delete-marked
 					record */
@@ -323,9 +339,6 @@ record */
 					to denote that we updated external
 					storage fields: used by purge to
 					free the external storage */
-
-/** The search tuple corresponding to TRX_UNDO_INSERT_DEFAULT */
-extern const dtuple_t trx_undo_default_rec;
 
 #include "trx0rec.ic"
 

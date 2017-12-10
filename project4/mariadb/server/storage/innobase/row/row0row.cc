@@ -209,8 +209,8 @@ row_build_index_entry_low(
 					}
 
 					if (flag == ROW_BUILD_FOR_UNDO
-					    && dict_table_has_atomic_blobs(
-						    index->table)) {
+					    && dict_table_get_format(index->table)
+						>= UNIV_FORMAT_B) {
 						/* For build entry for undo, and
 						the table is Barrcuda, we need
 						to skip the prefix data. */
@@ -287,11 +287,11 @@ row_build_index_entry_low(
 
 		/* If the column is stored externally (off-page) in
 		the clustered index, it must be an ordering field in
-		the secondary index. If !atomic_blobs, the only way
-		we may have a secondary index pointing to a clustered
-		index record with an off-page column is when it is a
-		column prefix index. If atomic_blobs, also fully
-		indexed long columns may be stored off-page. */
+		the secondary index.  In the Antelope format, only
+		prefix-indexed columns may be stored off-page in the
+		clustered index record. In the Barracuda format, also
+		fully indexed long CHAR or VARCHAR columns may be
+		stored off-page. */
 		ut_ad(col->ord_part);
 
 		if (ext) {
@@ -306,8 +306,9 @@ row_build_index_entry_low(
 			}
 
 			if (ind_field->prefix_len == 0) {
-				/* If ROW_FORMAT=DYNAMIC or
-				ROW_FORMAT=COMPRESSED, we can have a
+				/* In the Barracuda format
+				(ROW_FORMAT=DYNAMIC or
+				ROW_FORMAT=COMPRESSED), we can have a
 				secondary index on an entire column
 				that is stored off-page in the
 				clustered index. As this is not a
@@ -317,12 +318,11 @@ row_build_index_entry_low(
 				continue;
 			}
 		} else if (dfield_is_ext(dfield)) {
-			/* This table is either in
+			/* This table is either in Antelope format
 			(ROW_FORMAT=REDUNDANT or ROW_FORMAT=COMPACT)
 			or a purge record where the ordered part of
 			the field is not external.
-			In ROW_FORMAT=REDUNDANT and ROW_FORMAT=COMPACT,
-			the maximum column prefix
+			In Antelope, the maximum column prefix
 			index length is 767 bytes, and the clustered
 			index record contains a 768-byte prefix of
 			each off-page column. */
@@ -436,7 +436,7 @@ row_build_low(
 	}
 
 	/* Avoid a debug assertion in rec_offs_validate(). */
-	rec_offs_make_valid(copy, index, true, const_cast<ulint*>(offsets));
+	rec_offs_make_valid(copy, index, const_cast<ulint*>(offsets));
 
 	if (!col_table) {
 		ut_ad(!col_map);
@@ -506,14 +506,10 @@ row_build_low(
 		}
 
 		dfield_t*	dfield = dtuple_get_nth_field(row, col_no);
-		const void*	field = rec_get_nth_field(
+
+		const byte*	field = rec_get_nth_field(
 			copy, offsets, i, &len);
-		if (len == UNIV_SQL_DEFAULT) {
-			field = index->instant_field_value(i, &len);
-			if (field && type != ROW_COPY_POINTERS) {
-				field = mem_heap_dup(heap, field, len);
-			}
-		}
+
 		dfield_set_data(dfield, field, len);
 
 		if (rec_offs_nth_extern(offsets, i)) {
@@ -530,7 +526,7 @@ row_build_low(
 		}
 	}
 
-	rec_offs_make_valid(rec, index, true, const_cast<ulint*>(offsets));
+	rec_offs_make_valid(rec, index, const_cast<ulint*>(offsets));
 
 	ut_ad(dtuple_check_typed(row));
 
@@ -648,24 +644,20 @@ row_build_w_add_vcol(
 			     add_cols, add_v, col_map, ext, heap));
 }
 
-/** Convert an index record to a data tuple.
-@tparam def whether the index->instant_field_value() needs to be accessed
-@param[in]	rec	index record
-@param[in]	index	index
-@param[in]	offsets	rec_get_offsets(rec, index)
-@param[out]	n_ext	number of externally stored columns
-@param[in,out]	heap	memory heap for allocations
+/*******************************************************************//**
+Converts an index record to a typed data tuple.
 @return index entry built; does not set info_bits, and the data fields
 in the entry will point directly to rec */
-template<bool def>
-static inline
 dtuple_t*
-row_rec_to_index_entry_impl(
-	const rec_t*		rec,
-	const dict_index_t*	index,
-	const ulint*		offsets,
-	ulint*			n_ext,
-	mem_heap_t*		heap)
+row_rec_to_index_entry_low(
+/*=======================*/
+	const rec_t*		rec,	/*!< in: record in the index */
+	const dict_index_t*	index,	/*!< in: index */
+	const ulint*		offsets,/*!< in: rec_get_offsets(rec, index) */
+	ulint*			n_ext,	/*!< out: number of externally
+					stored columns */
+	mem_heap_t*		heap)	/*!< in: memory heap from which
+					the memory needed is allocated */
 {
 	dtuple_t*	entry;
 	dfield_t*	dfield;
@@ -677,7 +669,6 @@ row_rec_to_index_entry_impl(
 	ut_ad(rec != NULL);
 	ut_ad(heap != NULL);
 	ut_ad(index != NULL);
-	ut_ad(def || !rec_offs_any_default(offsets));
 
 	/* Because this function may be invoked by row0merge.cc
 	on a record whose header is in different format, the check
@@ -702,9 +693,7 @@ row_rec_to_index_entry_impl(
 	for (i = 0; i < rec_len; i++) {
 
 		dfield = dtuple_get_nth_field(entry, i);
-		field = def
-			? rec_get_nth_cfield(rec, index, offsets, i, &len)
-			: rec_get_nth_field(rec, offsets, i, &len);
+		field = rec_get_nth_field(rec, offsets, i, &len);
 
 		dfield_set_data(dfield, field, len);
 
@@ -715,25 +704,8 @@ row_rec_to_index_entry_impl(
 	}
 
 	ut_ad(dtuple_check_typed(entry));
-	return(entry);
-}
 
-/** Convert an index record to a data tuple.
-@param[in]	rec	index record
-@param[in]	index	index
-@param[in]	offsets	rec_get_offsets(rec, index)
-@param[out]	n_ext	number of externally stored columns
-@param[in,out]	heap	memory heap for allocations */
-dtuple_t*
-row_rec_to_index_entry_low(
-	const rec_t*		rec,
-	const dict_index_t*	index,
-	const ulint*		offsets,
-	ulint*			n_ext,
-	mem_heap_t*		heap)
-{
-	return row_rec_to_index_entry_impl<false>(
-		rec, index, offsets, n_ext, heap);
+	return(entry);
 }
 
 /*******************************************************************//**
@@ -766,12 +738,10 @@ row_rec_to_index_entry(
 
 	copy_rec = rec_copy(buf, rec, offsets);
 
-	rec_offs_make_valid(copy_rec, index, true,
-			    const_cast<ulint*>(offsets));
-	entry = row_rec_to_index_entry_impl<true>(
+	rec_offs_make_valid(copy_rec, index, const_cast<ulint*>(offsets));
+	entry = row_rec_to_index_entry_low(
 		copy_rec, index, offsets, n_ext, heap);
-	rec_offs_make_valid(rec, index, true,
-			    const_cast<ulint*>(offsets));
+	rec_offs_make_valid(rec, index, const_cast<ulint*>(offsets));
 
 	dtuple_set_info_bits(entry,
 			     rec_get_info_bits(rec, rec_offs_comp(offsets)));
@@ -834,7 +804,8 @@ row_build_row_ref(
 			mem_heap_alloc(heap, rec_offs_size(offsets)));
 
 		rec = rec_copy(buf, rec, offsets);
-		rec_offs_make_valid(rec, index, true, offsets);
+		/* Avoid a debug assertion in rec_offs_validate(). */
+		rec_offs_make_valid(rec, index, offsets);
 	}
 
 	table = index->table;
@@ -854,7 +825,6 @@ row_build_row_ref(
 
 		ut_a(pos != ULINT_UNDEFINED);
 
-		ut_ad(!rec_offs_nth_default(offsets, pos));
 		field = rec_get_nth_field(rec, offsets, pos, &len);
 
 		dfield_set_data(dfield, field, len);
@@ -955,7 +925,6 @@ row_build_row_ref_in_tuple(
 
 		ut_a(pos != ULINT_UNDEFINED);
 
-		ut_ad(!rec_offs_nth_default(offsets, pos));
 		field = rec_get_nth_field(rec, offsets, pos, &len);
 
 		dfield_set_data(dfield, field, len);
@@ -1011,24 +980,9 @@ row_search_on_row_ref(
 
 	index = dict_table_get_first_index(table);
 
-	if (UNIV_UNLIKELY(ref->info_bits)) {
-		ut_ad(ref->info_bits == REC_INFO_DEFAULT_ROW);
-		ut_ad(ref->n_fields <= index->n_uniq);
-		btr_pcur_open_at_index_side(true, index, mode, pcur, true, 0,
-					    mtr);
-		btr_pcur_move_to_next_user_rec(pcur, mtr);
-		/* We do not necessarily have index->is_instant() here,
-		because we could be executing a rollback of an
-		instant ADD COLUMN operation. The function
-		rec_is_default_row() asserts index->is_instant();
-		we do not want to call it here. */
-		return rec_get_info_bits(btr_pcur_get_rec(pcur),
-					 dict_table_is_comp(index->table))
-			& REC_INFO_MIN_REC_FLAG;
-	} else {
-		ut_a(ref->n_fields == index->n_uniq);
-		btr_pcur_open(index, ref, PAGE_CUR_LE, mode, pcur, mtr);
-	}
+	ut_a(dtuple_get_n_fields(ref) == dict_index_get_n_unique(index));
+
+	btr_pcur_open(index, ref, PAGE_CUR_LE, mode, pcur, mtr);
 
 	low_match = btr_pcur_get_low_match(pcur);
 
@@ -1272,8 +1226,6 @@ row_raw_format(
 	ulint	prtype;
 	ulint	ret;
 	ibool	format_in_hex;
-
-	ut_ad(data_len != UNIV_SQL_DEFAULT);
 
 	if (buf_size == 0) {
 

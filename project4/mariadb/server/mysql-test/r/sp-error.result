@@ -1504,7 +1504,7 @@ ERROR 42000: FUNCTION inexistent does not exist
 SELECT .inexistent();
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '()' at line 1
 SELECT ..inexistent();
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '..inexistent()' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '.inexistent()' at line 1
 USE test;
 create function f1() returns int
 begin
@@ -1990,8 +1990,6 @@ Warning	1264	Out of range value for column 'a' at row 1
 Note	1292	Truncated incorrect INTEGER value: '222222 '
 Warning	1264	Out of range value for column 'b' at row 1
 Error	1048	Column 'c' cannot be null
-Note	4092	At line 6 in test.t1_bi
-Note	4092	At line 2 in test.p1
 
 DROP TABLE t1;
 DROP TABLE t2;

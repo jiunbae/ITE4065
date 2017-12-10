@@ -41,7 +41,7 @@ show create view v1;
 View	Create View	character_set_client	collation_connection
 v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`b` + 1 AS `c` from `t1`	latin1	latin1_swedish_ci
 show create view t1;
-ERROR HY000: 'test.t1' is not of type 'VIEW'
+ERROR HY000: 'test.t1' is not VIEW
 drop table t1;
 select a from v1;
 ERROR 42S22: Unknown column 'a' in 'field list'
@@ -72,7 +72,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	<derived2>	ALL	NULL	NULL	NULL	NULL	5	100.00	
 2	DERIVED	t1	ALL	NULL	NULL	NULL	NULL	5	100.00	
 Warnings:
-Note	1003	/* select#1 */ select `v2`.`c` AS `c` from `test`.`v2`
+Note	1003	select `v2`.`c` AS `c` from `test`.`v2`
 create view v3 (c) as select a+1 from v1;
 ERROR 42S22: Unknown column 'a' in 'field list'
 create view v3 (c) as select b+1 from v1;
@@ -104,7 +104,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 2	DERIVED	<derived3>	ALL	NULL	NULL	NULL	NULL	5	100.00	
 3	DERIVED	t1	ALL	NULL	NULL	NULL	NULL	5	100.00	
 Warnings:
-Note	1003	/* select#1 */ select `v4`.`c` AS `c` from `test`.`v4`
+Note	1003	select `v4`.`c` AS `c` from `test`.`v4`
 create view v5 (c) as select c+1 from v2;
 select c from v5;
 c
@@ -118,7 +118,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	<derived3>	ALL	NULL	NULL	NULL	NULL	5	100.00	
 3	DERIVED	t1	ALL	NULL	NULL	NULL	NULL	5	100.00	
 Warnings:
-Note	1003	/* select#1 */ select `v2`.`c` + 1 AS `c` from `test`.`v2`
+Note	1003	select `v2`.`c` + 1 AS `c` from `test`.`v2`
 create algorithm=temptable view v6 (c) as select c+1 from v1;
 select c from v6;
 c
@@ -132,7 +132,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	<derived2>	ALL	NULL	NULL	NULL	NULL	5	100.00	
 2	DERIVED	t1	ALL	NULL	NULL	NULL	NULL	5	100.00	
 Warnings:
-Note	1003	/* select#1 */ select `v6`.`c` AS `c` from `test`.`v6`
+Note	1003	select `v6`.`c` AS `c` from `test`.`v6`
 show tables;
 Tables_in_test
 t1
@@ -197,9 +197,9 @@ c	d
 2	5
 3	10
 drop view v100;
-ERROR 42S02: Unknown VIEW: 'test.v100'
+ERROR 42S02: Unknown table 'test.v100'
 drop view t1;
-ERROR HY000: 'test.t1' is not of type 'VIEW'
+ERROR HY000: 'test.t1' is not VIEW
 drop table v1;
 ERROR 42S02: 'test.v1' is a view
 drop view v1,v2;
@@ -675,7 +675,7 @@ drop view v1;
 create table t1 (col1 int,col2 char(22));
 create view v1 as select * from t1;
 create index i1 on v1 (col1);
-ERROR HY000: 'test.v1' is not of type 'BASE TABLE'
+ERROR HY000: 'test.v1' is not BASE TABLE
 drop view v1;
 drop table t1;
 CREATE VIEW v1 (f1,f2,f3,f4) AS SELECT connection_id(), pi(), current_user(), version();
@@ -943,6 +943,80 @@ create table t3 (col1 datetime not null);
 create view v1 as select * from t1;
 create view v2 as select * from v1;
 create view v3 as select v2.col1 from v2,t2 where v2.col1 = t2.col1;
+update v2 set col1 = (select max(col1) from v1);
+ERROR HY000: The definition of table 'v1' prevents operation UPDATE on table 'v2'
+update v2 set col1 = (select max(col1) from t1);
+ERROR HY000: The definition of table 'v2' prevents operation UPDATE on table 'v2'
+update v2 set col1 = (select max(col1) from v2);
+ERROR HY000: Table 'v2' is specified twice, both as a target for 'UPDATE' and as a separate source for data
+update v2,t2 set v2.col1 = (select max(col1) from v1) where v2.col1 = t2.col1;
+ERROR HY000: The definition of table 'v1' prevents operation UPDATE on table 'v2'
+update t1,t2 set t1.col1 = (select max(col1) from v1) where t1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v1' prevents operation UPDATE on table 't1'
+update v1,t2 set v1.col1 = (select max(col1) from v1) where v1.col1 = t2.col1;
+ERROR HY000: Table 'v1' is specified twice, both as a target for 'UPDATE' and as a separate source for data
+update t2,v2 set v2.col1 = (select max(col1) from v1) where v2.col1 = t2.col1;
+ERROR HY000: The definition of table 'v1' prevents operation UPDATE on table 't2'
+update t2,t1 set t1.col1 = (select max(col1) from v1) where t1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v1' prevents operation UPDATE on table 't2'
+update t2,v1 set v1.col1 = (select max(col1) from v1) where v1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v1' prevents operation UPDATE on table 't2'
+update v2,t2 set v2.col1 = (select max(col1) from t1) where v2.col1 = t2.col1;
+ERROR HY000: The definition of table 'v2' prevents operation UPDATE on table 'v2'
+update t1,t2 set t1.col1 = (select max(col1) from t1) where t1.col1 = t2.col1;
+ERROR HY000: Table 't1' is specified twice, both as a target for 'UPDATE' and as a separate source for data
+update v1,t2 set v1.col1 = (select max(col1) from t1) where v1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v1' prevents operation UPDATE on table 'v1'
+update t2,v2 set v2.col1 = (select max(col1) from t1) where v2.col1 = t2.col1;
+ERROR HY000: Table 't2' is specified twice, both as a target for 'UPDATE' and as a separate source for data
+update t2,t1 set t1.col1 = (select max(col1) from t1) where t1.col1 = t2.col1;
+ERROR HY000: Table 't2' is specified twice, both as a target for 'UPDATE' and as a separate source for data
+update t2,v1 set v1.col1 = (select max(col1) from t1) where v1.col1 = t2.col1;
+ERROR HY000: Table 't2' is specified twice, both as a target for 'UPDATE' and as a separate source for data
+update v2,t2 set v2.col1 = (select max(col1) from v2) where v2.col1 = t2.col1;
+ERROR HY000: Table 'v2' is specified twice, both as a target for 'UPDATE' and as a separate source for data
+update t1,t2 set t1.col1 = (select max(col1) from v2) where t1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v2' prevents operation UPDATE on table 't1'
+update v1,t2 set v1.col1 = (select max(col1) from v2) where v1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v2' prevents operation UPDATE on table 'v1'
+update t2,v2 set v2.col1 = (select max(col1) from v2) where v2.col1 = t2.col1;
+ERROR HY000: The definition of table 'v2' prevents operation UPDATE on table 't2'
+update t2,t1 set t1.col1 = (select max(col1) from v2) where t1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v2' prevents operation UPDATE on table 't2'
+update t2,v1 set v1.col1 = (select max(col1) from v2) where v1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v2' prevents operation UPDATE on table 't2'
+update v3 set v3.col1 = (select max(col1) from v1);
+ERROR HY000: The definition of table 'v1' prevents operation UPDATE on table 'v3'
+update v3 set v3.col1 = (select max(col1) from t1);
+ERROR HY000: The definition of table 'v3' prevents operation UPDATE on table 'v3'
+update v3 set v3.col1 = (select max(col1) from v2);
+ERROR HY000: The definition of table 'v2' prevents operation UPDATE on table 'v3'
+update v3 set v3.col1 = (select max(col1) from v3);
+ERROR HY000: Table 'v3' is specified twice, both as a target for 'UPDATE' and as a separate source for data
+delete from v2 where col1 = (select max(col1) from v1);
+ERROR HY000: The definition of table 'v1' prevents operation DELETE on table 'v2'
+delete from v2 where col1 = (select max(col1) from t1);
+ERROR HY000: The definition of table 'v2' prevents operation DELETE on table 'v2'
+delete from v2 where col1 = (select max(col1) from v2);
+ERROR HY000: Table 'v2' is specified twice, both as a target for 'DELETE' and as a separate source for data
+delete v2 from v2,t2 where (select max(col1) from v1) > 0 and v2.col1 = t2.col1;
+ERROR HY000: The definition of table 'v1' prevents operation DELETE on table 'v2'
+delete t1 from t1,t2 where (select max(col1) from v1) > 0 and t1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v1' prevents operation DELETE on table 't1'
+delete v1 from v1,t2 where (select max(col1) from v1) > 0 and v1.col1 = t2.col1;
+ERROR HY000: Table 'v1' is specified twice, both as a target for 'DELETE' and as a separate source for data
+delete v2 from v2,t2 where (select max(col1) from t1) > 0 and v2.col1 = t2.col1;
+ERROR HY000: The definition of table 'v2' prevents operation DELETE on table 'v2'
+delete t1 from t1,t2 where (select max(col1) from t1) > 0 and t1.col1 = t2.col1;
+ERROR HY000: Table 't1' is specified twice, both as a target for 'DELETE' and as a separate source for data
+delete v1 from v1,t2 where (select max(col1) from t1) > 0 and v1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v1' prevents operation DELETE on table 'v1'
+delete v2 from v2,t2 where (select max(col1) from v2) > 0 and v2.col1 = t2.col1;
+ERROR HY000: Table 'v2' is specified twice, both as a target for 'DELETE' and as a separate source for data
+delete t1 from t1,t2 where (select max(col1) from v2) > 0 and t1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v2' prevents operation DELETE on table 't1'
+delete v1 from v1,t2 where (select max(col1) from v2) > 0 and v1.col1 = t2.col1;
+ERROR HY000: The definition of table 'v2' prevents operation DELETE on table 'v1'
 insert into v2 values ((select max(col1) from v1));
 ERROR HY000: The definition of table 'v1' prevents operation INSERT on table 'v2'
 insert into t1 values ((select max(col1) from v1));
@@ -987,7 +1061,7 @@ drop table t1,t2,t3;
 create table t1 (s1 int);
 create view v1 as select * from t1;
 handler v1 open as xx;
-ERROR HY000: 'test.v1' is not of type 'BASE TABLE'
+ERROR HY000: 'test.v1' is not BASE TABLE
 drop view v1;
 drop table t1;
 create table t1(a int);
@@ -1956,6 +2030,8 @@ create view v1 as select f59, f60 from t1 where f59 in
 (select f59 from t1);
 update v1 set f60=2345;
 ERROR HY000: The target table v1 of the UPDATE is not updatable
+update t1 set f60=(select max(f60) from v1);
+ERROR HY000: The definition of table 'v1' prevents operation UPDATE on table 't1'
 drop view v1;
 drop table t1;
 create table t1 (s1 int);
@@ -2192,32 +2268,12 @@ create table t1 (s1 int);
 create view abc as select * from t1 as abc;
 drop table t1;
 drop view abc;
-flush status;
 create table t1(f1 char(1));
 create view v1 as select * from t1;
-select * from (select f1 as f2, f1 as f3 from v1) v where v.f2='a';
-f2	f3
-show status like "Created_tmp%";
-Variable_name	Value
-Created_tmp_disk_tables	0
-Created_tmp_files	0
-Created_tmp_tables	0
+select * from (select f1 as f2 from v1) v where v.f2='a';
+f2
 drop view v1;
 drop table t1;
-set @tmp=@@optimizer_switch;
-set @@optimizer_switch='derived_merge=OFF';
-create table t1(f1 char(1));
-create view v1 as select * from t1;
-select * from (select f1 as f2, f1 as f3 from v1) v where v.f2='a';
-f2	f3
-show status like "Created_tmp%";
-Variable_name	Value
-Created_tmp_disk_tables	0
-Created_tmp_files	0
-Created_tmp_tables	1
-drop view v1;
-drop table t1;
-set @@optimizer_switch=@tmp;
 create view v1 as SELECT CONVERT_TZ('2004-01-01 12:00:00','GMT','MET');
 select * from v1;
 CONVERT_TZ('2004-01-01 12:00:00','GMT','MET')
@@ -2369,28 +2425,28 @@ CREATE TABLE t1(id INT);
 CREATE VIEW v1 AS SELECT id FROM t1;
 OPTIMIZE TABLE v1;
 Table	Op	Msg_type	Msg_text
-test.v1	optimize	Error	'test.v1' is not of type 'BASE TABLE'
+test.v1	optimize	Error	'test.v1' is not BASE TABLE
 test.v1	optimize	status	Operation failed
 ANALYZE TABLE v1;
 Table	Op	Msg_type	Msg_text
-test.v1	analyze	Error	'test.v1' is not of type 'BASE TABLE'
+test.v1	analyze	Error	'test.v1' is not BASE TABLE
 test.v1	analyze	status	Operation failed
 REPAIR TABLE v1;
 Table	Op	Msg_type	Msg_text
-test.v1	repair	Error	'test.v1' is not of type 'BASE TABLE'
+test.v1	repair	Error	'test.v1' is not BASE TABLE
 test.v1	repair	status	Operation failed
 DROP TABLE t1;
 OPTIMIZE TABLE v1;
 Table	Op	Msg_type	Msg_text
-test.v1	optimize	Error	'test.v1' is not of type 'BASE TABLE'
+test.v1	optimize	Error	'test.v1' is not BASE TABLE
 test.v1	optimize	status	Operation failed
 ANALYZE TABLE v1;
 Table	Op	Msg_type	Msg_text
-test.v1	analyze	Error	'test.v1' is not of type 'BASE TABLE'
+test.v1	analyze	Error	'test.v1' is not BASE TABLE
 test.v1	analyze	status	Operation failed
 REPAIR TABLE v1;
 Table	Op	Msg_type	Msg_text
-test.v1	repair	Error	'test.v1' is not of type 'BASE TABLE'
+test.v1	repair	Error	'test.v1' is not BASE TABLE
 test.v1	repair	status	Operation failed
 DROP VIEW v1;
 create definer = current_user() sql security invoker view v1 as select 1;
@@ -2767,7 +2823,7 @@ CREATE TABLE t1 (i int, j int);
 CREATE VIEW v1 AS SELECT COALESCE(i,j) FROM t1;
 DESCRIBE v1;
 Field	Type	Null	Key	Default	Extra
-COALESCE(i,j)	int(11)	YES		NULL	
+COALESCE(i,j)	bigint(11)	YES		NULL	
 CREATE TABLE t2 SELECT COALESCE(i,j) FROM t1;
 DESCRIBE t2;
 Field	Type	Null	Key	Default	Extra
@@ -2838,13 +2894,13 @@ Tables_in_test
 t1
 v1
 DROP VIEW v2,v1;
-ERROR 42S02: Unknown VIEW: 'test.v2'
+ERROR 42S02: Unknown table 'test.v2'
 SHOW TABLES;
 Tables_in_test
 t1
 CREATE VIEW v1 AS SELECT id FROM t1;
 DROP VIEW t1,v1;
-ERROR HY000: 'test.t1' is not of type 'VIEW'
+ERROR HY000: 'test.t1' is not VIEW
 SHOW TABLES;
 Tables_in_test
 t1
@@ -3630,7 +3686,7 @@ CREATE TABLE t1(c1 INT);
 SELECT * FROM t1;
 c1
 ALTER ALGORITHM=TEMPTABLE SQL SECURITY INVOKER VIEW t1 (c2) AS SELECT (1);
-ERROR HY000: 'test.t1' is not of type 'VIEW'
+ERROR HY000: 'test.t1' is not VIEW
 
 DROP TABLE t1;
 
@@ -3935,7 +3991,7 @@ drop procedure p;
 CREATE TABLE t1 (a INT);
 CREATE VIEW v1 AS SELECT a FROM t1;
 ALTER TABLE v1;
-ERROR HY000: 'test.v1' is not of type 'BASE TABLE'
+ERROR HY000: 'test.v1' is not BASE TABLE
 DROP VIEW v1;
 DROP TABLE t1;
 #
@@ -4506,7 +4562,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
 1	SIMPLE	t2	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
 Warnings:
-Note	1003	select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,`test`.`t2`.`a` AS `a` from `test`.`t1` left join `test`.`t2` on(`test`.`t2`.`a` = `test`.`t1`.`a`) where `test`.`t1`.`b` = 1 or `test`.`t1`.`a` = 'a' and octet_length(`test`.`t1`.`a`) >= `test`.`t1`.`b`
+Note	1003	select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,`test`.`t2`.`a` AS `a` from `test`.`t1` left join `test`.`t2` on(`test`.`t2`.`a` = `test`.`t1`.`a`) where `test`.`t1`.`b` = 1 or `test`.`t1`.`a` = 'a' and length(`test`.`t1`.`a`) >= `test`.`t1`.`b`
 DROP VIEW v1;
 DROP TABLE t1,t2;
 # Bug#798625: duplicate of the previous one, but without crash  
@@ -4587,7 +4643,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 3	DERIVED	t1	ALL	NULL	NULL	NULL	NULL	2	100.00	
 Warnings:
 Note	1926	View 'test'.'v2' ORDER BY clause ignored because there is other ORDER BY clause already
-Note	1003	/* select#1 */ select `v1`.`f1` AS `f1`,`v1`.`f1` AS `f1` from `test`.`v1` join `test`.`v1` order by `v1`.`f1`
+Note	1003	select `v1`.`f1` AS `f1`,`v1`.`f1` AS `f1` from `test`.`v1` join `test`.`v1` order by `v1`.`f1`
 DROP VIEW v1, v2;
 DROP TABLE t1;
 #
@@ -4613,7 +4669,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 2	DEPENDENT SUBQUERY	t4	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
 Warnings:
 Note	1276	Field or reference 'test.t1.a' of SELECT #2 was resolved in SELECT #1
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,10 AS `a` from `test`.`t1` where !<expr_cache><10,`test`.`t1`.`a`>(<in_optimizer>(10,<exists>(/* select#2 */ select NULL from `test`.`t4` where `test`.`t4`.`a` >= `test`.`t1`.`a` and trigcond(<cache>(10) = NULL or <cache>(NULL is null)) having trigcond(NULL is null))))
+Note	1003	select `test`.`t1`.`a` AS `a`,10 AS `a` from `test`.`t1` where !<expr_cache><10,`test`.`t1`.`a`>(<in_optimizer>(10,<exists>(select NULL from `test`.`t4` where `test`.`t4`.`a` >= `test`.`t1`.`a` and trigcond(<cache>(10) = NULL or <cache>(NULL is null)) having trigcond(NULL is null))))
 SELECT * FROM t1, t2
 WHERE t2.a NOT IN (SELECT t3.b FROM t3 RIGHT JOIN t4 ON (t4.a = t3.a)
 WHERE t4.a >= t1.a);
@@ -4629,7 +4685,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 2	DEPENDENT SUBQUERY	t4	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
 Warnings:
 Note	1276	Field or reference 'v1.a' of SELECT #2 was resolved in SELECT #1
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,10 AS `a` from `test`.`t1` where !<expr_cache><10,`test`.`t1`.`a`>(<in_optimizer>(10,<exists>(/* select#2 */ select NULL from `test`.`t4` where `test`.`t4`.`a` >= `test`.`t1`.`a` and trigcond(<cache>(10) = NULL or <cache>(NULL is null)) having trigcond(NULL is null))))
+Note	1003	select `test`.`t1`.`a` AS `a`,10 AS `a` from `test`.`t1` where !<expr_cache><10,`test`.`t1`.`a`>(<in_optimizer>(10,<exists>(select NULL from `test`.`t4` where `test`.`t4`.`a` >= `test`.`t1`.`a` and trigcond(<cache>(10) = NULL or <cache>(NULL is null)) having trigcond(NULL is null))))
 SELECT * FROM v1, t2
 WHERE t2.a NOT IN (SELECT t3.b FROM t3 RIGHT JOIN t4 ON (t4.a = t3.a)
 WHERE t4.a >= v1.a);
@@ -4660,7 +4716,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 2	DEPENDENT SUBQUERY	t1	system	NULL	NULL	NULL	NULL	0	0.00	const row not found
 Warnings:
 Note	1276	Field or reference 'test.t4.b' of SELECT #2 was resolved in SELECT #1
-Note	1003	/* select#1 */ select 0 AS `c`,`test`.`t4`.`a` AS `a`,`test`.`t4`.`b` AS `b`,`test`.`t4`.`c` AS `c` from `test`.`t4` where `test`.`t4`.`c` <= <expr_cache><`test`.`t4`.`b`>((/* select#2 */ select 0 from dual where 7 > `test`.`t4`.`b`))
+Note	1003	select 0 AS `c`,`test`.`t4`.`a` AS `a`,`test`.`t4`.`b` AS `b`,`test`.`t4`.`c` AS `c` from `test`.`t4` where `test`.`t4`.`c` <= <expr_cache><`test`.`t4`.`b`>((select 0 from dual where 7 > `test`.`t4`.`b`))
 SELECT * FROM t3 , t4 
 WHERE t4.c <= (SELECT t2.e FROM t2 LEFT JOIN t1 ON ( t1.a = t2.d )
 WHERE t2.b > t4.b);
@@ -4677,7 +4733,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 2	DEPENDENT SUBQUERY	t1	system	NULL	NULL	NULL	NULL	0	0.00	const row not found
 Warnings:
 Note	1276	Field or reference 'v4.b' of SELECT #2 was resolved in SELECT #1
-Note	1003	/* select#1 */ select 0 AS `c`,`test`.`t4`.`a` AS `a`,`test`.`t4`.`b` AS `b`,`test`.`t4`.`c` AS `c` from `test`.`t4` where `test`.`t4`.`c` <= <expr_cache><`test`.`t4`.`b`>((/* select#2 */ select 0 from dual where 7 > `test`.`t4`.`b`))
+Note	1003	select 0 AS `c`,`test`.`t4`.`a` AS `a`,`test`.`t4`.`b` AS `b`,`test`.`t4`.`c` AS `c` from `test`.`t4` where `test`.`t4`.`c` <= <expr_cache><`test`.`t4`.`b`>((select 0 from dual where 7 > `test`.`t4`.`b`))
 SELECT * FROM t3, v4 
 WHERE v4.c <= (SELECT t2.e FROM t2 LEFT JOIN t1 ON ( t1.a = t2.d )
 WHERE t2.b > v4.b);
@@ -5166,7 +5222,7 @@ CREATE TABLE t4 (i4 INT);
 INSERT INTO t4 VALUES (1),(2);
 DROP VIEW IF EXISTS v1;
 Warnings:
-Note	4090	Unknown VIEW: 'test.v1'
+Note	1051	Unknown table 'test.v1'
 CREATE VIEW v1 AS select coalesce(j1,i3) AS v1_field1 from t2 join t3 left join t1 on ( i1 = i2 );
 CREATE VIEW v2 AS select v1_field1 from t4 join v1;
 prepare my_stmt from "select v1_field1 from v2";
@@ -5508,7 +5564,7 @@ create table t1 (a int, b int);
 create view v1 as select a+b from t1;
 alter table v1 check partition p1;
 Table	Op	Msg_type	Msg_text
-test.v1	check	Error	'test.v1' is not of type 'BASE TABLE'
+test.v1	check	Error	'test.v1' is not BASE TABLE
 test.v1	check	status	Operation failed
 drop view v1;
 drop table t1;
@@ -5637,7 +5693,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 3	DEPENDENT SUBQUERY	t2	ALL	NULL	NULL	NULL	NULL	6	100.00	Using where
 Warnings:
 Note	1276	Field or reference 'test.t1.a' of SELECT #3 was resolved in SELECT #2
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,<expr_cache><`test`.`t1`.`a`>((/* select#3 */ select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`)) AS `c` from `test`.`t1`
+Note	1003	select `test`.`t1`.`a` AS `a`,(select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`) AS `c` from `test`.`t1`
 select * from v1;
 a	c
 1	2
@@ -5654,7 +5710,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 3	DEPENDENT SUBQUERY	t2	ALL	NULL	NULL	NULL	NULL	6	100.00	Using where
 Warnings:
 Note	1276	Field or reference 'test.t1.a' of SELECT #3 was resolved in SELECT #2
-Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a`,`test`.`t2`.`b` AS `b`,`test`.`t1`.`a` AS `a`,<expr_cache><`test`.`t1`.`a`>((/* select#3 */ select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`)) AS `c` from `test`.`t2` join `test`.`t1` where `test`.`t1`.`a` = `test`.`t2`.`a`
+Note	1003	select `test`.`t2`.`a` AS `a`,`test`.`t2`.`b` AS `b`,`test`.`t1`.`a` AS `a`,(select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`) AS `c` from `test`.`t2` join `test`.`t1` where `test`.`t1`.`a` = `test`.`t2`.`a`
 select * from t2, v1 where t2.a=v1.a;
 a	b	a	c
 1	2	1	2
@@ -5673,7 +5729,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 3	DEPENDENT SUBQUERY	t2	ALL	NULL	NULL	NULL	NULL	6	100.00	Using where
 Warnings:
 Note	1276	Field or reference 'test.t1.a' of SELECT #3 was resolved in SELECT #2
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,`test`.`t1`.`a` AS `a`,<expr_cache><`test`.`t1`.`a`>((/* select#3 */ select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`)) AS `c` from `test`.`t1` join `test`.`t1` where `test`.`t1`.`a` = `test`.`t1`.`a`
+Note	1003	select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,`test`.`t1`.`a` AS `a`,(select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`) AS `c` from `test`.`t1` join `test`.`t1` where `test`.`t1`.`a` = `test`.`t1`.`a`
 select * from t1, v1 where t1.a=v1.a;
 a	b	a	c
 1	2	1	2
@@ -5692,7 +5748,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 3	DEPENDENT SUBQUERY	t2	ALL	NULL	NULL	NULL	NULL	6	100.00	Using where
 Warnings:
 Note	1276	Field or reference 'test.t1.a' of SELECT #3 was resolved in SELECT #2
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,`test`.`t1`.`a` AS `a`,<expr_cache><`test`.`t1`.`a`>((/* select#3 */ select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`)) AS `c` from `test`.`t1` join `test`.`t1` where `test`.`t1`.`b` = <expr_cache><`test`.`t1`.`a`>((/* select#3 */ select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`))
+Note	1003	select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,`test`.`t1`.`a` AS `a`,(select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`) AS `c` from `test`.`t1` join `test`.`t1` where `test`.`t1`.`b` = (select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`)
 select * from t1, v1 where t1.b=v1.c;
 a	b	a	c
 1	2	1	2
@@ -5710,7 +5766,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 3	DEPENDENT SUBQUERY	t2	ALL	NULL	NULL	NULL	NULL	6	100.00	Using where
 Warnings:
 Note	1276	Field or reference 'test.t1.a' of SELECT #3 was resolved in SELECT #2
-Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a`,`test`.`t2`.`b` AS `b`,`test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,`test`.`t1`.`a` AS `a`,<expr_cache><`test`.`t1`.`a`>((/* select#3 */ select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`)) AS `c` from `test`.`t2` join `test`.`t1` join `test`.`t1` where `test`.`t1`.`a` = `test`.`t2`.`a` and `test`.`t1`.`a` = `test`.`t2`.`a`
+Note	1003	select `test`.`t2`.`a` AS `a`,`test`.`t2`.`b` AS `b`,`test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,`test`.`t1`.`a` AS `a`,(select max(`test`.`t2`.`b`) from `test`.`t2` where `test`.`t1`.`a` = `test`.`t2`.`a`) AS `c` from `test`.`t2` join `test`.`t1` join `test`.`t1` where `test`.`t1`.`a` = `test`.`t2`.`a` and `test`.`t1`.`a` = `test`.`t2`.`a`
 select * from t2, t1, v1 where t1.a=t2.a and t1.a=v1.a;
 a	b	a	b	a	c
 1	2	1	2	1	2
@@ -6592,15 +6648,4 @@ drop view v1;
 drop table t1;
 #
 # End of 10.2 tests
-#
-#
-# Start of 10.3 tests
-#
-#
-# MDEV-13197 Parser refactoring for CREATE VIEW,TRIGGER,SP,UDF,EVENT
-#
-ALTER VIEW IF NOT EXISTS v1 AS SELECT 1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'IF NOT EXISTS v1 AS SELECT 1' at line 1
-#
-# End of 10.3 tests
 #

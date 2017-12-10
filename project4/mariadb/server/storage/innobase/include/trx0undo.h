@@ -257,13 +257,18 @@ A new undo log is created or a cached undo log reused.
 @param[in,out]	trx	transaction
 @param[in]	rseg	rollback segment
 @param[out]	undo	the undo log
+@param[in]	type	TRX_UNDO_INSERT or TRX_UNDO_UPDATE
 @retval	DB_SUCCESS	on success
 @retval	DB_TOO_MANY_CONCURRENT_TRXS
 @retval	DB_OUT_OF_FILE_SPACE
 @retval	DB_READ_ONLY
 @retval DB_OUT_OF_MEMORY */
 dberr_t
-trx_undo_assign_undo(trx_t* trx, trx_rseg_t* rseg, trx_undo_t** undo)
+trx_undo_assign_undo(
+	trx_t*		trx,
+	trx_rseg_t*	rseg,
+	trx_undo_t**	undo,
+	ulint		type)
 	MY_ATTRIBUTE((nonnull, warn_unused_result));
 /******************************************************************//**
 Sets the state of the undo log segment at a transaction finish.
@@ -276,7 +281,7 @@ trx_undo_set_state_at_finish(
 
 /** Set the state of the undo log segment at a XA PREPARE or XA ROLLBACK.
 @param[in,out]	trx		transaction
-@param[in,out]	undo		undo log
+@param[in,out]	undo		insert_undo or update_undo log
 @param[in]	rollback	false=XA PREPARE, true=XA ROLLBACK
 @param[in,out]	mtr		mini-transaction
 @return undo log segment header page, x-latched */
@@ -287,7 +292,20 @@ trx_undo_set_state_at_prepare(
 	bool		rollback,
 	mtr_t*		mtr);
 
-/** Free an old insert or temporary undo log after commit or rollback.
+/**********************************************************************//**
+Adds the update undo log header as the first in the history list, and
+frees the memory object, or puts it to the list of cached update undo log
+segments. */
+void
+trx_undo_update_cleanup(
+/*====================*/
+	trx_t*		trx,		/*!< in: trx owning the update
+					undo log */
+	page_t*		undo_page,	/*!< in: update undo log header page,
+					x-latched */
+	mtr_t*		mtr);		/*!< in: mtr */
+
+/** Free an insert or temporary undo log after commit or rollback.
 The information is not needed after a commit or rollback, therefore
 the data can be discarded.
 @param[in,out]	undo	undo log
@@ -325,7 +343,8 @@ trx_undo_parse_page_init(
 	const byte*	end_ptr,/*!< in: buffer end */
 	page_t*		page,	/*!< in: page or NULL */
 	mtr_t*		mtr);	/*!< in: mtr or NULL */
-/** Parse the redo log entry of an undo log page header create.
+/** Parse the redo log entry of an undo log page header create or reuse.
+@param[in]	type	MLOG_UNDO_HDR_CREATE or MLOG_UNDO_HDR_REUSE
 @param[in]	ptr	redo log record
 @param[in]	end_ptr	end of log buffer
 @param[in,out]	page	page frame or NULL
@@ -333,6 +352,7 @@ trx_undo_parse_page_init(
 @return end of log record or NULL */
 byte*
 trx_undo_parse_page_header(
+	mlog_id_t	type,
 	const byte*	ptr,
 	const byte*	end_ptr,
 	page_t*		page,
@@ -372,8 +392,18 @@ struct trx_undo_t {
 	/*-----------------------------*/
 	ulint		id;		/*!< undo log slot number within the
 					rollback segment */
+	ulint		type;		/*!< TRX_UNDO_INSERT or
+					TRX_UNDO_UPDATE */
 	ulint		state;		/*!< state of the corresponding undo log
 					segment */
+	ibool		del_marks;	/*!< relevant only in an update undo
+					log: this is TRUE if the transaction may
+					have delete marked records, because of
+					a delete of a row or an update of an
+					indexed field; purge is then
+					necessary; also TRUE if the transaction
+					has updated an externally stored
+					field */
 	trx_id_t	trx_id;		/*!< id of the trx assigned to the undo
 					log */
 	XID		xid;		/*!< X/Open XA transaction
@@ -420,8 +450,8 @@ struct trx_undo_t {
 /*-------------------------------------------------------------*/
 /** Transaction undo log page header offsets */
 /* @{ */
-#define	TRX_UNDO_PAGE_TYPE	0	/*!< unused; 0 (before MariaDB 10.3.1:
-					TRX_UNDO_INSERT or TRX_UNDO_UPDATE) */
+#define	TRX_UNDO_PAGE_TYPE	0	/*!< TRX_UNDO_INSERT or
+					TRX_UNDO_UPDATE */
 #define	TRX_UNDO_PAGE_START	2	/*!< Byte offset where the undo log
 					records for the LATEST transaction
 					start on this page (remember that
@@ -482,23 +512,14 @@ log segment */
 page of an update undo log segment. */
 /* @{ */
 /*-------------------------------------------------------------*/
-/** Transaction start identifier, or 0 if the undo log segment has been
-completely purged and trx_purge_free_segment() has started freeing it */
-#define	TRX_UNDO_TRX_ID		0
-/** Transaction end identifier (if the log is in a history list),
-or 0 if the transaction has not been committed */
-#define	TRX_UNDO_TRX_NO		8
-/** Before MariaDB 10.3.1, when purge did not reset DB_TRX_ID of
-surviving user records, this used to be called TRX_UNDO_DEL_MARKS.
-
-The value 1 indicates that purge needs to process the undo log segment.
-The value 0 indicates that all of it has been processed, and
-trx_purge_free_segment() has been invoked, so the log is not safe to access.
-
-Before MariaDB 10.3.1, a log segment may carry the value 0 even before
-trx_purge_free_segment() was called, for those undo log records for
-which purge would not result in removing delete-marked records. */
-#define	TRX_UNDO_NEEDS_PURGE	16
+#define	TRX_UNDO_TRX_ID		0	/*!< Transaction id */
+#define	TRX_UNDO_TRX_NO		8	/*!< Transaction number of the
+					transaction; defined only if the log
+					is in a history list */
+#define TRX_UNDO_DEL_MARKS	16	/*!< Defined only in an update undo
+					log: TRUE if the transaction may have
+					done delete markings of records, and
+					thus purge is necessary */
 #define	TRX_UNDO_LOG_START	18	/*!< Offset of the first undo log record
 					of this log on the header page; purge
 					may remove undo log record from the
@@ -528,7 +549,7 @@ which purge would not result in removing delete-marked records. */
 #define TRX_UNDO_LOG_OLD_HDR_SIZE (34 + FLST_NODE_SIZE)
 
 /* Note: the writing of the undo log old header is coded by a log record
-MLOG_UNDO_HDR_CREATE. The appending of an XID to the
+MLOG_UNDO_HDR_CREATE or MLOG_UNDO_HDR_REUSE. The appending of an XID to the
 header is logged separately. In this sense, the XID is not really a member
 of the undo log header. TODO: do not append the XID to the log header if XA
 is not needed by the user. The XID wastes about 150 bytes of space in every

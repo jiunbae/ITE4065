@@ -1916,13 +1916,12 @@ pars_create_table(
 	table = dict_mem_table_create(
 		table_sym->name, 0, n_cols, 0, flags, flags2);
 
-	mem_heap_t* heap = pars_sym_tab_global->heap;
 	column = column_defs;
 
 	while (column) {
 		dtype = dfield_get_type(que_node_get_val(column));
 
-		dict_mem_table_add_col(table, heap,
+		dict_mem_table_add_col(table, table->heap,
 				       column->name, dtype->mtype,
 				       dtype->prtype, dtype->len);
 		column->resolved = TRUE;
@@ -1931,10 +1930,8 @@ pars_create_table(
 		column = static_cast<sym_node_t*>(que_node_get_next(column));
 	}
 
-	dict_table_add_system_columns(table, heap);
-	node = tab_create_graph_create(table, heap,
-				       FIL_ENCRYPTION_DEFAULT,
-				       FIL_DEFAULT_ENCRYPTION_KEY);
+	node = tab_create_graph_create(table, pars_sym_tab_global->heap,
+		FIL_ENCRYPTION_DEFAULT, FIL_DEFAULT_ENCRYPTION_KEY);
 
 	table_sym->resolved = TRUE;
 	table_sym->token_type = SYM_TABLE;

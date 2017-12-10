@@ -21,6 +21,8 @@
 #pragma interface			/* gcc class implementation */
 #endif
 
+#include "my_global.h"                          /* ulong */
+
 /*
   Stored procedures/functions cache. This is used as follows:
    * Each thread has its own cache.
@@ -30,7 +32,7 @@
 
 class sp_head;
 class sp_cache;
-class Database_qualified_name;
+class sp_name;
 
 /*
   Cache usage scenarios:
@@ -57,7 +59,7 @@ void sp_cache_init();
 void sp_cache_end();
 void sp_cache_clear(sp_cache **cp);
 void sp_cache_insert(sp_cache **cp, sp_head *sp);
-sp_head *sp_cache_lookup(sp_cache **cp, const Database_qualified_name *name);
+sp_head *sp_cache_lookup(sp_cache **cp, sp_name *name);
 void sp_cache_invalidate();
 void sp_cache_flush_obsolete(sp_cache **cp, sp_head **sp);
 ulong sp_cache_version();

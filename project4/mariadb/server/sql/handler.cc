@@ -20,7 +20,7 @@
   Handler-calling-functions
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "unireg.h"
 #include "rpl_handler.h"
@@ -41,7 +41,6 @@
 #include <mysql/psi/mysql_table.h>
 #include "debug_sync.h"         // DEBUG_SYNC
 #include "sql_audit.h"
-#include "ha_sequence.h"
 
 #ifdef WITH_PARTITION_STORAGE_ENGINE
 #include "ha_partition.h"
@@ -84,12 +83,12 @@ ulong failed_ha_2pc= 0;
 /* size of savepoint storage area (see ha_init) */
 ulong savepoint_alloc_size= 0;
 
-static const LEX_CSTRING sys_table_aliases[]=
+static const LEX_STRING sys_table_aliases[]=
 {
-  { STRING_WITH_LEN("INNOBASE") },  { STRING_WITH_LEN("INNODB") },
-  { STRING_WITH_LEN("HEAP") },      { STRING_WITH_LEN("MEMORY") },
-  { STRING_WITH_LEN("MERGE") },     { STRING_WITH_LEN("MRG_MYISAM") },
-  { STRING_WITH_LEN("Maria") },     { STRING_WITH_LEN("Aria") },
+  { C_STRING_WITH_LEN("INNOBASE") },  { C_STRING_WITH_LEN("INNODB") },
+  { C_STRING_WITH_LEN("HEAP") },      { C_STRING_WITH_LEN("MEMORY") },
+  { C_STRING_WITH_LEN("MERGE") },     { C_STRING_WITH_LEN("MRG_MYISAM") },
+  { C_STRING_WITH_LEN("Maria") },      { C_STRING_WITH_LEN("Aria") },
   {NullS, 0}
 };
 
@@ -168,10 +167,9 @@ handlerton *ha_default_tmp_handlerton(THD *thd)
   RETURN
     pointer to storage engine plugin handle
 */
-plugin_ref ha_resolve_by_name(THD *thd, const LEX_CSTRING *name,
-                              bool tmp_table)
+plugin_ref ha_resolve_by_name(THD *thd, const LEX_STRING *name, bool tmp_table)
 {
-  const LEX_CSTRING *table_alias;
+  const LEX_STRING *table_alias;
   plugin_ref plugin;
 
 redo:
@@ -301,6 +299,7 @@ handler *get_ha_partition(partition_info *part_info)
 }
 #endif
 
+
 static const char **handler_errmsgs;
 
 C_MODE_START
@@ -414,7 +413,7 @@ static int full_discover_for_existence(handlerton *, const char *, const char *)
 static int ext_based_existence(handlerton *, const char *, const char *)
 { return 0; }
 
-static int hton_ext_based_table_discovery(handlerton *hton, LEX_CSTRING *db,
+static int hton_ext_based_table_discovery(handlerton *hton, LEX_STRING *db,
                              MY_DIR *dir, handlerton::discovered_list *result)
 {
   /*
@@ -627,7 +626,7 @@ int ha_initialize_handlerton(st_plugin_int *plugin)
   /* 
     This is entirely for legacy. We will create a new "disk based" hton and a 
     "memory" hton which will be configurable longterm. We should be able to 
-    remove partition.
+    remove partition and myisammrg.
   */
   switch (hton->db_type) {
   case DB_TYPE_HEAP:
@@ -638,9 +637,6 @@ int ha_initialize_handlerton(st_plugin_int *plugin)
     break;
   case DB_TYPE_PARTITION_DB:
     partition_hton= hton;
-    break;
-  case DB_TYPE_SEQUENCE:
-    sql_sequence_hton= hton;
     break;
   default:
     break;
@@ -1558,7 +1554,6 @@ static int
 commit_one_phase_2(THD *thd, bool all, THD_TRANS *trans, bool is_real_trans)
 {
   int error= 0;
-  uint count= 0;
   Ha_trx_info *ha_info= trans->ha_list, *ha_info_next;
   DBUG_ENTER("commit_one_phase_2");
   if (is_real_trans)
@@ -1576,8 +1571,6 @@ commit_one_phase_2(THD *thd, bool all, THD_TRANS *trans, bool is_real_trans)
       }
       /* Should this be done only if is_real_trans is set ? */
       status_var_increment(thd->status_var.ha_commit_count);
-      if (is_real_trans && ht != binlog_hton && ha_info->is_trx_read_write())
-        ++count;
       ha_info_next= ha_info->next();
       ha_info->reset(); /* keep it conveniently zero-filled */
     }
@@ -1596,8 +1589,6 @@ commit_one_phase_2(THD *thd, bool all, THD_TRANS *trans, bool is_real_trans)
   {
     thd->has_waiter= false;
     thd->transaction.cleanup();
-    if (count >= 2)
-      statistic_increment(transactions_multi_engine, LOCK_status);
   }
 
   DBUG_RETURN(error);
@@ -2247,7 +2238,7 @@ int ha_start_consistent_snapshot(THD *thd)
   */
   if (warn)
     push_warning(thd, Sql_condition::WARN_LEVEL_WARN, ER_UNKNOWN_ERROR,
-                 "This MariaDB server does not support any "
+                 "This MySQL server does not support any "
                  "consistent-read capable storage engine");
   return 0;
 }
@@ -2390,18 +2381,6 @@ int ha_delete_table(THD *thd, handlerton *table_type, const char *path,
 /****************************************************************************
 ** General handler functions
 ****************************************************************************/
-
-
-/**
-   Clone a handler
-
-   @param name     name of new table instance
-   @param mem_root Where 'this->ref' should be allocated. It can't be
-                   in this->table->mem_root as otherwise we will not be
-                   able to reclaim that memory when the clone handler
-                   object is destroyed.
-*/
-
 handler *handler::clone(const char *name, MEM_ROOT *mem_root)
 {
   handler *new_handler= get_new_handler(table->s, mem_root, ht);
@@ -2412,6 +2391,16 @@ handler *handler::clone(const char *name, MEM_ROOT *mem_root)
     goto err;
 
   /*
+    Allocate handler->ref here because otherwise ha_open will allocate it
+    on this->table->mem_root and we will not be able to reclaim that memory 
+    when the clone handler object is destroyed.
+  */
+
+  if (!(new_handler->ref= (uchar*) alloc_root(mem_root,
+                                              ALIGN_SIZE(ref_length)*2)))
+    goto err;
+
+  /*
     TODO: Implement a more efficient way to have more than one index open for
     the same table instance. The ha_open call is not cachable for clone.
 
@@ -2419,7 +2408,7 @@ handler *handler::clone(const char *name, MEM_ROOT *mem_root)
     and should be able to use the original instance of the table.
   */
   if (new_handler->ha_open(table, name, table->db_stat,
-                           HA_OPEN_IGNORE_IF_LOCKED, mem_root))
+                           HA_OPEN_IGNORE_IF_LOCKED))
     goto err;
 
   return new_handler;
@@ -2427,11 +2416,6 @@ handler *handler::clone(const char *name, MEM_ROOT *mem_root)
 err:
   delete new_handler;
   return NULL;
-}
-
-LEX_CSTRING *handler::engine_name()
-{
-  return hton_name(ht);
 }
 
 
@@ -2497,7 +2481,7 @@ PSI_table_share *handler::ha_table_share_psi() const
     Don't wait for locks if not HA_OPEN_WAIT_IF_LOCKED is set
 */
 int handler::ha_open(TABLE *table_arg, const char *name, int mode,
-                     uint test_if_locked, MEM_ROOT *mem_root)
+                     uint test_if_locked)
 {
   int error;
   DBUG_ENTER("handler::ha_open");
@@ -2544,9 +2528,9 @@ int handler::ha_open(TABLE *table_arg, const char *name, int mode,
       table->db_stat|=HA_READ_ONLY;
     (void) extra(HA_EXTRA_NO_READCHECK);	// Not needed in SQL
 
-    /* Allocate ref in thd or on the table's mem_root */
-    if (!(ref= (uchar*) alloc_root(mem_root ? mem_root : &table->mem_root, 
-                                   ALIGN_SIZE(ref_length)*2)))
+    /* ref is already allocated for us if we're called from handler::clone() */
+    if (!ref && !(ref= (uchar*) alloc_root(&table->mem_root, 
+                                          ALIGN_SIZE(ref_length)*2)))
     {
       ha_close();
       error=HA_ERR_OUT_OF_MEM;
@@ -2557,7 +2541,6 @@ int handler::ha_open(TABLE *table_arg, const char *name, int mode,
   }
   reset_statistics();
   internal_tmp_table= MY_TEST(test_if_locked & HA_OPEN_INTERNAL_TABLE);
-
   DBUG_RETURN(error);
 }
 
@@ -2806,11 +2789,10 @@ int handler::ha_rnd_init_with_error(bool scan)
 
 
 /**
-  Read first row (only) from a table. Used for reading tables with
-  only one row, either based on table statistics or if table is a SEQUENCE.
+  Read first row (only) from a table.
 
-  This is never called for normal InnoDB tables, as these table types
-  does not have HA_STATS_RECORDS_IS_EXACT set.
+  This is never called for InnoDB tables, as these table types
+  has the HA_STATS_RECORDS_IS_EXACT set.
 */
 int handler::read_first_row(uchar * buf, uint primary_key)
 {
@@ -3332,10 +3314,6 @@ void handler::ha_release_auto_increment()
   @param msg      Error message template to which key value should be
                   added.
   @param errflag  Flags for my_error() call.
-
-  @notes
-    The error message is from ER_DUP_ENTRY_WITH_KEY_NAME but to keep things compatibly
-    with old code, the error number is ER_DUP_ENTRY
 */
 
 void print_keydup_error(TABLE *table, KEY *key, const char *msg, myf errflag)
@@ -3360,8 +3338,7 @@ void print_keydup_error(TABLE *table, KEY *key, const char *msg, myf errflag)
       str.length(max_length-4);
       str.append(STRING_WITH_LEN("..."));
     }
-    my_printf_error(ER_DUP_ENTRY, msg, errflag, str.c_ptr_safe(),
-                    key->name.str);
+    my_printf_error(ER_DUP_ENTRY, msg, errflag, str.c_ptr_safe(), key->name);
   }
 }
 
@@ -3596,7 +3573,7 @@ void handler::print_error(int error, myf errflag)
     const char *ptr= "???";
     uint key_nr= get_dup_key(error);
     if ((int) key_nr >= 0)
-      ptr= table->key_info[key_nr].name.str;
+      ptr= table->key_info[key_nr].name;
     my_error(ER_DROP_INDEX_FK, errflag, ptr);
     DBUG_VOID_RETURN;
   }
@@ -3616,7 +3593,7 @@ void handler::print_error(int error, myf errflag)
     break;
   case HA_ERR_AUTOINC_ERANGE:
     textno= error;
-    my_error(textno, errflag, table->next_number_field->field_name.str,
+    my_error(textno, errflag, table->next_number_field->field_name,
              table->in_use->get_stmt_da()->current_row_for_warning());
     DBUG_VOID_RETURN;
     break;
@@ -4017,7 +3994,7 @@ void handler::mark_trx_read_write_internal()
   */
   if (ha_info->is_started())
   {
-    DBUG_ASSERT(has_transaction_manager());
+    DBUG_ASSERT(has_transactions());
     /*
       table_share can be NULL in ha_delete_table(). See implementation
       of standalone function ha_delete_table() in sql_base.cc.
@@ -4057,7 +4034,7 @@ int handler::ha_repair(THD* thd, HA_CHECK_OPT* check_opt)
 */
 
 int
-handler::ha_bulk_update_row(const uchar *old_data, const uchar *new_data,
+handler::ha_bulk_update_row(const uchar *old_data, uchar *new_data,
                             uint *dup_key_found)
 {
   DBUG_ASSERT(table_share->tmp_table != NO_TMP_TABLE ||
@@ -4672,7 +4649,7 @@ void handler::update_global_index_stats()
       DBUG_ASSERT(key_info->cache_name);
       if (!key_info->cache_name)
         continue;
-      key_length= table->s->table_cache_key.length + key_info->name.length + 1;
+      key_length= table->s->table_cache_key.length + key_info->name_length + 1;
       mysql_mutex_lock(&LOCK_global_index_stats);
       // Gets the global index stats, creating one if necessary.
       if (!(index_stats= (INDEX_STATS*) my_hash_search(&global_index_stats,
@@ -5063,28 +5040,22 @@ private:
         loaded, frm is invalid), the return value will be true, but
         *hton will be NULL.
 */
-
 bool ha_table_exists(THD *thd, const char *db, const char *table_name,
-                     handlerton **hton, bool *is_sequence)
+                     handlerton **hton)
 {
   handlerton *dummy;
-  bool dummy2;
   DBUG_ENTER("ha_table_exists");
 
   if (hton)
     *hton= 0;
   else if (engines_with_discover)
     hton= &dummy;
-  if (!is_sequence)
-    is_sequence= &dummy2;
-  *is_sequence= 0;
 
   TDC_element *element= tdc_lock_share(thd, db, table_name);
   if (element && element != MY_ERRPTR)
   {
     if (hton)
       *hton= element->share->db_type();
-    *is_sequence= element->share->table_type == TABLE_TYPE_SEQUENCE;
     tdc_unlock_share(element);
     DBUG_RETURN(TRUE);
   }
@@ -5100,17 +5071,11 @@ bool ha_table_exists(THD *thd, const char *db, const char *table_name,
     if (hton)
     {
       char engine_buf[NAME_CHAR_LEN + 1];
-      LEX_CSTRING engine= { engine_buf, 0 };
-      Table_type type;
+      LEX_STRING engine= { engine_buf, 0 };
 
-      if ((type= dd_frm_type(thd, path, &engine, is_sequence)) ==
-          TABLE_TYPE_UNKNOWN)
-        DBUG_RETURN(0);
-      
-      if (type != TABLE_TYPE_VIEW)
+      if (dd_frm_type(thd, path, &engine) != FRMTYPE_VIEW)
       {
-        plugin_ref p=  plugin_lock_by_name(thd, &engine,
-                                           MYSQL_STORAGE_ENGINE_PLUGIN);
+        plugin_ref p=  plugin_lock_by_name(thd, &engine,  MYSQL_STORAGE_ENGINE_PLUGIN);
         *hton= p ? plugin_hton(p) : NULL;
         if (*hton)
           // verify that the table really exists
@@ -5130,6 +5095,7 @@ bool ha_table_exists(THD *thd, const char *db, const char *table_name,
       *hton= args.hton;
     DBUG_RETURN(TRUE);
   }
+
 
   if (need_full_discover_for_existence)
   {
@@ -5172,24 +5138,17 @@ static int cmp_file_names(const void *a, const void *b)
   return my_strnncoll(cs, (uchar*)aa, strlen(aa), (uchar*)bb, strlen(bb));
 }
 
-static int cmp_table_names(LEX_CSTRING * const *a, LEX_CSTRING * const *b)
+static int cmp_table_names(LEX_STRING * const *a, LEX_STRING * const *b)
 {
   return my_strnncoll(&my_charset_bin, (uchar*)((*a)->str), (*a)->length,
                                        (uchar*)((*b)->str), (*b)->length);
 }
 
-#ifndef DBUG_OFF
-static int cmp_table_names_desc(LEX_CSTRING * const *a, LEX_CSTRING * const *b)
-{
-  return -cmp_table_names(a, b);
-}
-#endif
-
 }
 
 Discovered_table_list::Discovered_table_list(THD *thd_arg,
-                 Dynamic_array<LEX_CSTRING*> *tables_arg,
-                 const LEX_CSTRING *wild_arg) :
+                 Dynamic_array<LEX_STRING*> *tables_arg,
+                 const LEX_STRING *wild_arg) :
   thd(thd_arg), with_temps(false), tables(tables_arg)
 {
   if (wild_arg->str && wild_arg->str[0])
@@ -5213,7 +5172,7 @@ bool Discovered_table_list::add_table(const char *tname, size_t tlen)
                          wild_prefix, wild_one, wild_many))
       return 0;
 
-  LEX_CSTRING *name= thd->make_clex_string(tname, tlen);
+  LEX_STRING *name= thd->make_lex_string(tname, tlen);
   if (!name || tables->append(name))
     return 1;
   return 0;
@@ -5237,23 +5196,14 @@ void Discovered_table_list::sort()
   tables->sort(cmp_table_names);
 }
 
-
-#ifndef DBUG_OFF
-void Discovered_table_list::sort_desc()
-{
-  tables->sort(cmp_table_names_desc);
-}
-#endif
-
-
 void Discovered_table_list::remove_duplicates()
 {
-  LEX_CSTRING **src= tables->front();
-  LEX_CSTRING **dst= src;
+  LEX_STRING **src= tables->front();
+  LEX_STRING **dst= src;
   sort();
   while (++dst <= tables->back())
   {
-    LEX_CSTRING *s= *src, *d= *dst;
+    LEX_STRING *s= *src, *d= *dst;
     DBUG_ASSERT(strncmp(s->str, d->str, MY_MIN(s->length, d->length)) <= 0);
     if ((s->length != d->length || strncmp(s->str, d->str, d->length)))
     {
@@ -5267,7 +5217,7 @@ void Discovered_table_list::remove_duplicates()
 
 struct st_discover_names_args
 {
-  LEX_CSTRING *db;
+  LEX_STRING *db;
   MY_DIR *dirp;
   Discovered_table_list *result;
   uint possible_duplicates;
@@ -5312,7 +5262,7 @@ static my_bool discover_names(THD *thd, plugin_ref plugin,
   for DROP DATABASE (as it needs to know and delete non-table files).
 */
 
-int ha_discover_table_names(THD *thd, LEX_CSTRING *db, MY_DIR *dirp,
+int ha_discover_table_names(THD *thd, LEX_STRING *db, MY_DIR *dirp,
                             Discovered_table_list *result, bool reusable)
 {
   int error;
@@ -5662,7 +5612,7 @@ bool ha_show_status(THD *thd, handlerton *db_type, enum ha_stat_type stat)
   {
     if (db_type->state != SHOW_OPTION_YES)
     {
-      const LEX_CSTRING *name= hton_name(db_type);
+      const LEX_STRING *name= hton_name(db_type);
       result= stat_print(thd, name->str, name->length,
                          "", 0, "DISABLED", 8) ? 1 : 0;
     }
@@ -5742,7 +5692,7 @@ bool handler::check_table_binlog_row_based_internal(bool binlog_row)
   }
 #endif
 
-  return (table->s->can_do_row_logging &&
+  return (table->s->cached_row_logging_check &&
           thd->is_current_stmt_binlog_format_row() &&
           /*
             Wsrep partially enables binary logging if it have not been
@@ -5850,6 +5800,8 @@ static int write_locked_table_maps(THD *thd)
 }
 
 
+typedef bool Log_func(THD*, TABLE*, bool, const uchar*, const uchar*);
+
 static int check_wsrep_max_ws_rows();
 
 static int binlog_log_row_internal(TABLE* table,
@@ -5890,10 +5842,10 @@ static int binlog_log_row_internal(TABLE* table,
   return error ? HA_ERR_RBR_LOGGING_FAILED : 0;
 }
 
-int binlog_log_row(TABLE* table,
-                   const uchar *before_record,
-                   const uchar *after_record,
-                   Log_func *log_func)
+static inline int binlog_log_row(TABLE* table,
+                                 const uchar *before_record,
+                                 const uchar *after_record,
+                                 Log_func *log_func)
 {
   if (!table->file->check_table_binlog_row_based(1))
     return 0;
@@ -6045,7 +5997,7 @@ int handler::ha_write_row(uchar *buf)
                       { error= write_row(buf); })
 
   MYSQL_INSERT_ROW_DONE(error);
-  if (likely(!error) && !row_already_logged)
+  if (likely(!error))
   {
     rows_changed++;
     error= binlog_log_row(table, 0, buf, log_func);
@@ -6055,7 +6007,7 @@ int handler::ha_write_row(uchar *buf)
 }
 
 
-int handler::ha_update_row(const uchar *old_data, const uchar *new_data)
+int handler::ha_update_row(const uchar *old_data, uchar *new_data)
 {
   int error;
   Log_func *log_func= Update_rows_log_event::binlog_row_logging_function;
@@ -6077,41 +6029,13 @@ int handler::ha_update_row(const uchar *old_data, const uchar *new_data)
                       { error= update_row(old_data, new_data);})
 
   MYSQL_UPDATE_ROW_DONE(error);
-  if (likely(!error) && !row_already_logged)
+  if (likely(!error))
   {
     rows_changed++;
     error= binlog_log_row(table, old_data, new_data, log_func);
   }
   return error;
 }
-
-/*
-  Update first row. Only used by sequence tables
-*/
-
-int handler::update_first_row(uchar *new_data)
-{
-  int error;
-  if (!(error= ha_rnd_init(1)))
-  {
-    int end_error;
-    if (!(error= ha_rnd_next(table->record[1])))
-    {
-      /*
-        We have to do the memcmp as otherwise we may get error 169 from InnoDB
-      */
-      if (memcmp(new_data, table->record[1], table->s->reclength))
-        error= update_row(table->record[1], new_data);
-    }
-    end_error= ha_rnd_end();
-    if (!error)
-      error= end_error;
-    /* Logging would be wrong if update_row works but ha_rnd_end fails */
-    DBUG_ASSERT(!end_error || error != 0);
-  }
-  return error;
-}
-
 
 int handler::ha_delete_row(const uchar *buf)
 {
@@ -6560,7 +6484,7 @@ int del_global_index_stats_for_table(THD *thd, uchar* cache_key, uint cache_key_
 
 /* Remove a table from global table statistics */
 
-int del_global_table_stat(THD *thd, LEX_CSTRING *db, LEX_CSTRING *table)
+int del_global_table_stat(THD *thd, LEX_STRING *db, LEX_STRING *table)
 {
   TABLE_STATS *table_stats;
   int res = 0;
@@ -6602,7 +6526,7 @@ end:
 int del_global_index_stat(THD *thd, TABLE* table, KEY* key_info)
 {
   INDEX_STATS *index_stats;
-  uint key_length= table->s->table_cache_key.length + key_info->name.length + 1;
+  uint key_length= table->s->table_cache_key.length + key_info->name_length + 1;
   int res = 0;
   DBUG_ENTER("del_global_index_stat");
   mysql_mutex_lock(&LOCK_global_index_stats);

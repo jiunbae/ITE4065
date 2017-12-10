@@ -31,7 +31,7 @@
   (for example in storage/myisam/ha_myisam.cc) !
 */
 
-#include "sql_plugin.h"
+#include "sql_plugin.h"                         // Includes my_global.h
 #include "sql_priv.h"
 #include "sql_class.h"                          // set_var.h: THD
 #include "sys_vars.ic"
@@ -50,6 +50,7 @@
 #include "sql_base.h"                           // close_cached_tables
 #include "hostname.h"                           // host_cache_size
 #include <myisam.h>
+#include "log_slow.h"
 #include "debug_sync.h"                         // DEBUG_SYNC
 #include "sql_show.h"
 
@@ -382,11 +383,6 @@ static Sys_var_charptr Sys_basedir(
        READ_ONLY GLOBAL_VAR(mysql_home_ptr), CMD_LINE(REQUIRED_ARG, 'b'),
        IN_FS_CHARSET, DEFAULT(0));
 
-static Sys_var_charptr Sys_my_bind_addr(
-       "bind_address", "IP address to bind to.",
-       READ_ONLY GLOBAL_VAR(my_bind_addr_str), CMD_LINE(REQUIRED_ARG),
-       IN_FS_CHARSET, DEFAULT(0));
-
 static Sys_var_ulonglong Sys_binlog_cache_size(
        "binlog_cache_size", "The size of the transactional cache for "
        "updates to transactional engines for the binary log. "
@@ -395,13 +391,6 @@ static Sys_var_ulonglong Sys_binlog_cache_size(
        GLOBAL_VAR(binlog_cache_size),
        CMD_LINE(REQUIRED_ARG),
        VALID_RANGE(IO_SIZE, SIZE_T_MAX), DEFAULT(32768), BLOCK_SIZE(IO_SIZE));
-
-static Sys_var_ulonglong  Sys_binlog_file_cache_size(
-       "binlog_file_cache_size", 
-       "The size of file cache for the binary log", 
-       GLOBAL_VAR(binlog_file_cache_size),
-       CMD_LINE(REQUIRED_ARG),
-       VALID_RANGE(IO_SIZE*2, SIZE_T_MAX), DEFAULT(IO_SIZE*4), BLOCK_SIZE(IO_SIZE));
 
 static Sys_var_ulonglong Sys_binlog_stmt_cache_size(
        "binlog_stmt_cache_size", "The size of the statement cache for "
@@ -775,53 +764,6 @@ static Sys_var_struct Sys_collation_server(
        offsetof(CHARSET_INFO, name), DEFAULT(&default_charset_info),
        NO_MUTEX_GUARD, IN_BINLOG, ON_CHECK(check_collation_not_null));
 
-static Sys_var_uint Sys_column_compression_threshold(
-       "column_compression_threshold",
-       "Minimum column data length eligible for compression",
-       SESSION_VAR(column_compression_threshold), CMD_LINE(REQUIRED_ARG),
-       VALID_RANGE(0, UINT_MAX), DEFAULT(100), BLOCK_SIZE(1));
-
-static Sys_var_uint Sys_column_compression_zlib_level(
-       "column_compression_zlib_level",
-       "zlib compression level (1 gives best speed, 9 gives best compression)",
-       SESSION_VAR(column_compression_zlib_level), CMD_LINE(REQUIRED_ARG),
-       VALID_RANGE(0, 9), DEFAULT(6), BLOCK_SIZE(1));
-
-/*
-  Note that names must correspond to zlib strategy definition. So that we can
-  pass column_compression_zlib_strategy directly to deflateInit2().
-*/
-static const char *column_compression_zlib_strategy_names[]=
-{ "DEFAULT_STRATEGY", "FILTERED", "HUFFMAN_ONLY", "RLE", "FIXED", 0 };
-
-static Sys_var_enum Sys_column_compression_zlib_strategy(
-       "column_compression_zlib_strategy",
-       "The strategy parameter is used to tune the compression algorithm. Use "
-       "the value DEFAULT_STRATEGY for normal data, FILTERED for data produced "
-       "by a filter (or predictor), HUFFMAN_ONLY to force Huffman encoding "
-       "only (no string match), or RLE to limit match distances to one "
-       "(run-length encoding). Filtered data consists mostly of small values "
-       "with a somewhat random distribution. In this case, the compression "
-       "algorithm is tuned to compress them better. The effect of FILTERED is "
-       "to force more Huffman coding and less string matching; it is somewhat "
-       "intermediate between DEFAULT_STRATEGY and HUFFMAN_ONLY. RLE is "
-       "designed to be almost as fast as HUFFMAN_ONLY, but give better "
-       "compression for PNG image data. The strategy parameter only affects "
-       "the compression ratio but not the correctness of the compressed output "
-       "even if it is not set appropriately. FIXED prevents the use of dynamic "
-       "Huffman codes, allowing for a simpler decoder for special "
-       "applications.",
-       SESSION_VAR(column_compression_zlib_strategy), CMD_LINE(REQUIRED_ARG),
-       column_compression_zlib_strategy_names, DEFAULT(0));
-
-static Sys_var_mybool Sys_column_compression_zlib_wrap(
-       "column_compression_zlib_wrap",
-       "Generate zlib header and trailer and compute adler32 check value. "
-       "It can be used with storage engines that don't provide data integrity "
-       "verification to detect data corruption.",
-       SESSION_VAR(column_compression_zlib_wrap), CMD_LINE(OPT_ARG),
-       DEFAULT(FALSE));
-
 static const char *concurrent_insert_names[]= {"NEVER", "AUTO", "ALWAYS", 0};
 static Sys_var_enum Sys_concurrent_insert(
        "concurrent_insert", "Use concurrent insert with MyISAM",
@@ -1093,7 +1035,7 @@ static Sys_var_lexstring Sys_init_connect(
 #ifdef HAVE_REPLICATION
 static bool check_master_connection(sys_var *self, THD *thd, set_var *var)
 {
-  LEX_CSTRING tmp;
+  LEX_STRING tmp;
   tmp.str= var->save_result.string_value.str;
   tmp.length= var->save_result.string_value.length;
   if (!tmp.str || check_master_connection_name(&tmp))
@@ -1223,7 +1165,7 @@ static Sys_var_ulong Sys_lock_wait_timeout(
        "lock_wait_timeout",
        "Timeout in seconds to wait for a lock before returning an error.",
        SESSION_VAR(lock_wait_timeout), CMD_LINE(REQUIRED_ARG),
-       VALID_RANGE(0, LONG_TIMEOUT), DEFAULT(24 * 60 * 60), BLOCK_SIZE(1));
+       VALID_RANGE(1, LONG_TIMEOUT), DEFAULT(24 * 60 * 60), BLOCK_SIZE(1));
 
 #ifdef HAVE_MLOCKALL
 static Sys_var_mybool Sys_locked_in_memory(
@@ -1270,28 +1212,25 @@ static Sys_var_charptr Sys_log_error(
        CMD_LINE(OPT_ARG, OPT_LOG_ERROR),
        IN_FS_CHARSET, DEFAULT(disabled_my_option));
 
-static Sys_var_bit Sys_log_queries_not_using_indexes(
+static Sys_var_mybool Sys_log_queries_not_using_indexes(
        "log_queries_not_using_indexes",
        "Log queries that are executed without benefit of any index to the "
-       "slow log if it is open. Same as log_slow_filter='not_using_index'",
-       SESSION_VAR(log_slow_filter), CMD_LINE(OPT_ARG), QPLAN_NOT_USING_INDEX,
-       DEFAULT(FALSE));
+       "slow log if it is open",
+       GLOBAL_VAR(opt_log_queries_not_using_indexes),
+       CMD_LINE(OPT_ARG), DEFAULT(FALSE));
 
-static Sys_var_bit Sys_log_slow_admin_statements(
+static Sys_var_mybool Sys_log_slow_admin_statements(
        "log_slow_admin_statements",
-       "Log slow OPTIMIZE, ANALYZE, ALTER and other administrative statements "
-       "to the slow log if it is open.  Resets or sets the option 'admin' in "
-       "log_slow_disabled_statements",
-       SESSION_VAR(log_slow_disabled_statements),
-       CMD_LINE(OPT_ARG), REVERSE(LOG_SLOW_DISABLE_ADMIN), DEFAULT(TRUE));
+       "Log slow OPTIMIZE, ANALYZE, ALTER and other administrative statements to "
+       "the slow log if it is open.",
+       GLOBAL_VAR(opt_log_slow_admin_statements),
+       CMD_LINE(OPT_ARG), DEFAULT(TRUE));
 
-static Sys_var_bit Sys_log_slow_slave_statements(
+static Sys_var_mybool Sys_log_slow_slave_statements(
        "log_slow_slave_statements",
-       "Log slow statements executed by slave thread to the slow log if it is "
-       "open. Resets or sets the option 'slave' in "
-       "log_slow_disabled_statements",
-       SESSION_VAR(log_slow_disabled_statements),
-       CMD_LINE(OPT_ARG), REVERSE(LOG_SLOW_DISABLE_SLAVE), DEFAULT(TRUE));
+       "Log slow statements executed by slave thread to the slow log if it is open.",
+       GLOBAL_VAR(opt_log_slow_slave_statements),
+       CMD_LINE(OPT_ARG), DEFAULT(TRUE));
 
 static Sys_var_ulong Sys_log_warnings(
        "log_warnings",
@@ -1628,7 +1567,7 @@ static Sys_var_gtid_binlog_pos Sys_gtid_binlog_pos(
 
 
 uchar *
-Sys_var_gtid_binlog_pos::global_value_ptr(THD *thd, const LEX_CSTRING *base)
+Sys_var_gtid_binlog_pos::global_value_ptr(THD *thd, const LEX_STRING *base)
 {
   char buf[128];
   String str(buf, sizeof(buf), system_charset_info);
@@ -1656,7 +1595,7 @@ static Sys_var_gtid_current_pos Sys_gtid_current_pos(
 
 
 uchar *
-Sys_var_gtid_current_pos::global_value_ptr(THD *thd, const LEX_CSTRING *base)
+Sys_var_gtid_current_pos::global_value_ptr(THD *thd, const LEX_STRING *base)
 {
   String str;
   char *p;
@@ -1737,7 +1676,7 @@ Sys_var_gtid_slave_pos::global_update(THD *thd, set_var *var)
 
 
 uchar *
-Sys_var_gtid_slave_pos::global_value_ptr(THD *thd, const LEX_CSTRING *base)
+Sys_var_gtid_slave_pos::global_value_ptr(THD *thd, const LEX_STRING *base)
 {
   String str;
   char *p;
@@ -1858,7 +1797,7 @@ Sys_var_gtid_binlog_state::global_update(THD *thd, set_var *var)
 
 
 uchar *
-Sys_var_gtid_binlog_state::global_value_ptr(THD *thd, const LEX_CSTRING *base)
+Sys_var_gtid_binlog_state::global_value_ptr(THD *thd, const LEX_STRING *base)
 {
   char buf[512];
   String str(buf, sizeof(buf), system_charset_info);
@@ -1891,7 +1830,7 @@ static Sys_var_last_gtid Sys_last_gtid(
 
 
 uchar *
-Sys_var_last_gtid::session_value_ptr(THD *thd, const LEX_CSTRING *base)
+Sys_var_last_gtid::session_value_ptr(THD *thd, const LEX_STRING *base)
 {
   char buf[10+1+10+1+20+1];
   String str(buf, sizeof(buf), system_charset_info);
@@ -2000,7 +1939,7 @@ Sys_var_slave_parallel_mode::global_update(THD *thd, set_var *var)
 {
   enum_slave_parallel_mode new_value=
     (enum_slave_parallel_mode)var->save_result.ulonglong_value;
-  LEX_CSTRING *base_name= &var->base;
+  LEX_STRING *base_name= &var->base;
   Master_info *mi;
   bool res= false;
 
@@ -2020,7 +1959,7 @@ Sys_var_slave_parallel_mode::global_update(THD *thd, set_var *var)
     if (mi->rli.slave_running)
     {
       my_error(ER_SLAVE_MUST_STOP, MYF(0),
-               (int) mi->connection_name.length, mi->connection_name.str);
+          mi->connection_name.length, mi->connection_name.str);
       res= true;
     }
     else
@@ -2043,7 +1982,7 @@ Sys_var_slave_parallel_mode::global_update(THD *thd, set_var *var)
 
 uchar *
 Sys_var_slave_parallel_mode::global_value_ptr(THD *thd,
-                                              const LEX_CSTRING *base_name)
+                                              const LEX_STRING *base_name)
 {
   Master_info *mi;
   enum_slave_parallel_mode val=
@@ -2455,7 +2394,6 @@ export const char *optimizer_switch_names[]=
   "exists_to_in",
   "orderby_uses_equalities",
   "condition_pushdown_for_derived",
-  "split_grouping_derived",
   "default", 
   NullS
 };
@@ -3145,12 +3083,12 @@ static const char *sql_mode_names[]=
   "STRICT_ALL_TABLES", "NO_ZERO_IN_DATE", "NO_ZERO_DATE",
   "ALLOW_INVALID_DATES", "ERROR_FOR_DIVISION_BY_ZERO", "TRADITIONAL",
   "NO_AUTO_CREATE_USER", "HIGH_NOT_PRECEDENCE", "NO_ENGINE_SUBSTITUTION",
-  "PAD_CHAR_TO_FULL_LENGTH", "EMPTY_STRING_IS_NULL",
+  "PAD_CHAR_TO_FULL_LENGTH",
   0
 };
 
 export bool sql_mode_string_representation(THD *thd, sql_mode_t sql_mode,
-                                           LEX_CSTRING *ls)
+                                           LEX_STRING *ls)
 {
   set_to_string(thd, ls, sql_mode, sql_mode_names);
   return ls->str == 0;
@@ -3564,14 +3502,6 @@ static Sys_var_charptr Sys_version_compile_os(
        CMD_LINE_HELP_ONLY,
        IN_SYSTEM_CHARSET, DEFAULT(SYSTEM_TYPE));
 
-#include <source_revision.h>
-static char *server_version_source_revision;
-static Sys_var_charptr Sys_version_source_revision(
-       "version_source_revision", "Source control revision id for MariaDB source code",
-       READ_ONLY GLOBAL_VAR(server_version_source_revision),
-       CMD_LINE_HELP_ONLY,
-       IN_SYSTEM_CHARSET, DEFAULT(SOURCE_REVISION));
-
 static char *guess_malloc_library()
 {
   if (strcmp(MALLOC_LIBRARY, "system") == 0)
@@ -3613,27 +3543,6 @@ static Sys_var_ulong Sys_net_wait_timeout(
        VALID_RANGE(1, IF_WIN(INT_MAX32/1000, LONG_TIMEOUT)),
        DEFAULT(NET_WAIT_TIMEOUT), BLOCK_SIZE(1));
 
-static Sys_var_uint Sys_idle_transaction_timeout(
-       "idle_transaction_timeout",
-       "The number of seconds the server waits for idle transaction",
-       SESSION_VAR(idle_transaction_timeout), CMD_LINE(REQUIRED_ARG),
-       VALID_RANGE(0, IF_WIN(INT_MAX32/1000, LONG_TIMEOUT)),
-       DEFAULT(0), BLOCK_SIZE(1));
-
-static Sys_var_uint Sys_idle_readonly_transaction_timeout(
-       "idle_readonly_transaction_timeout",
-       "The number of seconds the server waits for read-only idle transaction",
-       SESSION_VAR(idle_readonly_transaction_timeout), CMD_LINE(REQUIRED_ARG),
-       VALID_RANGE(0, IF_WIN(INT_MAX32/1000, LONG_TIMEOUT)),
-       DEFAULT(0), BLOCK_SIZE(1));
-
-static Sys_var_uint Sys_idle_write_transaction_timeout(
-       "idle_write_transaction_timeout",
-       "The number of seconds the server waits for write idle transaction",
-       SESSION_VAR(idle_write_transaction_timeout), CMD_LINE(REQUIRED_ARG),
-       VALID_RANGE(0, IF_WIN(INT_MAX32/1000, LONG_TIMEOUT)),
-       DEFAULT(0), BLOCK_SIZE(1));
-
 static Sys_var_plugin Sys_default_storage_engine(
        "default_storage_engine", "The default storage engine for new tables",
        SESSION_VAR(table_plugin), NO_CMD_LINE,
@@ -3657,45 +3566,6 @@ static Sys_var_plugin Sys_enforce_storage_engine(
        SESSION_VAR(enforced_table_plugin),
        NO_CMD_LINE, MYSQL_STORAGE_ENGINE_PLUGIN,
        DEFAULT(&enforced_storage_engine), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_has_super));
-
-
-#ifdef HAVE_REPLICATION
-/*
-  Check
-   1. Value for gtid_pos_auto_engines is not NULL.
-   2. No slave SQL thread is running.
-*/
-static bool
-check_gtid_pos_auto_engines(sys_var *self, THD *thd, set_var *var)
-{
-  bool running;
-  bool err= false;
-
-  DBUG_ASSERT(var->type == OPT_GLOBAL);
-  if (var->value && var->value->is_null())
-    err= true;
-  else
-  {
-    running= give_error_if_slave_running(false);
-    if (running)
-      err= true;
-  }
-  return err;
-}
-
-
-static Sys_var_pluginlist Sys_gtid_pos_auto_engines(
-       "gtid_pos_auto_engines",
-       "List of engines for which to automatically create a "
-       "mysql.gtid_slave_pos_ENGINE table, if a transaction using that engine "
-       "is replicated. This can be used to avoid introducing cross-engine "
-       "transactions, if engines are used different from that used by table "
-       "mysql.gtid_slave_pos",
-       GLOBAL_VAR(opt_gtid_pos_auto_plugins), NO_CMD_LINE,
-       DEFAULT(&gtid_pos_auto_engines),
-       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_gtid_pos_auto_engines));
-#endif
-
 
 #if defined(ENABLED_DEBUG_SYNC)
 /*
@@ -4252,17 +4122,6 @@ static Sys_var_charptr Sys_license(
        READ_ONLY GLOBAL_VAR(license), NO_CMD_LINE, IN_SYSTEM_CHARSET,
        DEFAULT(STRINGIFY_ARG(LICENSE)));
 
-char *my_proxy_protocol_networks;
-static Sys_var_charptr Sys_proxy_protocol_networks(
-    "proxy_protocol_networks", "Enable proxy protocol for these source "
-    "networks. The syntax is a comma separated list of IPv4 and IPv6 "
-    "networks. If the network doesn't contain mask, it is considered to be "
-    "a single host. \"*\" represents all networks and must the only "
-    "directive on the line. String \"localhost\" represents non-TCP "
-    "local connections (Unix domain socket, Windows named pipe or shared memory).",
-    READ_ONLY GLOBAL_VAR(my_proxy_protocol_networks),
-    CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(""));
-
 static bool check_log_path(sys_var *self, THD *thd, set_var *var)
 {
   if (!var->value)
@@ -4499,7 +4358,6 @@ static bool fix_log_state(sys_var *self, THD *thd, enum_var_type type)
   return res;
 }
 
-
 static bool check_not_empty_set(sys_var *self, THD *thd, set_var *var)
 {
   return var->save_result.ulonglong_value == 0;
@@ -4589,7 +4447,7 @@ static Sys_var_mybool Sys_relay_log_recovery(
 bool Sys_var_rpl_filter::global_update(THD *thd, set_var *var)
 {
   bool result= true;                            // Assume error
-  LEX_CSTRING *base_name= &var->base;
+  LEX_STRING *base_name= &var->base;
 
   if (!base_name->length)
     base_name= &thd->variables.default_master_connection;
@@ -4603,7 +4461,7 @@ bool Sys_var_rpl_filter::global_update(THD *thd, set_var *var)
     if (mi->rli.slave_running)
     {
       my_error(ER_SLAVE_MUST_STOP, MYF(0), 
-               (int) mi->connection_name.length,
+               mi->connection_name.length,
                mi->connection_name.str);
       result= true;
     }
@@ -4650,7 +4508,7 @@ bool Sys_var_rpl_filter::set_filter_value(const char *value, Master_info *mi)
 }
 
 uchar *Sys_var_rpl_filter::global_value_ptr(THD *thd,
-                                            const LEX_CSTRING *base_name)
+                                            const LEX_STRING *base_name)
 {
   char buf[256];
   String tmp(buf, sizeof(buf), &my_charset_bin);
@@ -4806,7 +4664,7 @@ static bool update_slave_skip_counter(sys_var *self, THD *thd, Master_info *mi)
 {
   if (mi->rli.slave_running)
   {
-    my_error(ER_SLAVE_MUST_STOP, MYF(0), (int) mi->connection_name.length,
+    my_error(ER_SLAVE_MUST_STOP, MYF(0), mi->connection_name.length,
              mi->connection_name.str);
     return true;
   }
@@ -5311,38 +5169,6 @@ static Sys_var_ulong Sys_host_cache_size(
        NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(NULL),
        ON_UPDATE(fix_host_cache_size));
 
-vio_keepalive_opts opt_vio_keepalive;
-
-static Sys_var_int Sys_keepalive_time(
-       "tcp_keepalive_time",
-       "Timeout, in milliseconds, with no activity until the first TCP keep-alive packet is sent."
-       "If set to 0, system dependent default is used.",
-       AUTO_SET GLOBAL_VAR(opt_vio_keepalive.idle),
-       CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, INT_MAX32/1000),
-       DEFAULT(0),
-       BLOCK_SIZE(1),
-       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(NULL));
-
-static Sys_var_int Sys_keepalive_interval(
-       "tcp_keepalive_interval",
-       "The interval, in seconds, between when successive keep-alive packets are sent if no acknowledgement is received."
-       "If set to 0, system dependent default is used.",
-       AUTO_SET GLOBAL_VAR(opt_vio_keepalive.interval),
-       CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, INT_MAX32/1000),
-       DEFAULT(0),
-       BLOCK_SIZE(1),
-       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(NULL));
-
-static Sys_var_int Sys_keepalive_probes(
-       "tcp_keepalive_probes",
-       "The number of unacknowledged probes to send before considering the connection dead and notifying the application layer."
-       "If set to 0, system dependent default is used.",
-       AUTO_SET GLOBAL_VAR(opt_vio_keepalive.probes),
-       CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, INT_MAX32/1000),
-       DEFAULT(0),
-       BLOCK_SIZE(1),
-       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(NULL));
-
 static Sys_var_charptr Sys_ignore_db_dirs(
        "ignore_db_dirs",
        "Specifies a directory to add to the ignore list when collecting "
@@ -5422,42 +5248,15 @@ static Sys_var_keycache Sys_key_cache_segments(
        ON_UPDATE(repartition_keycache));
 
 static const char *log_slow_filter_names[]= 
-{
-  "admin", "filesort", "filesort_on_disk", "filesort_priority_queue",
-  "full_join", "full_scan", "not_using_index", "query_cache",
-  "query_cache_miss", "tmp_table", "tmp_table_on_disk", 0
+{ "admin", "filesort", "filesort_on_disk", "full_join", "full_scan",
+  "query_cache", "query_cache_miss", "tmp_table", "tmp_table_on_disk", 0
 };
-
-
 static Sys_var_set Sys_log_slow_filter(
        "log_slow_filter",
-       "Log only certain types of queries to the slow log. If variable empty alll kind of queries are logged.  All types are bound by slow_query_time, except 'not_using_index' which is always logged if enabled",
+       "Log only certain types of queries",
        SESSION_VAR(log_slow_filter), CMD_LINE(REQUIRED_ARG),
        log_slow_filter_names,
-       /* by default we log all queries except 'not_using_index' */
-       DEFAULT(my_set_bits(array_elements(log_slow_filter_names)-1) &
-               ~QPLAN_NOT_USING_INDEX));
-
-static const char *log_slow_disabled_statements_names[]=
-{ "admin", "call", "slave", "sp", 0 };
-
-static const char *log_disabled_statements_names[]=
-{ "slave", "sp", 0 };
-
-static Sys_var_set Sys_log_slow_disabled_statements(
-       "log_slow_disabled_statements",
-       "Don't log certain types of statements to slow log",
-       SESSION_VAR(log_slow_disabled_statements), CMD_LINE(REQUIRED_ARG),
-       log_slow_disabled_statements_names,
-       DEFAULT(LOG_SLOW_DISABLE_SP));
-
-static Sys_var_set Sys_log_disabled_statements(
-       "log_disabled_statements",
-       "Don't log certain types of statements to general log",
-       SESSION_VAR(log_disabled_statements), CMD_LINE(REQUIRED_ARG),
-       log_disabled_statements_names,
-       DEFAULT(LOG_DISABLE_SP),
-       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_has_super));
+       DEFAULT(my_set_bits(array_elements(log_slow_filter_names)-1)));
 
 static const char *default_regex_flags_names[]= 
 {
@@ -5762,10 +5561,12 @@ static Sys_var_ulonglong Sys_max_thread_mem(
 
 static Sys_var_sesvartrack Sys_track_session_sys_vars(
        "session_track_system_variables",
-       "Track changes in registered system variables. ",
+       "Track changes in registered system variables. "
+       "For compatibility with MySQL defaults this variable should be set to "
+       "\"autocommit, character_set_client, character_set_connection, "
+       "character_set_results, time_zone\"",
        CMD_LINE(REQUIRED_ARG), IN_SYSTEM_CHARSET,
-       DEFAULT("autocommit,character_set_client,character_set_connection,"
-       "character_set_results,time_zone"),
+       DEFAULT(""),
        NO_MUTEX_GUARD);
 
 static bool update_session_track_schema(sys_var *self, THD *thd,
@@ -5830,11 +5631,3 @@ static Sys_var_mybool Sys_session_track_state_change(
        ON_UPDATE(update_session_track_state_change));
 
 #endif //EMBEDDED_LIBRARY
-
-static Sys_var_ulong Sys_in_subquery_conversion_threshold(
-       "in_subquery_conversion_threshold",
-       "The minimum number of scalar elements in the value list of "
-       "IN predicate that triggers its conversion to IN subquery",
-       SESSION_VAR(in_subquery_conversion_threshold), CMD_LINE(OPT_ARG),
-       VALID_RANGE(0, ULONG_MAX), DEFAULT(1000), BLOCK_SIZE(1));
-

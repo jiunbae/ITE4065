@@ -394,7 +394,7 @@ virtual int check(THD* thd, HA_CHECK_OPT* check_opt)
     We implement this in ha_connect.cc. It's not an obligatory method;
     skip it and and MySQL will treat it as not implemented.
   */
-  int update_row(const uchar *old_data, const uchar *new_data);
+  int update_row(const uchar *old_data, uchar *new_data);
 
   /** @brief
     We implement this in ha_connect.cc. It's not an obligatory method;
@@ -509,7 +509,7 @@ private:
   DsMrr_impl ds_mrr;
 
 protected:
-  bool check_privileges(THD *thd, PTOS options, const char *dbn, bool quick=false);
+  bool check_privileges(THD *thd, PTOS options, char *dbn, bool quick=false);
   MODE CheckMode(PGLOBAL g, THD *thd, MODE newmode, bool *chk, bool *cras);
   char *GetDBfromName(const char *name);
 

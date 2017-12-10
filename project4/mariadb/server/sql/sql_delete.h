@@ -27,8 +27,7 @@ typedef class Item COND;
 template <typename T> class SQL_I_List;
 
 int mysql_prepare_delete(THD *thd, TABLE_LIST *table_list,
-                         uint wild_num, List<Item> &field_list, Item **conds,
-                         bool *delete_while_scanning);
+                         uint wild_num, List<Item> &field_list, Item **conds);
 bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
                   SQL_I_List<ORDER> *order, ha_rows rows, 
                   ulonglong options, select_result *result);

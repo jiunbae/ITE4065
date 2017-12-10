@@ -31,6 +31,17 @@
 #include "pfs_user.h"
 #include "pfs_account.h"
 
+#ifdef MY_ATOMIC_MODE_DUMMY
+/*
+  The performance schema can can not function with MY_ATOMIC_MODE_DUMMY,
+  a fully functional implementation of MY_ATOMIC should be used instead.
+  If the build fails with this error message:
+  - either use a different ./configure --with-atomic-ops option
+  - or do not build with the performance schema.
+*/
+#error "The performance schema needs a functional MY_ATOMIC implementation."
+#endif
+
 handlerton *pfs_hton= NULL;
 
 static handler* pfs_create_handler(handlerton *hton,
@@ -275,7 +286,7 @@ void ha_perfschema::use_hidden_primary_key(void)
   table->column_bitmaps_set_no_signal(&table->s->all_set, table->write_set);
 }
 
-int ha_perfschema::update_row(const uchar *old_data, const uchar *new_data)
+int ha_perfschema::update_row(const uchar *old_data, uchar *new_data)
 {
   DBUG_ENTER("ha_perfschema::update_row");
   if (!pfs_initialized)

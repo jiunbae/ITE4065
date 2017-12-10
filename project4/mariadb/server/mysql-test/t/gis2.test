@@ -29,16 +29,16 @@ insert into t1 values(default);
 select st_astext(p) from t1;
 drop table t1;
 
-create table t1 (p point not null default if(unix_timestamp()>10,POINT(1,1),LineString(Point(0,0),Point(1,1))));
+create table t1 (p point not null default if(unix_timestamp()>10,POINT(1,1),0));
 set timestamp=10;
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_CANT_CREATE_GEOMETRY_OBJECT
 insert into t1 values(default);
 drop table t1;
 SET timestamp=default;
 
-create table t1 (p point not null default if(unix_timestamp()>10,POINT(1,1),LineString(Point(0,0),Point(1,1))));
+create table t1 (p point not null default if(unix_timestamp()>10,POINT(1,1),0));
 set timestamp=10;
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_CANT_CREATE_GEOMETRY_OBJECT
 alter table t1 add column i int;
 drop table t1;
 SET timestamp=default;

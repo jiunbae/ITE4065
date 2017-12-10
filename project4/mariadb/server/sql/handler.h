@@ -25,6 +25,7 @@
 #pragma interface			/* gcc class implementation */
 #endif
 
+#include <my_global.h>                          /* For handlers */
 #include "sql_const.h"
 #include "sql_basic_types.h"
 #include "mysqld.h"                             /* server_id */
@@ -41,11 +42,9 @@
 #include <ft_global.h>
 #include <keycache.h>
 #include <mysql/psi/mysql_table.h>
-#include "sql_sequence.h"
 
 class Alter_info;
 class Virtual_column_info;
-class sequence_definition;
 
 // the following is for checking tables
 
@@ -263,24 +262,6 @@ enum enum_alter_inplace_result {
 #define HA_CONCURRENT_OPTIMIZE          (1ULL << 46)
 
 /*
-  If the storage engine support tables that will not roll back on commit
-  In addition the table should not lock rows and support READ and WRITE
-  UNCOMMITTED.
-  This is useful for implementing things like SEQUENCE but can also in
-  the future be useful to do logging that should never roll back.
-*/
-#define HA_CAN_TABLES_WITHOUT_ROLLBACK  (1ULL << 47)
-
-/*
-  Mainly for usage by SEQUENCE engine. Setting this flag means
-  that the table will never roll back and that all operations
-  for this table should stored in the non transactional log
-  space that will always be written, even on rollback.
-*/
-
-#define HA_PERSISTENT_TABLE              (1ULL << 48)
-
-/*
   Set of all binlog flags. Currently only contain the capabilities
   flags.
  */
@@ -399,7 +380,6 @@ enum enum_alter_inplace_result {
 
 #define HA_LEX_CREATE_TMP_TABLE	1U
 #define HA_CREATE_TMP_ALTER     8U
-#define HA_LEX_CREATE_SEQUENCE  16U
 
 #define HA_MAX_REC_LENGTH	65535
 
@@ -454,8 +434,7 @@ enum legacy_db_type
   DB_TYPE_PERFORMANCE_SCHEMA=28,
   DB_TYPE_ARIA=42,
   DB_TYPE_TOKUDB=43,
-  DB_TYPE_SEQUENCE=44,
-  DB_TYPE_FIRST_DYNAMIC=45,
+  DB_TYPE_FIRST_DYNAMIC=44,
   DB_TYPE_DEFAULT=127 // Must be last
 };
 /*
@@ -543,8 +522,6 @@ given at all. */
 */
 #define HA_CREATE_USED_STATS_SAMPLE_PAGES (1UL << 24)
 
-/* Create a sequence */
-#define HA_CREATE_USED_SEQUENCE           (1UL << 25)
 
 /*
   This is master database for most of system tables. However there
@@ -1339,7 +1316,7 @@ struct handlerton
 
      Returns 0 on success and 1 on error.
    */
-   int (*discover_table_names)(handlerton *hton, LEX_CSTRING *db, MY_DIR *dir,
+   int (*discover_table_names)(handlerton *hton, LEX_STRING *db, MY_DIR *dir,
                                discovered_list *result);
 
    /*
@@ -1385,7 +1362,7 @@ struct handlerton
 };
 
 
-static inline LEX_CSTRING *hton_name(const handlerton *hton)
+static inline LEX_STRING *hton_name(const handlerton *hton)
 {
   return &(hton2plugin[hton->slot]->name);
 }
@@ -1481,16 +1458,14 @@ struct THD_TRANS
 
   unsigned int m_unsafe_rollback_flags;
  /*
-    Define the type of statements which cannot be rolled back safely.
+    Define the type of statemens which cannot be rolled back safely.
     Each type occupies one bit in m_unsafe_rollback_flags.
   */
-  enum unsafe_statement_types
-  {
-    CREATED_TEMP_TABLE= 2,
-    DROPPED_TEMP_TABLE= 4,
-    DID_WAIT= 8,
-    DID_DDL= 0x10
-  };
+  static unsigned int const MODIFIED_NON_TRANS_TABLE= 0x01;
+  static unsigned int const CREATED_TEMP_TABLE= 0x02;
+  static unsigned int const DROPPED_TEMP_TABLE= 0x04;
+  static unsigned int const DID_WAIT= 0x08;
+  static unsigned int const DID_DDL= 0x10;
 
   void mark_created_temp_table()
   {
@@ -1510,7 +1485,6 @@ struct THD_TRANS
   bool trans_did_wait() const {
     return (m_unsafe_rollback_flags & DID_WAIT) != 0;
   }
-  bool is_trx_read_write() const;
   void mark_trans_did_ddl() { m_unsafe_rollback_flags|= DID_DDL; }
   bool trans_did_ddl() const {
     return (m_unsafe_rollback_flags & DID_DDL) != 0;
@@ -1615,16 +1589,6 @@ private:
 };
 
 
-inline bool THD_TRANS::is_trx_read_write() const
-{
-  Ha_trx_info *ha_info;
-  for (ha_info= ha_list; ha_info; ha_info= ha_info->next())
-    if (ha_info->is_trx_read_write())
-      return TRUE;
-  return FALSE;
-}
-
-
 enum enum_tx_isolation { ISO_READ_UNCOMMITTED, ISO_READ_COMMITTED,
 			 ISO_REPEATABLE_READ, ISO_SERIALIZABLE};
 
@@ -1693,9 +1657,9 @@ struct Table_scope_and_contents_source_st
 {
   CHARSET_INFO *table_charset;
   LEX_CUSTRING tabledef_version;
-  LEX_CSTRING connect_string;
-  LEX_CSTRING comment;
+  LEX_STRING connect_string;
   const char *password, *tablespace;
+  LEX_STRING comment;
   const char *data_file_name, *index_file_name;
   const char *alias;
   ulonglong max_rows,min_rows;
@@ -1733,7 +1697,6 @@ struct Table_scope_and_contents_source_st
   engine_option_value *option_list;     ///< list of table create options
   enum_stats_auto_recalc stats_auto_recalc;
   bool varchar;                         ///< 1 if table has a VARCHAR
-  bool sequence;                        // If SEQUENCE=1 was used
 
   List<Virtual_column_info> *check_constraint_list;
 
@@ -1747,7 +1710,6 @@ struct Table_scope_and_contents_source_st
   TABLE_LIST *pos_in_locked_tables;
   MDL_ticket *mdl_ticket;
   bool table_was_deleted;
-  sequence_definition *seq_create_info;
 
   void init()
   {
@@ -2186,8 +2148,8 @@ typedef struct st_key_create_information
 {
   enum ha_key_alg algorithm;
   ulong block_size;
-  LEX_CSTRING parser_name;
-  LEX_CSTRING comment;
+  LEX_STRING parser_name;
+  LEX_STRING comment;
   /**
     A flag to determine if we will check for duplicate indexes.
     This typically means that the key information was specified
@@ -2693,8 +2655,6 @@ public:
   bool mark_trx_read_write_done;           /* mark_trx_read_write was called */
   bool check_table_binlog_row_based_done; /* check_table_binlog.. was called */
   bool check_table_binlog_row_based_result; /* cached check_table_binlog... */
-  /* Set to 1 if handler logged last insert/update/delete operation */
-  bool row_already_logged;
   /* 
     TRUE <=> the engine guarantees that returned records are within the range
     being scanned.
@@ -2797,7 +2757,6 @@ public:
     mark_trx_read_write_done(0),
     check_table_binlog_row_based_done(0),
     check_table_binlog_row_based_result(0),
-    row_already_logged(0),
     in_range_check_pushed_down(FALSE),
     key_used_on_scan(MAX_KEY),
     active_index(MAX_KEY), keyread(MAX_KEY),
@@ -2828,8 +2787,7 @@ public:
   }
   /* ha_ methods: pubilc wrappers for private virtual API */
   
-  int ha_open(TABLE *table, const char *name, int mode, uint test_if_locked,
-              MEM_ROOT *mem_root= 0);
+  int ha_open(TABLE *table, const char *name, int mode, uint test_if_locked);
   int ha_index_init(uint idx, bool sorted)
   {
     DBUG_EXECUTE_IF("ha_index_init_fail", return HA_ERR_TABLE_DEF_CHANGED;);
@@ -2902,7 +2860,7 @@ public:
   */
   int ha_external_lock(THD *thd, int lock_type);
   int ha_write_row(uchar * buf);
-  int ha_update_row(const uchar * old_data, const uchar * new_data);
+  int ha_update_row(const uchar * old_data, uchar * new_data);
   int ha_delete_row(const uchar * buf);
   void ha_release_auto_increment();
 
@@ -2940,7 +2898,7 @@ public:
     int ret= end_bulk_insert();
     DBUG_RETURN(ret);
   }
-  int ha_bulk_update_row(const uchar *old_data, const uchar *new_data,
+  int ha_bulk_update_row(const uchar *old_data, uchar *new_data,
                          uint *dup_key_found);
   int ha_delete_all_rows();
   int ha_truncate();
@@ -3035,24 +2993,8 @@ public:
   virtual double keyread_time(uint index, uint ranges, ha_rows rows);
 
   virtual const key_map *keys_to_use_for_scanning() { return &key_map_empty; }
-
-  /*
-    True if changes to the table is persistent (no rollback)
-    This is manly used to decide how to log changes to the table in
-    the binary log.
-  */
   bool has_transactions()
-  {
-    return ((ha_table_flags() & (HA_NO_TRANSACTIONS | HA_PERSISTENT_TABLE))
-            == 0);
-  }
-  /*
-    True if the underlaying table doesn't support transactions
-  */
-  bool has_transaction_manager()
-  {
-    return ((ha_table_flags() & HA_NO_TRANSACTIONS) == 0);
-  }
+  { return (ha_table_flags() & HA_NO_TRANSACTIONS) == 0; }
 
   /**
     This method is used to analyse the error to see whether the error
@@ -3542,7 +3484,7 @@ public:
         cached
   */
 
-  virtual my_bool register_query_cache_table(THD *thd, const char *table_key,
+  virtual my_bool register_query_cache_table(THD *thd, char *table_key,
                                              uint key_length,
                                              qc_engine_callback
                                              *engine_callback,
@@ -3971,7 +3913,7 @@ public:
     return 0;
   }
 
-  virtual LEX_CSTRING *engine_name();
+  LEX_STRING *engine_name() { return hton_name(ht); }
   
   TABLE* get_table() { return table; }
   TABLE_SHARE* get_table_share() { return table_share; }
@@ -4058,16 +4000,10 @@ private:
     message will contain garbage.
   */
   virtual int update_row(const uchar *old_data __attribute__((unused)),
-                         const uchar *new_data __attribute__((unused)))
+                         uchar *new_data __attribute__((unused)))
   {
     return HA_ERR_WRONG_COMMAND;
   }
-
-  /*
-    Optimized function for updating the first row. Only used by sequence
-    tables
-  */
-  virtual int update_first_row(uchar *new_data);
 
   virtual int delete_row(const uchar *buf __attribute__((unused)))
   {
@@ -4131,7 +4067,6 @@ protected:
                          enum ha_rkey_function find_flag)
    { return  HA_ERR_WRONG_COMMAND; }
   friend class ha_partition;
-  friend class ha_sequence;
 public:
   /**
     This method is similar to update_row, however the handler doesn't need
@@ -4146,7 +4081,7 @@ public:
     @retval  0   Bulk delete used by handler
     @retval  1   Bulk delete not used, normal operation used
   */
-  virtual int bulk_update_row(const uchar *old_data, const uchar *new_data,
+  virtual int bulk_update_row(const uchar *old_data, uchar *new_data,
                               uint *dup_key_found)
   {
     DBUG_ASSERT(FALSE);
@@ -4232,27 +4167,11 @@ public:
   virtual handlerton *partition_ht() const
   { return ht; }
   inline int ha_write_tmp_row(uchar *buf);
-  inline int ha_delete_tmp_row(uchar *buf);
   inline int ha_update_tmp_row(const uchar * old_data, uchar * new_data);
 
   virtual void set_lock_type(enum thr_lock_type lock);
 
   friend enum icp_result handler_index_cond_check(void* h_arg);
-
-  /**
-    Find unique record by index or unique constrain
-
-    @param record        record to find (also will be fillded with
-                         actual record fields)
-    @param unique_ref    index or unique constraiun number (depends
-                         on what used in the engine
-
-    @retval -1 Error
-    @retval  1 Not found
-    @retval  0 Found
-  */
-  virtual int find_unique_row(uchar *record, uint unique_ref)
-  { return -1; /*unsupported */}
 protected:
   Handler_share *get_ha_share_ptr();
   void set_ha_share_ptr(Handler_share *arg_ha_share);
@@ -4275,7 +4194,7 @@ extern const char *myisam_stats_method_names[];
 extern ulong total_ha, total_ha_2pc;
 
 /* lookups */
-plugin_ref ha_resolve_by_name(THD *thd, const LEX_CSTRING *name, bool tmp_table);
+plugin_ref ha_resolve_by_name(THD *thd, const LEX_STRING *name, bool tmp_table);
 plugin_ref ha_lock_engine(THD *thd, const handlerton *hton);
 handlerton *ha_resolve_by_legacy_type(THD *thd, enum legacy_db_type db_type);
 handler *get_new_handler(TABLE_SHARE *share, MEM_ROOT *alloc,
@@ -4343,11 +4262,11 @@ class Discovered_table_list: public handlerton::discovered_list
   const char *wild, *wend;
   bool with_temps; // whether to include temp tables in the result
 public:
-  Dynamic_array<LEX_CSTRING*> *tables;
+  Dynamic_array<LEX_STRING*> *tables;
 
-  Discovered_table_list(THD *thd_arg, Dynamic_array<LEX_CSTRING*> *tables_arg,
-                        const LEX_CSTRING *wild_arg);
-  Discovered_table_list(THD *thd_arg, Dynamic_array<LEX_CSTRING*> *tables_arg)
+  Discovered_table_list(THD *thd_arg, Dynamic_array<LEX_STRING*> *tables_arg,
+                        const LEX_STRING *wild_arg);
+  Discovered_table_list(THD *thd_arg, Dynamic_array<LEX_STRING*> *tables_arg)
     : thd(thd_arg), wild(NULL), with_temps(true), tables(tables_arg) {}
   ~Discovered_table_list() {}
 
@@ -4356,20 +4275,13 @@ public:
 
   void sort();
   void remove_duplicates(); // assumes that the list is sorted
-#ifndef DBUG_OFF
-  /*
-     Used to find unstable mtr tests querying
-     INFORMATION_SCHEMA.TABLES without ORDER BY.
-  */
-  void sort_desc();
-#endif
 };
 
 int ha_discover_table(THD *thd, TABLE_SHARE *share);
-int ha_discover_table_names(THD *thd, LEX_CSTRING *db, MY_DIR *dirp,
+int ha_discover_table_names(THD *thd, LEX_STRING *db, MY_DIR *dirp,
                             Discovered_table_list *result, bool reusable);
 bool ha_table_exists(THD *thd, const char *db, const char *table_name,
-                     handlerton **hton= 0, bool *is_sequence= 0);
+                     handlerton **hton= 0);
 #endif
 
 /* key cache */
@@ -4424,11 +4336,6 @@ inline const char *table_case_name(HA_CREATE_INFO *info, const char *name)
   return ((lower_case_table_names == 2 && info->alias) ? info->alias : name);
 }
 
-typedef bool Log_func(THD*, TABLE*, bool, const uchar*, const uchar*);
-int binlog_log_row(TABLE* table,
-                   const uchar *before_record,
-                   const uchar *after_record,
-                   Log_func *log_func);
 
 #define TABLE_IO_WAIT(TRACKER, PSI, OP, INDEX, FLAGS, PAYLOAD) \
   { \
@@ -4446,5 +4353,5 @@ void print_keydup_error(TABLE *table, KEY *key, const char *msg, myf errflag);
 void print_keydup_error(TABLE *table, KEY *key, myf errflag);
 
 int del_global_index_stat(THD *thd, TABLE* table, KEY* key_info);
-int del_global_table_stat(THD *thd, LEX_CSTRING *db, LEX_CSTRING *table);
+int del_global_table_stat(THD *thd, LEX_STRING *db, LEX_STRING *table);
 #endif /* HANDLER_INCLUDED */

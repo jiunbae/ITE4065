@@ -15,8 +15,8 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
-#include "sql_plugin.h"                         // SHOW_MY_BOOL
-#include "sql_priv.h"
+#include "sql_plugin.h"                         // Includes my_global.h
+#include "sql_priv.h"                         // SHOW_MY_BOOL
 #include "unireg.h"
 #include "sql_class.h"                          // set_var.h: THD
 #include "sys_vars_shared.h"
@@ -295,10 +295,10 @@ public:
   sys_var_pluginvar *cast_pluginvar() { return this; }
   uchar* real_value_ptr(THD *thd, enum_var_type type);
   TYPELIB* plugin_var_typelib(void);
-  uchar* do_value_ptr(THD *thd, enum_var_type type, const LEX_CSTRING *base);
-  uchar* session_value_ptr(THD *thd, const LEX_CSTRING *base)
+  uchar* do_value_ptr(THD *thd, enum_var_type type, const LEX_STRING *base);
+  uchar* session_value_ptr(THD *thd, const LEX_STRING *base)
   { return do_value_ptr(thd, OPT_SESSION, base); }
-  uchar* global_value_ptr(THD *thd, const LEX_CSTRING *base)
+  uchar* global_value_ptr(THD *thd, const LEX_STRING *base)
   { return do_value_ptr(thd, OPT_GLOBAL, base); }
   uchar *default_value_ptr(THD *thd)
   { return do_value_ptr(thd, OPT_DEFAULT, 0); }
@@ -368,7 +368,7 @@ bool check_valid_path(const char *path, size_t len)
   return  prefix < len;
 }
 
-static void fix_dl_name(MEM_ROOT *root, LEX_CSTRING *dl)
+static void fix_dl_name(MEM_ROOT *root, LEX_STRING *dl)
 {
   const size_t so_ext_len= sizeof(SO_EXT) - 1;
   if (my_strcasecmp(&my_charset_latin1, dl->str + dl->length - so_ext_len,
@@ -448,7 +448,7 @@ static int item_val_real(struct st_mysql_value *value, double *buf)
 
 #ifdef HAVE_DLOPEN
 
-static struct st_plugin_dl *plugin_dl_find(const LEX_CSTRING *dl)
+static struct st_plugin_dl *plugin_dl_find(const LEX_STRING *dl)
 {
   uint i;
   struct st_plugin_dl *tmp;
@@ -504,7 +504,7 @@ static void free_plugin_mem(struct st_plugin_dl *p)
   if (p->handle)
     dlclose(p->handle);
 #endif
-  my_free(const_cast<char*>(p->dl.str));
+  my_free(p->dl.str);
   if (p->allocated)
     my_free(p->plugins);
 }
@@ -724,7 +724,7 @@ static my_bool read_maria_plugin_info(struct st_plugin_dl *plugin_dl,
 }
 #endif /* HAVE_DLOPEN */
 
-static st_plugin_dl *plugin_dl_add(const LEX_CSTRING *dl, int report)
+static st_plugin_dl *plugin_dl_add(const LEX_STRING *dl, int report)
 {
 #ifdef HAVE_DLOPEN
   char dlpath[FN_REFLEN];
@@ -743,7 +743,7 @@ static st_plugin_dl *plugin_dl_add(const LEX_CSTRING *dl, int report)
     plugin directory are used (to make this even remotely secure).
   */
   if (check_valid_path(dl->str, dl->length) ||
-      check_string_char_length((LEX_CSTRING *) dl, 0, NAME_CHAR_LEN,
+      check_string_char_length((LEX_STRING *) dl, 0, NAME_CHAR_LEN,
                                system_charset_info, 1) ||
       plugin_dir_len + dl->length + 1 >= FN_REFLEN)
   {
@@ -836,12 +836,10 @@ static st_plugin_dl *plugin_dl_add(const LEX_CSTRING *dl, int report)
                  static_cast<int>(plugin_dl.dl.length));
     goto ret;
   }
-  plugin_dl.dl.length= copy_and_convert((char*) plugin_dl.dl.str,
-                                        plugin_dl.dl.length,
-                                        files_charset_info, dl->str,
-                                        dl->length, system_charset_info,
-                                        &dummy_errors);
-  ((char*) plugin_dl.dl.str)[plugin_dl.dl.length]= 0;
+  plugin_dl.dl.length= copy_and_convert(plugin_dl.dl.str, plugin_dl.dl.length,
+    files_charset_info, dl->str, dl->length, system_charset_info,
+    &dummy_errors);
+  plugin_dl.dl.str[plugin_dl.dl.length]= 0;
   /* Add this dll to array */
   if (! (tmp= plugin_dl_insert_or_reuse(&plugin_dl)))
   {
@@ -884,8 +882,7 @@ static void plugin_dl_del(struct st_plugin_dl *plugin_dl)
 }
 
 
-static struct st_plugin_int *plugin_find_internal(const LEX_CSTRING *name,
-                                                  int type)
+static struct st_plugin_int *plugin_find_internal(const LEX_STRING *name, int type)
 {
   uint i;
   DBUG_ENTER("plugin_find_internal");
@@ -912,7 +909,7 @@ static struct st_plugin_int *plugin_find_internal(const LEX_CSTRING *name,
 }
 
 
-static SHOW_COMP_OPTION plugin_status(const LEX_CSTRING *name, int type)
+static SHOW_COMP_OPTION plugin_status(const LEX_STRING *name, int type)
 {
   SHOW_COMP_OPTION rc= SHOW_OPTION_NO;
   struct st_plugin_int *plugin;
@@ -929,7 +926,7 @@ static SHOW_COMP_OPTION plugin_status(const LEX_CSTRING *name, int type)
 }
 
 
-bool plugin_is_ready(const LEX_CSTRING *name, int type)
+bool plugin_is_ready(const LEX_STRING *name, int type)
 {
   bool rc= FALSE;
   if (plugin_status(name, type) == SHOW_OPTION_YES)
@@ -940,15 +937,11 @@ bool plugin_is_ready(const LEX_CSTRING *name, int type)
 
 SHOW_COMP_OPTION plugin_status(const char *name, size_t len, int type)
 {
-  LEX_CSTRING plugin_name= { name, len };
+  LEX_STRING plugin_name= { (char *) name, len };
   return plugin_status(&plugin_name, type);
 }
 
 
-/*
-  If LEX is passed non-NULL, an automatic unlock of the plugin will happen
-  in the LEX destructor.
-*/
 static plugin_ref intern_plugin_lock(LEX *lex, plugin_ref rc,
                                      uint state_mask= PLUGIN_IS_READY |
                                                       PLUGIN_IS_UNINITIALIZED |
@@ -994,16 +987,6 @@ static plugin_ref intern_plugin_lock(LEX *lex, plugin_ref rc,
 }
 
 
-/*
-  Notes on lifetime:
-
-  If THD is passed as non-NULL (and with a non-NULL thd->lex), an entry is made
-  in the thd->lex which will cause an automatic unlock of the plugin in the LEX
-  destructor. In this case, no manual unlock must be done.
-
-  Otherwise, when passing a NULL THD, the caller must arrange that plugin
-  unlock happens later.
-*/
 plugin_ref plugin_lock(THD *thd, plugin_ref ptr)
 {
   LEX *lex= thd ? thd->lex : 0;
@@ -1040,17 +1023,7 @@ plugin_ref plugin_lock(THD *thd, plugin_ref ptr)
 }
 
 
-/*
-  Notes on lifetime:
-
-  If THD is passed as non-NULL (and with a non-NULL thd->lex), an entry is made
-  in the thd->lex which will cause an automatic unlock of the plugin in the LEX
-  destructor. In this case, no manual unlock must be done.
-
-  Otherwise, when passing a NULL THD, the caller must arrange that plugin
-  unlock happens later.
-*/
-plugin_ref plugin_lock_by_name(THD *thd, const LEX_CSTRING *name, int type)
+plugin_ref plugin_lock_by_name(THD *thd, const LEX_STRING *name, int type)
 {
   LEX *lex= thd ? thd->lex : 0;
   plugin_ref rc= NULL;
@@ -1093,7 +1066,7 @@ static st_plugin_int *plugin_insert_or_reuse(struct st_plugin_int *plugin)
     Requires that a write-lock is held on LOCK_system_variables_hash
 */
 static bool plugin_add(MEM_ROOT *tmp_root,
-                       const LEX_CSTRING *name, LEX_CSTRING *dl, int report)
+                       const LEX_STRING *name, LEX_STRING *dl, int report)
 {
   struct st_plugin_int tmp, *maybe_dupe;
   struct st_maria_plugin *plugin;
@@ -1558,7 +1531,7 @@ int plugin_init(int *argc, char **argv, int flags)
   MEM_ROOT tmp_root;
   bool reaped_mandatory_plugin= false;
   bool mandatory= true;
-  LEX_CSTRING MyISAM= { STRING_WITH_LEN("MyISAM") };
+  LEX_STRING MyISAM= { C_STRING_WITH_LEN("MyISAM") };
   DBUG_ENTER("plugin_init");
 
   if (initialized)
@@ -1667,7 +1640,7 @@ int plugin_init(int *argc, char **argv, int flags)
     */
     global_system_variables.table_plugin =
       intern_plugin_lock(NULL, plugin_int_to_ref(plugin_ptr));
-    DBUG_SLOW_ASSERT(plugin_ptr->ref_count == 1);
+      DBUG_ASSERT(plugin_ptr->ref_count == 1);
 
   }
   mysql_mutex_unlock(&LOCK_plugin);
@@ -1687,11 +1660,10 @@ int plugin_init(int *argc, char **argv, int flags)
       char path[FN_REFLEN + 1];
       build_table_filename(path, sizeof(path) - 1, "mysql", "plugin", reg_ext, 0);
       char engine_name_buf[NAME_CHAR_LEN + 1];
-      LEX_CSTRING maybe_myisam= { engine_name_buf, 0 };
-      bool is_sequence;
-      Table_type frm_type= dd_frm_type(NULL, path, &maybe_myisam, &is_sequence);
+      LEX_STRING maybe_myisam= { engine_name_buf, 0 };
+      frm_type_enum frm_type= dd_frm_type(NULL, path, &maybe_myisam);
       /* if mysql.plugin table is MyISAM - load it right away */
-      if (frm_type == TABLE_TYPE_NORMAL && !strcasecmp(maybe_myisam.str, "MyISAM"))
+      if (frm_type == FRMTYPE_TABLE && !strcasecmp(maybe_myisam.str, "MyISAM"))
       {
         plugin_load(&tmp_root);
         flags|= PLUGIN_INIT_SKIP_PLUGIN_TABLE;
@@ -1838,15 +1810,15 @@ static void plugin_load(MEM_ROOT *tmp_root)
     goto end;
   }
   table->use_all_columns();
-  while (!(error= read_record_info.read_record()))
+  while (!(error= read_record_info.read_record(&read_record_info)))
   {
     DBUG_PRINT("info", ("init plugin record"));
     String str_name, str_dl;
     get_field(tmp_root, table->field[0], &str_name);
     get_field(tmp_root, table->field[1], &str_dl);
 
-    LEX_CSTRING name= {str_name.ptr(), str_name.length()};
-    LEX_CSTRING dl=   {str_dl.ptr(), str_dl.length()};
+    LEX_STRING name= {(char *)str_name.ptr(), str_name.length()};
+    LEX_STRING dl= {(char *)str_dl.ptr(), str_dl.length()};
 
     /*
       there're no other threads running yet, so we don't need a mutex.
@@ -1909,16 +1881,14 @@ static bool plugin_load_list(MEM_ROOT *tmp_root, const char *list)
         mysql_mutex_lock(&LOCK_plugin);
         free_root(tmp_root, MYF(MY_MARK_BLOCKS_FREE));
         name.str= 0; // load everything
-        if (plugin_add(tmp_root, (LEX_CSTRING*) &name, (LEX_CSTRING*) &dl,
-                       REPORT_TO_LOG))
+        if (plugin_add(tmp_root, &name, &dl, REPORT_TO_LOG))
           goto error;
       }
       else
       {
         free_root(tmp_root, MYF(MY_MARK_BLOCKS_FREE));
         mysql_mutex_lock(&LOCK_plugin);
-        if (plugin_add(tmp_root, (LEX_CSTRING*) &name, (LEX_CSTRING*) &dl,
-                       REPORT_TO_LOG))
+        if (plugin_add(tmp_root, &name, &dl, REPORT_TO_LOG))
           goto error;
       }
       mysql_mutex_unlock(&LOCK_plugin);
@@ -1962,12 +1932,6 @@ void plugin_shutdown(void)
 
   if (initialized)
   {
-    if (opt_gtid_pos_auto_plugins)
-    {
-      free_engine_list(opt_gtid_pos_auto_plugins);
-      opt_gtid_pos_auto_plugins= NULL;
-    }
-
     mysql_mutex_lock(&LOCK_plugin);
 
     reap_needed= true;
@@ -2093,7 +2057,7 @@ void plugin_shutdown(void)
 
   That is, initialize it, and update mysql.plugin table
 */
-static bool finalize_install(THD *thd, TABLE *table, const LEX_CSTRING *name,
+static bool finalize_install(THD *thd, TABLE *table, const LEX_STRING *name,
                              int *argc, char **argv)
 {
   struct st_plugin_int *tmp= plugin_find_internal(name, MYSQL_ANY_PLUGIN);
@@ -2147,12 +2111,12 @@ static bool finalize_install(THD *thd, TABLE *table, const LEX_CSTRING *name,
   return 0;
 }
 
-bool mysql_install_plugin(THD *thd, const LEX_CSTRING *name,
-                          const LEX_CSTRING *dl_arg)
+bool mysql_install_plugin(THD *thd, const LEX_STRING *name,
+                          const LEX_STRING *dl_arg)
 {
   TABLE_LIST tables;
   TABLE *table;
-  LEX_CSTRING dl= *dl_arg;
+  LEX_STRING dl= *dl_arg;
   bool error;
   int argc=orig_argc;
   char **argv=orig_argv;
@@ -2214,7 +2178,7 @@ bool mysql_install_plugin(THD *thd, const LEX_CSTRING *name,
     struct st_maria_plugin *plugin;
     for (plugin= plugin_dl->plugins; plugin->info; plugin++)
     {
-      LEX_CSTRING str= { plugin->name, strlen(plugin->name) };
+      LEX_STRING str= { const_cast<char*>(plugin->name), strlen(plugin->name) };
       error|= finalize_install(thd, table, &str, &argc, argv);
     }
   }
@@ -2236,7 +2200,7 @@ error:
 }
 
 
-static bool do_uninstall(THD *thd, TABLE *table, const LEX_CSTRING *name)
+static bool do_uninstall(THD *thd, TABLE *table, const LEX_STRING *name)
 {
   struct st_plugin_int *plugin;
   mysql_mutex_assert_owner(&LOCK_plugin);
@@ -2292,12 +2256,12 @@ static bool do_uninstall(THD *thd, TABLE *table, const LEX_CSTRING *name)
 }
 
 
-bool mysql_uninstall_plugin(THD *thd, const LEX_CSTRING *name,
-                            const LEX_CSTRING *dl_arg)
+bool mysql_uninstall_plugin(THD *thd, const LEX_STRING *name,
+                            const LEX_STRING *dl_arg)
 {
   TABLE *table;
   TABLE_LIST tables;
-  LEX_CSTRING dl= *dl_arg;
+  LEX_STRING dl= *dl_arg;
   bool error= false;
   unsigned long event_class_mask[MYSQL_AUDIT_CLASS_MASK_SIZE] =
   { MYSQL_AUDIT_GENERAL_CLASSMASK };
@@ -2351,7 +2315,7 @@ bool mysql_uninstall_plugin(THD *thd, const LEX_CSTRING *name,
       for (struct st_maria_plugin *plugin= plugin_dl->plugins;
            plugin->info; plugin++)
       {
-        LEX_CSTRING str= { plugin->name, strlen(plugin->name) };
+        LEX_STRING str= { const_cast<char*>(plugin->name), strlen(plugin->name) };
         error|= do_uninstall(thd, table, &str);
       }
     }
@@ -2462,7 +2426,7 @@ static bool plugin_dl_foreach_internal(THD *thd, st_plugin_dl *plugin_dl,
   return 0;
 }
 
-bool plugin_dl_foreach(THD *thd, const LEX_CSTRING *dl,
+bool plugin_dl_foreach(THD *thd, const LEX_STRING *dl,
                        plugin_foreach_func *func, void *arg)
 {
   bool err= 0;
@@ -2855,8 +2819,7 @@ sys_var *find_sys_var_ex(THD *thd, const char *str, size_t length,
     mysql_mutex_unlock(&LOCK_plugin);
 
   if (!throw_error && !var)
-    my_error(ER_UNKNOWN_SYSTEM_VARIABLE, MYF(0),
-             (int) (length ? length : strlen(str)), (char*) str);
+    my_error(ER_UNKNOWN_SYSTEM_VARIABLE, MYF(0), (int)length, (char*) str);
   DBUG_RETURN(var);
 }
 
@@ -3432,7 +3395,7 @@ TYPELIB* sys_var_pluginvar::plugin_var_typelib(void)
 
 
 uchar* sys_var_pluginvar::do_value_ptr(THD *thd, enum_var_type type,
-                                       const LEX_CSTRING *base)
+                                       const LEX_STRING *base)
 {
   uchar* result;
 

@@ -766,7 +766,6 @@ Handler_read_rnd_deleted	0
 Handler_read_rnd_next	46
 SHOW STATUS LIKE 'Handler_tmp%';
 Variable_name	Value
-Handler_tmp_delete	0
 Handler_tmp_update	0
 Handler_tmp_write	66
 FLUSH STATUS;
@@ -792,7 +791,6 @@ Handler_read_rnd_deleted	0
 Handler_read_rnd_next	48
 SHOW STATUS LIKE 'Handler_tmp%';
 Variable_name	Value
-Handler_tmp_delete	0
 Handler_tmp_update	0
 Handler_tmp_write	70
 drop table t1, t2;

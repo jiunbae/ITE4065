@@ -22,7 +22,7 @@ class Querycache_stream
   Query_cache_block *block;
   uint headers_len;
 public:
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   Query_cache_block *first_block;
   uint stored_size;
 #endif
@@ -31,7 +31,7 @@ public:
   {
     cur_data= ((uchar*)block)+headers_len;
     data_end= cur_data + (block->used-headers_len);
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
     first_block= ini_block;
     stored_size= 0;
 #endif

@@ -97,25 +97,12 @@ row_vers_impl_x_locked_low(
 
 	ut_ad(rec_offs_validate(rec, index, offsets));
 
-	if (ulint trx_id_offset = clust_index->trx_id_offset) {
-		trx_id = mach_read_from_6(clust_rec + trx_id_offset);
-		if (trx_id == 0) {
-			/* The transaction history was already purged. */
-			DBUG_RETURN(0);
-		}
-	}
-
 	heap = mem_heap_create(1024);
 
 	clust_offsets = rec_get_offsets(
 		clust_rec, clust_index, NULL, true, ULINT_UNDEFINED, &heap);
 
 	trx_id = row_get_rec_trx_id(clust_rec, clust_index, clust_offsets);
-	if (trx_id == 0) {
-		/* The transaction history was already purged. */
-		mem_heap_free(heap);
-		DBUG_RETURN(0);
-	}
 	corrupt = FALSE;
 
 	trx_t*	trx = trx_rw_is_active(trx_id, &corrupt, true);
@@ -1210,7 +1197,7 @@ row_vers_build_for_consistent_read(
 					in_heap, rec_offs_size(*offsets)));
 
 			*old_vers = rec_copy(buf, prev_version, *offsets);
-			rec_offs_make_valid(*old_vers, index, true, *offsets);
+			rec_offs_make_valid(*old_vers, index, *offsets);
 
 			if (vrow && *vrow) {
 				*vrow = dtuple_copy(*vrow, in_heap);
@@ -1279,10 +1266,6 @@ row_vers_build_for_semi_consistent_read(
 			rec_trx_id = version_trx_id;
 		}
 
-		if (!version_trx_id) {
-			goto committed_version_trx;
-		}
-
 		trx_sys_mutex_enter();
 		version_trx = trx_get_rw_trx_by_id(version_trx_id);
 		/* Because version_trx is a read-write transaction,
@@ -1337,7 +1320,7 @@ committed_version_trx:
 					in_heap, rec_offs_size(*offsets)));
 
 			*old_vers = rec_copy(buf, version, *offsets);
-			rec_offs_make_valid(*old_vers, index, true, *offsets);
+			rec_offs_make_valid(*old_vers, index, *offsets);
 			if (vrow && *vrow) {
 				*vrow = dtuple_copy(*vrow, in_heap);
 				dtuple_dup_v_fld(*vrow, in_heap);

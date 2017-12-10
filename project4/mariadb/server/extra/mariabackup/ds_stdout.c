@@ -18,7 +18,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
-#include <my_global.h>
 #include <my_base.h>
 #include <mysys_err.h>
 #include "common.h"

@@ -530,7 +530,18 @@ static ST_FIELD_INFO	innodb_trx_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define IDX_TRX_READ_ONLY		20
+#ifdef BTR_CUR_HASH_ADAPT
+#define IDX_TRX_ADAPTIVE_HASH_LATCHED	20
+	{STRUCT_FLD(field_name,		"trx_adaptive_hash_latched"),
+	 STRUCT_FLD(field_length,	1),
+	 STRUCT_FLD(field_type,		MYSQL_TYPE_LONG),
+	 STRUCT_FLD(value,		0),
+	 STRUCT_FLD(field_flags,	0),
+	 STRUCT_FLD(old_name,		""),
+	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
+#endif /* BTR_CUR_HASH_ADAPT */
+
+#define IDX_TRX_READ_ONLY		20 + I_S_AHI
 	{STRUCT_FLD(field_name,		"trx_is_read_only"),
 	 STRUCT_FLD(field_length,	1),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_LONG),
@@ -539,7 +550,7 @@ static ST_FIELD_INFO	innodb_trx_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define IDX_TRX_AUTOCOMMIT_NON_LOCKING	21
+#define IDX_TRX_AUTOCOMMIT_NON_LOCKING	21 + I_S_AHI
 	{STRUCT_FLD(field_name,		"trx_autocommit_non_locking"),
 	 STRUCT_FLD(field_length,	1),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_LONG),
@@ -685,6 +696,11 @@ fill_innodb_trx_from_cache(
 		/* trx_last_foreign_key_error */
 		OK(field_store_string(fields[IDX_TRX_LAST_FOREIGN_KEY_ERROR],
 				      row->trx_foreign_key_error));
+
+#ifdef BTR_CUR_HASH_ADAPT
+		/* trx_adaptive_hash_latched */
+		OK(fields[IDX_TRX_ADAPTIVE_HASH_LATCHED]->store(0, true));
+#endif /* BTR_CUR_HASH_ADAPT */
 
 		/* trx_is_read_only*/
 		OK(fields[IDX_TRX_READ_ONLY]->store(
@@ -5041,15 +5057,13 @@ i_s_innodb_set_page_type(
 		in the i_s_page_type[] array is I_S_PAGE_TYPE_INDEX
 		(1) for index pages or I_S_PAGE_TYPE_IBUF for
 		change buffer index pages */
-		if (page_type == FIL_PAGE_RTREE) {
-			page_info->page_type = I_S_PAGE_TYPE_RTREE;
-		} else if (page_info->index_id
-			   == static_cast<index_id_t>(DICT_IBUF_ID_MIN
-						      + IBUF_SPACE_ID)) {
+		if (page_info->index_id
+		    == static_cast<index_id_t>(DICT_IBUF_ID_MIN
+					       + IBUF_SPACE_ID)) {
 			page_info->page_type = I_S_PAGE_TYPE_IBUF;
+		} else if (page_type == FIL_PAGE_RTREE) {
+			page_info->page_type = I_S_PAGE_TYPE_RTREE;
 		} else {
-			ut_ad(page_type == FIL_PAGE_INDEX
-			      || page_type == FIL_PAGE_TYPE_INSTANT);
 			page_info->page_type = I_S_PAGE_TYPE_INDEX;
 		}
 
@@ -5978,7 +5992,16 @@ static ST_FIELD_INFO	innodb_sys_tables_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define SYS_TABLES_ROW_FORMAT		5
+#define SYS_TABLES_FILE_FORMAT		5
+	{STRUCT_FLD(field_name,		"FILE_FORMAT"),
+	 STRUCT_FLD(field_length,	10),
+	 STRUCT_FLD(field_type,		MYSQL_TYPE_STRING),
+	 STRUCT_FLD(value,		0),
+	 STRUCT_FLD(field_flags,	MY_I_S_MAYBE_NULL),
+	 STRUCT_FLD(old_name,		""),
+	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
+
+#define SYS_TABLES_ROW_FORMAT		6
 	{STRUCT_FLD(field_name,		"ROW_FORMAT"),
 	 STRUCT_FLD(field_length,	12),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_STRING),
@@ -5987,7 +6010,7 @@ static ST_FIELD_INFO	innodb_sys_tables_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define SYS_TABLES_ZIP_PAGE_SIZE	6
+#define SYS_TABLES_ZIP_PAGE_SIZE	7
 	{STRUCT_FLD(field_name,		"ZIP_PAGE_SIZE"),
 	 STRUCT_FLD(field_length,	MY_INT32_NUM_DECIMAL_DIGITS),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_LONG),
@@ -5996,7 +6019,7 @@ static ST_FIELD_INFO	innodb_sys_tables_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define SYS_TABLES_SPACE_TYPE		7
+#define SYS_TABLES_SPACE_TYPE	8
 	{STRUCT_FLD(field_name,		"SPACE_TYPE"),
 	 STRUCT_FLD(field_length,	10),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_STRING),
@@ -6025,9 +6048,11 @@ i_s_dict_fill_sys_tables(
 	ulint			atomic_blobs = DICT_TF_HAS_ATOMIC_BLOBS(
 								table->flags);
 	const page_size_t&	page_size = dict_tf_get_page_size(table->flags);
+	const char*		file_format;
 	const char*		row_format;
 	const char*		space_type;
 
+	file_format = trx_sys_file_format_id_to_name(atomic_blobs);
 	if (!compact) {
 		row_format = "Redundant";
 	} else if (!atomic_blobs) {
@@ -6057,6 +6082,8 @@ i_s_dict_fill_sys_tables(
 	OK(fields[SYS_TABLES_NUM_COLUMN]->store(table->n_cols));
 
 	OK(fields[SYS_TABLES_SPACE]->store(table->space));
+
+	OK(field_store_string(fields[SYS_TABLES_FILE_FORMAT], file_format));
 
 	OK(field_store_string(fields[SYS_TABLES_ROW_FORMAT], row_format));
 
@@ -7920,7 +7947,16 @@ static ST_FIELD_INFO	innodb_sys_tablespaces_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define SYS_TABLESPACES_ROW_FORMAT	3
+#define SYS_TABLESPACES_FILE_FORMAT	3
+	{STRUCT_FLD(field_name,		"FILE_FORMAT"),
+	 STRUCT_FLD(field_length,	10),
+	 STRUCT_FLD(field_type,		MYSQL_TYPE_STRING),
+	 STRUCT_FLD(value,		0),
+	 STRUCT_FLD(field_flags,	MY_I_S_MAYBE_NULL),
+	 STRUCT_FLD(old_name,		""),
+	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
+
+#define SYS_TABLESPACES_ROW_FORMAT	4
 	{STRUCT_FLD(field_name,		"ROW_FORMAT"),
 	 STRUCT_FLD(field_length,	22),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_STRING),
@@ -7929,7 +7965,7 @@ static ST_FIELD_INFO	innodb_sys_tablespaces_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define SYS_TABLESPACES_PAGE_SIZE	4
+#define SYS_TABLESPACES_PAGE_SIZE	5
 	{STRUCT_FLD(field_name,		"PAGE_SIZE"),
 	 STRUCT_FLD(field_length,	MY_INT32_NUM_DECIMAL_DIGITS),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_LONG),
@@ -7938,7 +7974,7 @@ static ST_FIELD_INFO	innodb_sys_tablespaces_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define SYS_TABLESPACES_ZIP_PAGE_SIZE	5
+#define SYS_TABLESPACES_ZIP_PAGE_SIZE	6
 	{STRUCT_FLD(field_name,		"ZIP_PAGE_SIZE"),
 	 STRUCT_FLD(field_length,	MY_INT32_NUM_DECIMAL_DIGITS),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_LONG),
@@ -7947,7 +7983,7 @@ static ST_FIELD_INFO	innodb_sys_tablespaces_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define SYS_TABLESPACES_SPACE_TYPE	6
+#define SYS_TABLESPACES_SPACE_TYPE	7
 	{STRUCT_FLD(field_name,		"SPACE_TYPE"),
 	 STRUCT_FLD(field_length,	10),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_STRING),
@@ -7956,7 +7992,7 @@ static ST_FIELD_INFO	innodb_sys_tablespaces_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define SYS_TABLESPACES_FS_BLOCK_SIZE	7
+#define SYS_TABLESPACES_FS_BLOCK_SIZE	8
 	{STRUCT_FLD(field_name,		"FS_BLOCK_SIZE"),
 	 STRUCT_FLD(field_length,	MY_INT32_NUM_DECIMAL_DIGITS),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_LONG),
@@ -7965,7 +8001,7 @@ static ST_FIELD_INFO	innodb_sys_tablespaces_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define SYS_TABLESPACES_FILE_SIZE	8
+#define SYS_TABLESPACES_FILE_SIZE	9
 	{STRUCT_FLD(field_name,		"FILE_SIZE"),
 	 STRUCT_FLD(field_length,	MY_INT64_NUM_DECIMAL_DIGITS),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_LONGLONG),
@@ -7974,7 +8010,7 @@ static ST_FIELD_INFO	innodb_sys_tablespaces_fields_info[] =
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
 
-#define SYS_TABLESPACES_ALLOC_SIZE	9
+#define SYS_TABLESPACES_ALLOC_SIZE	10
 	{STRUCT_FLD(field_name,		"ALLOCATED_SIZE"),
 	 STRUCT_FLD(field_length,	MY_INT64_NUM_DECIMAL_DIGITS),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_LONGLONG),
@@ -8003,10 +8039,12 @@ i_s_dict_fill_sys_tablespaces(
 {
 	Field**	fields;
 	ulint	atomic_blobs	= FSP_FLAGS_HAS_ATOMIC_BLOBS(flags);
+	const char* file_format;
 	const char* row_format;
 
 	DBUG_ENTER("i_s_dict_fill_sys_tablespaces");
 
+	file_format = trx_sys_file_format_id_to_name(atomic_blobs);
 	if (is_system_tablespace(space)) {
 		row_format = "Compact, Redundant or Dynamic";
 	} else if (FSP_FLAGS_GET_ZIP_SSIZE(flags)) {
@@ -8024,6 +8062,9 @@ i_s_dict_fill_sys_tablespaces(
 	OK(field_store_string(fields[SYS_TABLESPACES_NAME], name));
 
 	OK(fields[SYS_TABLESPACES_FLAGS]->store(flags, true));
+
+	OK(field_store_string(fields[SYS_TABLESPACES_FILE_FORMAT],
+			      file_format));
 
 	OK(field_store_string(fields[SYS_TABLESPACES_ROW_FORMAT], row_format));
 

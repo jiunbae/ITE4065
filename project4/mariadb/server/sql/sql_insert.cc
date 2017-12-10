@@ -56,7 +56,7 @@
 
 */
 
-#include "mariadb.h"                 /* NO_EMBEDDED_ACCESS_CHECKS */
+#include <my_global.h>                 /* NO_EMBEDDED_ACCESS_CHECKS */
 #include "sql_priv.h"
 #include "sql_insert.h"
 #include "sql_update.h"                         // compare_record
@@ -290,8 +290,7 @@ static int check_insert_fields(THD *thd, TABLE_LIST *table_list,
 
     if (check_unique && thd->dup_field)
     {
-      my_error(ER_FIELD_SPECIFIED_TWICE, MYF(0),
-               thd->dup_field->field_name.str);
+      my_error(ER_FIELD_SPECIFIED_TWICE, MYF(0), thd->dup_field->field_name);
       DBUG_RETURN(-1);
     }
   }
@@ -330,8 +329,7 @@ static bool has_no_default_value(THD *thd, Field *field, TABLE_LIST *table_list)
     else
     {
       push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN, ER_NO_DEFAULT_FOR_FIELD,
-                          ER_THD(thd, ER_NO_DEFAULT_FOR_FIELD),
-                          field->field_name.str);
+                          ER_THD(thd, ER_NO_DEFAULT_FOR_FIELD), field->field_name);
     }
     return thd->really_abort_on_warning();
   }
@@ -761,8 +759,9 @@ bool mysql_insert(THD *thd,TABLE_LIST *table_list,
       DBUG_RETURN(TRUE);
   }
 
-  THD_STAGE_INFO(thd, stage_init_update);
   lock_type= table_list->lock_type;
+
+  THD_STAGE_INFO(thd, stage_init);
   thd->lex->used_tables=0;
   values= its++;
   if (bulk_parameters_set(thd))
@@ -859,6 +858,7 @@ bool mysql_insert(THD *thd,TABLE_LIST *table_list,
 #endif
 
   error=0;
+  THD_STAGE_INFO(thd, stage_update);
   if (duplic == DUP_REPLACE &&
       (!table->triggers || !table->triggers->has_delete_triggers()))
     table->file->extra(HA_EXTRA_WRITE_CAN_REPLACE);
@@ -938,8 +938,6 @@ bool mysql_insert(THD *thd,TABLE_LIST *table_list,
       goto values_loop_end;
     }
   }
-
-  THD_STAGE_INFO(thd, stage_update);
   do
   {
     DBUG_PRINT("info", ("iteration %llu", iteration));
@@ -3357,7 +3355,7 @@ bool Delayed_insert::handle_inserts(void)
   }
 
   if (WSREP((&thd)))
-    thd_proc_info(&thd, "Insert done");
+    thd_proc_info(&thd, "insert done");
   else
     thd_proc_info(&thd, 0);
   mysql_mutex_unlock(&mutex);
@@ -4122,7 +4120,7 @@ static TABLE *create_table_from_items(THD *thd,
   if (!mysql_create_table_no_lock(thd, create_table->db,
                                   create_table->table_name,
                                   create_info, alter_info, NULL,
-                                  select_field_count, create_table))
+                                  select_field_count))
   {
     DEBUG_SYNC(thd,"create_table_select_before_open");
 

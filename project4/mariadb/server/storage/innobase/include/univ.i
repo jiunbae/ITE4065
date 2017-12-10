@@ -271,6 +271,30 @@ management to ensure correct alignment for doubles etc. */
 			========================
 */
 
+/** There are currently two InnoDB file formats which are used to group
+features with similar restrictions and dependencies. Using an enum allows
+switch statements to give a compiler warning when a new one is introduced. */
+enum innodb_file_formats_enum {
+	/** Antelope File Format: InnoDB/MySQL up to 5.1.
+	This format includes REDUNDANT and COMPACT row formats */
+	UNIV_FORMAT_A		= 0,
+
+	/** Barracuda File Format: Introduced in InnoDB plugin for 5.1:
+	This format includes COMPRESSED and DYNAMIC row formats.  It
+	includes the ability to create secondary indexes from data that
+	is not on the clustered index page and the ability to store more
+	data off the clustered index page. */
+	UNIV_FORMAT_B		= 1
+};
+
+typedef enum innodb_file_formats_enum innodb_file_formats_t;
+
+/** Minimum supported file format */
+#define UNIV_FORMAT_MIN		UNIV_FORMAT_A
+
+/** Maximum supported file format */
+#define UNIV_FORMAT_MAX		UNIV_FORMAT_B
+
 /** The 2-logarithm of UNIV_PAGE_SIZE: */
 #define UNIV_PAGE_SIZE_SHIFT	srv_page_size_shift
 
@@ -664,5 +688,15 @@ static const size_t UNIV_SECTOR_SIZE = 512;
 /* Dimension of spatial object we support so far. It has its root in
 myisam/sp_defs.h. We only support 2 dimension data */
 #define SPDIMS          2
+
+/* ITE4065 Project4: Scalable Lock Manager
+Author: Bae jiun, MaybeS */
+#define ITE4065 		TRUE
+
+#ifdef ITE4065
+# include "ite4065.h"
+# define ITE4065_READ_ONLY	TRUE
+# define ITE4065_READ_WRITE	FALSE
+#endif
 
 #endif

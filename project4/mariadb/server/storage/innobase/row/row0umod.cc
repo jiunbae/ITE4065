@@ -334,16 +334,18 @@ row_undo_mod_clust(
 		switch (node->rec_type) {
 		case TRX_UNDO_DEL_MARK_REC:
 			row_log_table_insert(
-				btr_pcur_get_rec(pcur), index, offsets);
+				btr_pcur_get_rec(pcur), node->row,
+				index, offsets);
 			break;
 		case TRX_UNDO_UPD_EXIST_REC:
 			row_log_table_update(
 				btr_pcur_get_rec(pcur), index, offsets,
-				rebuilt_old_pk);
+				rebuilt_old_pk, node->undo_row, node->row);
 			break;
 		case TRX_UNDO_UPD_DEL_REC:
 			row_log_table_delete(
-				btr_pcur_get_rec(pcur), index, offsets, sys);
+				btr_pcur_get_rec(pcur), node->row,
+				index, offsets, sys);
 			break;
 		default:
 			ut_ad(0);
@@ -1031,7 +1033,8 @@ row_undo_mod_upd_exist_sec(
 			format.  REDUNDANT and COMPACT formats
 			store a local 768-byte prefix of each
 			externally stored column. */
-			ut_a(dict_table_has_atomic_blobs(index->table));
+			ut_a(dict_table_get_format(index->table)
+			     >= UNIV_FORMAT_B);
 
 			/* This is only legitimate when
 			rolling back an incomplete transaction
@@ -1173,21 +1176,6 @@ close_table:
 				       node->heap, &(node->update));
 	node->new_trx_id = trx_id;
 	node->cmpl_info = cmpl_info;
-	ut_ad(!node->ref->info_bits);
-
-	if (node->update->info_bits & REC_INFO_MIN_REC_FLAG) {
-		/* This must be an undo log record for a subsequent
-		instant ADD COLUMN on a table, extending the
-		'default value' record. */
-		ut_ad(clust_index->is_instant());
-		if (node->update->info_bits != REC_INFO_MIN_REC_FLAG) {
-			ut_ad(!"wrong info_bits in undo log record");
-			goto close_table;
-		}
-		node->update->info_bits = REC_INFO_DEFAULT_ROW;
-		const_cast<dtuple_t*>(node->ref)->info_bits
-			= REC_INFO_DEFAULT_ROW;
-	}
 
 	if (!row_undo_search_clust_to_pcur(node)) {
 		/* As long as this rolling-back transaction exists,
@@ -1249,12 +1237,6 @@ row_undo_mod(
 
 	node->index = dict_table_get_first_index(node->table);
 	ut_ad(dict_index_is_clust(node->index));
-
-	if (node->ref->info_bits) {
-		ut_ad(node->ref->info_bits == REC_INFO_DEFAULT_ROW);
-		goto rollback_clust;
-	}
-
 	/* Skip the clustered index (the first index) */
 	node->index = dict_table_get_next_index(node->index);
 
@@ -1277,7 +1259,6 @@ row_undo_mod(
 	}
 
 	if (err == DB_SUCCESS) {
-rollback_clust:
 		err = row_undo_mod_clust(node, thr);
 
 		bool update_statistics

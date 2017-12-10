@@ -19,7 +19,7 @@
 /* Copy data from a textfile to table */
 /* 2006-12 Erik Wetterberg : LOAD XML added */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "unireg.h"
 #include "sql_load.h"
@@ -283,13 +283,13 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   killed_state killed_status;
   bool is_concurrent;
 #endif
-  const char *db = table_list->db;		// This is never null
+  char *db = table_list->db;			// This is never null
   /*
     If path for file is not defined, we will use the current database.
     If this is not set, we will use the directory where the table to be
     loaded is located
   */
-  const char *tdb= thd->db ? thd->db : db;	// Result is never null
+  char *tdb= thd->db ? thd->db : db;		// Result is never null
   ulong skip_lines= ex->skip_lines;
   bool transactional_table __attribute__((unused));
   DBUG_ENTER("mysql_load");
@@ -348,7 +348,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   {
     DBUG_RETURN(TRUE);
   }
-  thd_proc_info(thd, "Executing");
+  thd_proc_info(thd, "executing");
   /*
     Let us emit an error if we are loading data to table which is used
     in subselect in SET clause like we do it for INSERT.
@@ -574,7 +574,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
     }
   }
 
-  thd_proc_info(thd, "Reading file");
+  thd_proc_info(thd, "reading file");
   if (!(error= MY_TEST(read_info.error)))
   {
     table->reset_default_fields();
@@ -814,7 +814,7 @@ static bool write_execute_load_query_log_event(THD *thd, sql_exchange* ex,
       if (n++)
         query_str.append(", ");
       if (item->real_type() == Item::FIELD_ITEM)
-        append_identifier(thd, &query_str, item->name.str, item->name.length);
+        append_identifier(thd, &query_str, item->name, strlen(item->name));
       else
       {
         /* Actually Item_user_var_as_out_param despite claiming STRING_ITEM. */
@@ -838,8 +838,8 @@ static bool write_execute_load_query_log_event(THD *thd, sql_exchange* ex,
       val= lv++;
       if (n++)
         query_str.append(STRING_WITH_LEN(", "));
-      append_identifier(thd, &query_str, item->name.str, item->name.length);
-      query_str.append(&val->name);
+      append_identifier(thd, &query_str, item->name, strlen(item->name));
+      query_str.append(val->name);
     }
   }
 
@@ -1089,7 +1089,7 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
         }
         else if (!real_item)
         {
-          my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name.str);
+          my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name);
           DBUG_RETURN(1);
         }
         else
@@ -1097,7 +1097,7 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
           Field *field= real_item->field;
           if (field->reset())
           {
-            my_error(ER_WARN_NULL_TO_NOTNULL, MYF(0), field->field_name.str,
+            my_error(ER_WARN_NULL_TO_NOTNULL, MYF(0), field->field_name,
                      thd->get_stmt_da()->current_row_for_warning());
             DBUG_RETURN(1);
           }
@@ -1128,7 +1128,7 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
       }
       else if (!real_item)
       {
-        my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name.str);
+        my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name);
         DBUG_RETURN(1);
       }
       else
@@ -1168,7 +1168,7 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
         }
         else if (!real_item)
         {
-          my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name.str);
+          my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name);
           DBUG_RETURN(1);
         }
         else
@@ -1176,7 +1176,7 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
           Field *field= real_item->field;
           if (field->reset())
           {
-            my_error(ER_WARN_NULL_TO_NOTNULL, MYF(0),field->field_name.str,
+            my_error(ER_WARN_NULL_TO_NOTNULL, MYF(0),field->field_name,
                      thd->get_stmt_da()->current_row_for_warning());
             DBUG_RETURN(1);
           }
@@ -1298,7 +1298,7 @@ read_xml_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
       xmlit.rewind();
       tag= xmlit++;
       
-      while(tag && strcmp(tag->field.c_ptr(), item->name.str) != 0)
+      while(tag && strcmp(tag->field.c_ptr(), item->name) != 0)
         tag= xmlit++;
       
       Item_field *real_item= item->field_for_view_update();
@@ -1308,7 +1308,7 @@ read_xml_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
           ((Item_user_var_as_out_param *) item)->set_null_value(cs);
         else if (!real_item)
         {
-          my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name.str);
+          my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name);
           DBUG_RETURN(1);
         }
         else
@@ -1338,7 +1338,7 @@ read_xml_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
                                                  tag->value.length(), cs);
       else if (!real_item)
       {
-        my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name.str);
+        my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name);
         DBUG_RETURN(1);
       }
       else
@@ -1375,7 +1375,7 @@ read_xml_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
           ((Item_user_var_as_out_param *)item)->set_null_value(cs);
         else if (!real_item)
         {
-          my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name.str);
+          my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), item->name);
           DBUG_RETURN(1);
         }
         else

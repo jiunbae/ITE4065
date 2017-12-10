@@ -108,7 +108,7 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "key.h"        // is_key_used, key_copy, key_cmp, key_restore
 #include "sql_parse.h"                          // check_stack_overrun
@@ -4398,7 +4398,7 @@ static void print_partitioning_index(KEY_PART *parts, KEY_PART *parts_end)
   fprintf(DBUG_FILE, "partitioning INDEX(");
   for (KEY_PART *p=parts; p != parts_end; p++)
   {
-    fprintf(DBUG_FILE, "%s%s", p==parts?"":" ,", p->field->field_name.str);
+    fprintf(DBUG_FILE, "%s%s", p==parts?"":" ,", p->field->field_name);
   }
   fputs(");\n", DBUG_FILE);
   DBUG_UNLOCK_FILE;
@@ -4437,7 +4437,7 @@ static void dbug_print_segment_range(SEL_ARG *arg, KEY_PART *part)
       fputs(" <= ", DBUG_FILE);
   }
 
-  fprintf(DBUG_FILE, "%s", part->field->field_name.str);
+  fprintf(DBUG_FILE, "%s", part->field->field_name);
 
   if (!(arg->max_flag & NO_MAX_RANGE))
   {
@@ -4476,7 +4476,7 @@ static void dbug_print_singlepoint_range(SEL_ARG **start, uint num)
   for (SEL_ARG **arg= start; arg != end; arg++)
   {
     Field *field= (*arg)->field;
-    fprintf(DBUG_FILE, "%s%s=", (arg==start)?"":", ", field->field_name.str);
+    fprintf(DBUG_FILE, "%s%s=", (arg==start)?"":", ", field->field_name);
     dbug_print_field(field);
   }
   fputs("\n", DBUG_FILE);
@@ -6274,7 +6274,7 @@ static bool ror_intersect_add(ROR_INTERSECT_INFO *info,
   DBUG_ENTER("ror_intersect_add");
   DBUG_PRINT("info", ("Current out_rows= %g", info->out_rows));
   DBUG_PRINT("info", ("Adding scan on %s",
-                      info->param->table->key_info[ror_scan->keynr].name.str));
+                      info->param->table->key_info[ror_scan->keynr].name));
   DBUG_PRINT("info", ("is_cpk_scan: %d",is_cpk_scan));
 
   selectivity_mult = ror_scan_selectivity(info, ror_scan);
@@ -6657,7 +6657,7 @@ TRP_ROR_INTERSECT *get_best_covering_ror_intersect(PARAM *param,
     total_cost += (*ror_scan_mark)->index_read_cost;
     records += (*ror_scan_mark)->records;
     DBUG_PRINT("info", ("Adding scan on %s",
-                        param->table->key_info[(*ror_scan_mark)->keynr].name.str));
+                        param->table->key_info[(*ror_scan_mark)->keynr].name));
     if (total_cost > read_time)
       DBUG_RETURN(NULL);
     /* F=F-covered by first(I) */
@@ -6819,7 +6819,7 @@ static TRP_RANGE *get_key_scans_params(PARAM *param, SEL_TREE *tree,
       read_plan->mrr_buf_size= best_buf_size;
       DBUG_PRINT("info",
                  ("Returning range plan for key %s, cost %g, records %lu",
-                  param->table->key_info[param->real_keynr[best_idx]].name.str,
+                  param->table->key_info[param->real_keynr[best_idx]].name,
                   read_plan->read_cost, (ulong) read_plan->records));
     }
   }
@@ -7280,19 +7280,9 @@ SEL_TREE *Item_func_in::get_func_row_mm_tree(RANGE_OPT_PARAM *param,
                           param->current_table);
   uint row_cols= key_row->cols();
   Dynamic_array <Key_col_info> key_cols_info(row_cols);
-  cmp_item_row *row_cmp_item;
-
-  if (array)
-  {
-    in_row *row= static_cast<in_row*>(array);
-    row_cmp_item= static_cast<cmp_item_row*>(row->get_cmp_item());
-  }
-  else
-  {
-    DBUG_ASSERT(get_comparator_type_handler(0) == &type_handler_row);
-    row_cmp_item= static_cast<cmp_item_row*>(get_comparator_cmp_item(0));
-  }
-  DBUG_ASSERT(row_cmp_item);
+  cmp_item_row *row_cmp_item= (cmp_item_row *)
+                              (array ? ((in_row *) array)->get_cmp_item() :
+			               cmp_items[(uint) ROW_RESULT]);
 
   Item **key_col_ptr= key_row->addr(0);
   for(uint i= 0; i < row_cols;  i++, key_col_ptr++)
@@ -7505,8 +7495,6 @@ SEL_TREE *Item_bool_func::get_full_func_mm_tree(RANGE_OPT_PARAM *param,
 		          param->current_table);
 #ifdef HAVE_SPATIAL
   Field::geometry_type sav_geom_type;
-  LINT_INIT_STRUCT(sav_geom_type);
-
   if (field_item->field->type() == MYSQL_TYPE_GEOMETRY)
   {
     sav_geom_type= ((Field_geom*) field_item->field)->geom_type;
@@ -7932,9 +7920,7 @@ Item_func_like::get_mm_leaf(RANGE_OPT_PARAM *param,
   if (!(res= value->val_str(&tmp)))
     DBUG_RETURN(&null_element);
 
-  if (field->cmp_type() != STRING_RESULT ||
-      field->type_handler() == &type_handler_enum ||
-      field->type_handler() == &type_handler_set)
+  if (field->cmp_type() != STRING_RESULT)
     DBUG_RETURN(0);
 
   /*
@@ -8030,59 +8016,27 @@ Item_bool_func::get_mm_leaf(RANGE_OPT_PARAM *param,
     goto end;
 
   err= value->save_in_field_no_warnings(field, 1);
+  if (err == 2 && field->cmp_type() == STRING_RESULT)
+  {
+    if (type == EQ_FUNC || type == EQUAL_FUNC)
+    {
+      tree= new (alloc) SEL_ARG(field, 0, 0);
+      tree->type= SEL_ARG::IMPOSSIBLE;
+    }
+    else 
+      tree= NULL; /*  Cannot infer anything */
+    goto end;
+  }
   if (err > 0)
   {
-    if (field->type_handler() == &type_handler_enum ||
-        field->type_handler() == &type_handler_set)
-    {
-      if (type == EQ_FUNC || type == EQUAL_FUNC)
-        tree= new (alloc) SEL_ARG_IMPOSSIBLE(field);
-      goto end;
-    }
-
-    if (err == 2 && field->cmp_type() == STRING_RESULT)
-    {
-      if (type == EQ_FUNC || type == EQUAL_FUNC)
-        tree= new (alloc) SEL_ARG_IMPOSSIBLE(field);
-      else
-        tree= NULL; /*  Cannot infer anything */
-      goto end;
-    }
-
-    if (err == 3 && field->type() == FIELD_TYPE_DATE)
-    {
-      /*
-        We were saving DATETIME into a DATE column, the conversion went ok
-        but a non-zero time part was cut off.
-
-        In MySQL's SQL dialect, DATE and DATETIME are compared as datetime
-        values. Index over a DATE column uses DATE comparison. Changing
-        from one comparison to the other is possible:
-
-        datetime(date_col)< '2007-12-10 12:34:55' -> date_col<='2007-12-10'
-        datetime(date_col)<='2007-12-10 12:34:55' -> date_col<='2007-12-10'
-
-        datetime(date_col)> '2007-12-10 12:34:55' -> date_col>='2007-12-10'
-        datetime(date_col)>='2007-12-10 12:34:55' -> date_col>='2007-12-10'
-
-        but we'll need to convert '>' to '>=' and '<' to '<='. This will
-        be done together with other types at the end of this function
-        (grep for stored_field_cmp_to_item)
-      */
-      if (type == EQ_FUNC || type == EQUAL_FUNC)
-      {
-        tree= new (alloc) SEL_ARG_IMPOSSIBLE(field);
-        goto end;
-      }
-      // Continue with processing non-equality ranges
-    }
-    else if (field->cmp_type() != value->result_type())
+    if (field->cmp_type() != value->result_type())
     {
       if ((type == EQ_FUNC || type == EQUAL_FUNC) &&
           value->result_type() == item_cmp_type(field->result_type(),
                                                 value->result_type()))
       {
-        tree= new (alloc) SEL_ARG_IMPOSSIBLE(field);
+        tree= new (alloc) SEL_ARG(field, 0, 0);
+        tree->type= SEL_ARG::IMPOSSIBLE;
         goto end;
       }
       else
@@ -8092,7 +8046,31 @@ Item_bool_func::get_mm_leaf(RANGE_OPT_PARAM *param,
           for the cases like int_field > 999999999999999999999999 as well.
         */
         tree= 0;
-        goto end;
+        if (err == 3 && field->type() == FIELD_TYPE_DATE &&
+            (type == GT_FUNC || type == GE_FUNC ||
+             type == LT_FUNC || type == LE_FUNC) )
+        {
+          /*
+            We were saving DATETIME into a DATE column, the conversion went ok
+            but a non-zero time part was cut off.
+
+            In MySQL's SQL dialect, DATE and DATETIME are compared as datetime
+            values. Index over a DATE column uses DATE comparison. Changing 
+            from one comparison to the other is possible:
+
+            datetime(date_col)< '2007-12-10 12:34:55' -> date_col<='2007-12-10'
+            datetime(date_col)<='2007-12-10 12:34:55' -> date_col<='2007-12-10'
+
+            datetime(date_col)> '2007-12-10 12:34:55' -> date_col>='2007-12-10'
+            datetime(date_col)>='2007-12-10 12:34:55' -> date_col>='2007-12-10'
+
+            but we'll need to convert '>' to '>=' and '<' to '<='. This will
+            be done together with other types at the end of this function
+            (grep for stored_field_cmp_to_item)
+          */
+        }
+        else
+          goto end;
       }
     }
 
@@ -10952,7 +10930,7 @@ int read_keys_and_merge_scans(THD *thd,
 
   if (unique == NULL)
   {
-    DBUG_EXECUTE_IF("index_merge_may_not_create_a_Unique", DBUG_SUICIDE(); );
+    DBUG_EXECUTE_IF("index_merge_may_not_create_a_Unique", DBUG_ABORT(); );
     DBUG_EXECUTE_IF("only_one_Unique_may_be_created", 
                     DBUG_SET("+d,index_merge_may_not_create_a_Unique"); );
 
@@ -11066,7 +11044,7 @@ int QUICK_INDEX_MERGE_SELECT::get_next()
   if (doing_pk_scan)
     DBUG_RETURN(pk_quick_select->get_next());
 
-  if ((result= read_record.read_record()) == -1)
+  if ((result= read_record.read_record(&read_record)) == -1)
   {
     result= HA_ERR_END_OF_FILE;
     end_read_record(&read_record);
@@ -11102,7 +11080,7 @@ int QUICK_INDEX_INTERSECT_SELECT::get_next()
   int result;
   DBUG_ENTER("QUICK_INDEX_INTERSECT_SELECT::get_next");
 
-  if ((result= read_record.read_record()) == -1)
+  if ((result= read_record.read_record(&read_record)) == -1)
   {
     result= HA_ERR_END_OF_FILE;
     end_read_record(&read_record);
@@ -11854,7 +11832,7 @@ void QUICK_SELECT_I::add_key_name(String *str, bool *first)
     *first= FALSE;
   else
     str->append(',');
-  str->append(&key_info->name);
+  str->append(key_info->name);
 }
  
 
@@ -12009,7 +11987,7 @@ void QUICK_SELECT_I::add_key_and_length(String *key_names,
     key_names->append(',');
     used_lengths->append(',');
   }
-  key_names->append(&key_info->name);
+  key_names->append(key_info->name);
   length= longlong10_to_str(max_used_key_length, buf, 10) - buf;
   used_lengths->append(buf, length);
 }
@@ -14652,7 +14630,7 @@ static void print_sel_tree(PARAM *param, SEL_TREE *tree, key_map *tree_map,
       uint keynr= param->real_keynr[idx];
       if (tmp.length())
         tmp.append(',');
-      tmp.append(&param->table->key_info[keynr].name);
+      tmp.append(param->table->key_info[keynr].name);
     }
   }
   if (!tmp.length())
@@ -14678,7 +14656,7 @@ static void print_ror_scans_arr(TABLE *table, const char *msg,
   {
     if (tmp.length())
       tmp.append(',');
-    tmp.append(&table->key_info[(*start)->keynr].name);
+    tmp.append(table->key_info[(*start)->keynr].name);
   }
   if (!tmp.length())
     tmp.append(STRING_WITH_LEN("(empty)"));
@@ -14760,7 +14738,7 @@ void QUICK_RANGE_SELECT::dbug_dump(int indent, bool verbose)
 {
   /* purecov: begin inspected */
   fprintf(DBUG_FILE, "%*squick range select, key %s, length: %d\n",
-	  indent, "", head->key_info[index].name.str, max_used_key_length);
+	  indent, "", head->key_info[index].name, max_used_key_length);
 
   if (verbose)
   {
@@ -14864,7 +14842,7 @@ void QUICK_GROUP_MIN_MAX_SELECT::dbug_dump(int indent, bool verbose)
 {
   fprintf(DBUG_FILE,
           "%*squick_group_min_max_select: index %s (%d), length: %d\n",
-	  indent, "", index_info->name.str, index, max_used_key_length);
+	  indent, "", index_info->name, index, max_used_key_length);
   if (key_infix_len > 0)
   {
     fprintf(DBUG_FILE, "%*susing key_infix with length %d:\n",

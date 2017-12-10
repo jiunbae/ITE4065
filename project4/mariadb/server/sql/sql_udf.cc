@@ -31,7 +31,7 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "unireg.h"
 #include "sql_base.h"                           // close_mysql_tables
@@ -54,12 +54,12 @@ static HASH udf_hash;
 static mysql_rwlock_t THR_LOCK_udf;
 
 
-static udf_func *add_udf(LEX_CSTRING *name, Item_result ret,
-                         const char *dl, Item_udftype typ);
+static udf_func *add_udf(LEX_STRING *name, Item_result ret,
+                         char *dl, Item_udftype typ);
 static void del_udf(udf_func *udf);
 static void *find_udf_dl(const char *dl);
 
-static const char *init_syms(udf_func *tmp, char *nm)
+static char *init_syms(udf_func *tmp, char *nm)
 {
   char *end;
 
@@ -189,10 +189,10 @@ void udf_init()
   }
 
   table->use_all_columns();
-  while (!(error= read_record_info.read_record()))
+  while (!(error= read_record_info.read_record(&read_record_info)))
   {
     DBUG_PRINT("info",("init udf record"));
-    LEX_CSTRING name;
+    LEX_STRING name;
     name.str=get_field(&mem, table->field[0]);
     name.length = (uint) strlen(name.str);
     char *dl_name= get_field(&mem, table->field[2]);
@@ -242,8 +242,7 @@ void udf_init()
     }
     tmp->dlhandle = dl;
     {
-      char buf[SAFE_NAME_LEN+16];
-      const char *missing;
+      char buf[SAFE_NAME_LEN+16], *missing;
       if ((missing= init_syms(tmp, buf)))
       {
         sql_print_error(ER_THD(new_thd, ER_CANT_FIND_DL_ENTRY), missing);
@@ -312,9 +311,9 @@ static void del_udf(udf_func *udf)
       The functions will be automaticly removed when the least threads
       doesn't use it anymore
     */
-    const char *name= udf->name.str;
+    char *name= udf->name.str;
     uint name_length=udf->name.length;
-    udf->name.str= "*";
+    udf->name.str=(char*) "*";
     udf->name.length=1;
     my_hash_update(&udf_hash,(uchar*) udf,(uchar*) name,name_length);
   }
@@ -352,7 +351,6 @@ udf_func *find_udf(const char *name,uint length,bool mark_used)
 {
   udf_func *udf=0;
   DBUG_ENTER("find_udf");
-  DBUG_ASSERT(strlen(name) == length);
 
   if (!initialized)
     DBUG_RETURN(NULL);
@@ -364,7 +362,8 @@ udf_func *find_udf(const char *name,uint length,bool mark_used)
   else
     mysql_rwlock_rdlock(&THR_LOCK_udf);  /* Called during parsing */
 
-  if ((udf=(udf_func*) my_hash_search(&udf_hash,(uchar*) name, length)))
+  if ((udf=(udf_func*) my_hash_search(&udf_hash,(uchar*) name,
+                                      length ? length : (uint) strlen(name))))
   {
     if (!udf->dlhandle)
       udf=0;					// Could not be opened
@@ -396,7 +395,7 @@ static void *find_udf_dl(const char *dl)
 
 /* Assume that name && dl is already allocated */
 
-static udf_func *add_udf(LEX_CSTRING *name, Item_result ret, const char *dl,
+static udf_func *add_udf(LEX_STRING *name, Item_result ret, char *dl,
 			 Item_udftype type)
 {
   if (!name || !dl || !(uint) type || (uint) type > (uint) UDFTYPE_AGGREGATE)
@@ -432,7 +431,7 @@ static int mysql_drop_function_internal(THD *thd, udf_func *udf, TABLE *table)
 {
   DBUG_ENTER("mysql_drop_function_internal");
 
-  const char *exact_name_str= udf->name.str;
+  char *exact_name_str= udf->name.str;
   uint exact_name_len= udf->name.length;
 
   del_udf(udf);
@@ -549,8 +548,7 @@ int mysql_create_function(THD *thd,udf_func *udf)
   }
   udf->dlhandle=dl;
   {
-    char buf[SAFE_NAME_LEN+16];
-    const char *missing;
+    char buf[SAFE_NAME_LEN+16], *missing;
     if ((missing= init_syms(udf, buf)))
     {
       my_error(ER_CANT_FIND_DL_ENTRY, MYF(0), missing);
@@ -606,7 +604,7 @@ err:
 }
 
 
-int mysql_drop_function(THD *thd, const LEX_CSTRING *udf_name)
+int mysql_drop_function(THD *thd,const LEX_STRING *udf_name)
 {
   TABLE *table;
   TABLE_LIST tables;

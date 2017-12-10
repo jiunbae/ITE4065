@@ -19,7 +19,46 @@
 #pragma interface			/* gcc class implementation */
 #endif
 
-#include "sql_alloc.h"
+#include "my_sys.h"                    /* alloc_root, TRASH, MY_WME,
+                                          MY_FAE, MY_ALLOW_ZERO_PTR */
+#include "m_string.h"                           /* bfill */
+
+THD *thd_get_current_thd();
+
+/* mysql standard class memory allocator */
+
+class Sql_alloc
+{
+public:
+  static void *operator new(size_t size) throw ()
+  {
+    return thd_alloc(thd_get_current_thd(), size);
+  }
+  static void *operator new[](size_t size) throw ()
+  {
+    return thd_alloc(thd_get_current_thd(), size);
+  }
+  static void *operator new[](size_t size, MEM_ROOT *mem_root) throw ()
+  { return alloc_root(mem_root, size); }
+  static void *operator new(size_t size, MEM_ROOT *mem_root) throw ()
+  { return alloc_root(mem_root, size); }
+  static void operator delete(void *ptr, size_t size) { TRASH(ptr, size); }
+  static void operator delete(void *ptr, MEM_ROOT *mem_root)
+  { /* never called */ }
+  static void operator delete[](void *ptr, MEM_ROOT *mem_root)
+  { /* never called */ }
+  static void operator delete[](void *ptr, size_t size) { TRASH(ptr, size); }
+#ifdef HAVE_valgrind
+  bool dummy_for_valgrind;
+  inline Sql_alloc() :dummy_for_valgrind(0) {}
+  inline ~Sql_alloc() {}
+#else
+  inline Sql_alloc() {}
+  inline ~Sql_alloc() {}
+#endif
+
+};
+
 
 /**
   Simple intrusive linked list.
@@ -28,7 +67,6 @@
           a pointer to the first element in the list and a indirect
           reference to the last element.
 */
-
 template <typename T>
 class SQL_I_List :public Sql_alloc
 {
@@ -296,15 +334,16 @@ public:
   friend class error_list;
   friend class error_list_iterator;
 
+#ifndef DBUG_OFF
   /*
-    Return N-th element in the list, or NULL if the list has
+    Debugging help: return N-th element in the list, or NULL if the list has
     less than N elements.
   */
-  void *elem(uint n)
+  void *elem(int n)
   {
     list_node *node= first;
     void *data= NULL;
-    for (uint i= 0; i <= n; i++)
+    for (int i=0; i <= n; i++)
     {
       if (node == &end_of_list)
       {
@@ -316,6 +355,7 @@ public:
     }
     return data;
   }
+#endif
 
 #ifdef LIST_EXTRA_DEBUG
   /*
@@ -484,10 +524,10 @@ public:
     base_list(tmp, mem_root) {}
   inline bool push_back(T *a) { return base_list::push_back(a); }
   inline bool push_back(T *a, MEM_ROOT *mem_root)
-  { return base_list::push_back((void*) a, mem_root); }
+  { return base_list::push_back(a, mem_root); }
   inline bool push_front(T *a) { return base_list::push_front(a); }
   inline bool push_front(T *a, MEM_ROOT *mem_root)
-  { return base_list::push_front((void*) a, mem_root); }
+  { return base_list::push_front(a, mem_root); }
   inline T* head() {return (T*) base_list::head(); }
   inline T** head_ref() {return (T**) base_list::head_ref(); }
   inline T* pop()  {return (T*) base_list::pop(); }
@@ -506,7 +546,9 @@ public:
     }
     empty();
   }
-  T *elem(uint n) { return (T*) base_list::elem(n); }
+#ifndef DBUG_OFF
+  T *elem(int n) { return (T*)base_list::elem(n); }
+#endif
 };
 
 

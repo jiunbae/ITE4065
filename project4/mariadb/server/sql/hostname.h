@@ -16,6 +16,7 @@
 #ifndef HOSTNAME_INCLUDED
 #define HOSTNAME_INCLUDED
 
+#include "my_global.h"                          /* uint */
 #include "my_net.h"
 #include "hash_filo.h"
 

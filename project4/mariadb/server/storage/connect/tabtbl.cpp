@@ -230,7 +230,7 @@ bool TDBTBL::InitTableList(PGLOBAL g)
   {
   int     n;
   uint    sln;
-  const char   *scs;
+  char   *scs;
   PTABLE  tp, tabp;
   PCOL    colp;
   PTBLDEF tdp = (PTBLDEF)To_Def;
@@ -650,7 +650,7 @@ bool TDBTBM::IsLocal(PTABLE tbp)
 
 	return ((!stricmp(tdbp->Host, "localhost") ||
 		       !strcmp(tdbp->Host, "127.0.0.1")) &&
-                       (int) tdbp->Port == (int)GetDefaultPort());
+		        tdbp->Port == (int)GetDefaultPort());
 }	// end of IsLocal
 
 /***********************************************************************/

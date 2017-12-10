@@ -71,7 +71,7 @@ public:
   int close(void);
   void set_keys_for_scanning(void);
   int write_row(uchar * buf);
-  int update_row(const uchar * old_data, const uchar * new_data);
+  int update_row(const uchar * old_data, uchar * new_data);
   int delete_row(const uchar * buf);
   virtual void get_auto_increment(ulonglong offset, ulonglong increment,
                                   ulonglong nb_desired_values,
@@ -115,7 +115,6 @@ public:
     return memcmp(ref1, ref2, sizeof(HEAP_PTR));
   }
   bool check_if_incompatible_data(HA_CREATE_INFO *info, uint table_changes);
-  int find_unique_row(uchar *record, uint unique_idx);
 private:
   void update_key_stats();
 };

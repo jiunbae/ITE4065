@@ -26,7 +26,7 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "sql_select.h"
 #include "uniques.h"
@@ -897,8 +897,7 @@ bool Aggregator_distinct::setup(THD *thd)
     if (always_null)
       DBUG_RETURN(FALSE);
 
-    Field *field= arg->type_handler()->
-                    make_num_distinct_aggregator_field(thd->mem_root, arg);
+    Field *field= arg->make_num_distinct_aggregator_field(thd->mem_root, arg);
     if (!field || !(table= create_virtual_tmp_table(thd, field)))
       DBUG_RETURN(TRUE);
 
@@ -1157,13 +1156,38 @@ Item_sum_hybrid::fix_fields(THD *thd, Item **ref)
   if ((!item->fixed && item->fix_fields(thd, args)) ||
       (item= args[0])->check_cols(1))
     return TRUE;
+  Type_std_attributes::set(args[0]);
   with_subselect= args[0]->with_subselect;
   with_window_func|= args[0]->with_window_func;
 
-  fix_length_and_dec();
+  Item *item2= item->real_item();
+  if (item2->type() == Item::FIELD_ITEM)
+    set_handler_by_field_type(((Item_field*) item2)->field->type());
+  else if (item->cmp_type() == TIME_RESULT)
+    set_handler_by_field_type(item2->field_type());
+  else
+    set_handler_by_result_type(item2->result_type(),
+                               max_length, collation.collation);
+
+  switch (Item_sum_hybrid::result_type()) {
+  case INT_RESULT:
+  case DECIMAL_RESULT:
+  case STRING_RESULT:
+    break;
+  case REAL_RESULT:
+    max_length= float_length(decimals);
+    break;
+  case ROW_RESULT:
+  case TIME_RESULT:
+    DBUG_ASSERT(0);
+  };
   if (!is_window_func_sum_expr())
     setup_hybrid(thd, args[0], NULL);
+  /* MIN/MAX can return NULL for empty set indepedent of the used column */
+  maybe_null= 1;
   result_field=0;
+  null_value=1;
+  fix_length_and_dec();
 
   if (check_sum_func(thd, ref))
     return TRUE;
@@ -1171,14 +1195,6 @@ Item_sum_hybrid::fix_fields(THD *thd, Item **ref)
   orig_args[0]= args[0];
   fixed= 1;
   return FALSE;
-}
-
-
-void Item_sum_hybrid::fix_length_and_dec()
-{
-  DBUG_ASSERT(args[0]->field_type() == args[0]->real_item()->field_type());
-  DBUG_ASSERT(args[0]->result_type() == args[0]->real_item()->result_type());
-  (void) args[0]->type_handler()->Item_sum_hybrid_fix_length_and_dec(this);
 }
 
 
@@ -1201,14 +1217,14 @@ void Item_sum_hybrid::fix_length_and_dec()
 
 void Item_sum_hybrid::setup_hybrid(THD *thd, Item *item, Item *value_arg)
 {
-  if (!(value= item->get_cache(thd)))
+  if (!(value= Item_cache::get_cache(thd, item, item->cmp_type())))
     return;
   value->setup(thd, item);
   value->store(value_arg);
   /* Don't cache value, as it will change */
   if (!item->const_item())
     value->set_used_tables(RAND_TABLE_BIT);
-  if (!(arg_cache= item->get_cache(thd)))
+  if (!(arg_cache= Item_cache::get_cache(thd, item, item->cmp_type())))
     return;
   arg_cache->setup(thd, item);
   /* Don't cache value, as it will change */
@@ -1217,20 +1233,51 @@ void Item_sum_hybrid::setup_hybrid(THD *thd, Item *item, Item *value_arg)
   cmp= new Arg_comparator();
   if (cmp)
     cmp->set_cmp_func(this, (Item**)&arg_cache, (Item**)&value, FALSE);
+  collation.set(item->collation);
 }
 
 
 Field *Item_sum_hybrid::create_tmp_field(bool group, TABLE *table)
 {
+  Field *field;
+  MEM_ROOT *mem_root;
+
   if (args[0]->type() == Item::FIELD_ITEM)
   {
-    Field *field= ((Item_field*) args[0])->field;
-    if ((field= create_tmp_field_from_field(table->in_use, field, &name,
-                                            table, NULL)))
+    field= ((Item_field*) args[0])->field;
+
+    if ((field= create_tmp_field_from_field(table->in_use, field, name, table,
+					    NULL)))
       field->flags&= ~NOT_NULL_FLAG;
     return field;
   }
-  return tmp_table_field_from_field_type(table);
+
+  /*
+    DATE/TIME fields have STRING_RESULT result types.
+    In order to preserve field type, it's needed to handle DATE/TIME
+    fields creations separately.
+  */
+  mem_root= table->in_use->mem_root;
+  switch (args[0]->field_type()) {
+  case MYSQL_TYPE_DATE:
+    field= new (mem_root)
+      Field_newdate(0, maybe_null ? (uchar*)"" : 0, 0, Field::NONE, name);
+    break;
+  case MYSQL_TYPE_TIME:
+    field= new_Field_time(mem_root, 0, maybe_null ? (uchar*)"" : 0, 0,
+                          Field::NONE, name, decimals);
+    break;
+  case MYSQL_TYPE_TIMESTAMP:
+  case MYSQL_TYPE_DATETIME:
+    field= new_Field_datetime(mem_root, 0, maybe_null ? (uchar*)"" : 0, 0,
+                              Field::NONE, name, decimals);
+    break;
+  default:
+    return Item_sum::create_tmp_field(group, table);
+  }
+  if (field)
+    field->init(table);
+  return field;
 }
 
 
@@ -1249,7 +1296,7 @@ Item_sum_sum::Item_sum_sum(THD *thd, Item_sum_sum *item)
    count(item->count)
 {
   /* TODO: check if the following assignments are really needed */
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_sum::result_type() == DECIMAL_RESULT)
   {
     my_decimal2decimal(item->dec_buffs, dec_buffs);
     my_decimal2decimal(item->dec_buffs + 1, dec_buffs + 1);
@@ -1269,7 +1316,7 @@ void Item_sum_sum::clear()
   DBUG_ENTER("Item_sum_sum::clear");
   null_value=1;
   count= 0;
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_sum::result_type() == DECIMAL_RESULT)
   {
     curr_dec_buff= 0;
     my_decimal_set_zero(dec_buffs);
@@ -1280,35 +1327,41 @@ void Item_sum_sum::clear()
 }
 
 
-void Item_sum_sum::fix_length_and_dec_double()
-{
-  set_handler(&type_handler_double); // Change FLOAT to DOUBLE
-  decimals= args[0]->decimals;
-  sum= 0.0;
-}
-
-
-void Item_sum_sum::fix_length_and_dec_decimal()
-{
-  set_handler(&type_handler_newdecimal); // Change temporal to new DECIMAL
-  decimals= args[0]->decimals;
-  /* SUM result can't be longer than length(arg) + length(MAX_ROWS) */
-  int precision= args[0]->decimal_precision() + DECIMAL_LONGLONG_DIGITS;
-  max_length= my_decimal_precision_to_length_no_truncation(precision,
-                                                           decimals,
-                                                           unsigned_flag);
-  curr_dec_buff= 0;
-  my_decimal_set_zero(dec_buffs);
-}
-
-
 void Item_sum_sum::fix_length_and_dec()
 {
   DBUG_ENTER("Item_sum_sum::fix_length_and_dec");
   maybe_null=null_value=1;
-  args[0]->cast_to_int_type_handler()->Item_sum_sum_fix_length_and_dec(this);
-  DBUG_PRINT("info", ("Type: %s (%d, %d)", type_handler()->name().ptr(),
-                      max_length, (int) decimals));
+  decimals= args[0]->decimals;
+  switch (args[0]->cast_to_int_type()) {
+  case REAL_RESULT:
+  case STRING_RESULT:
+    set_handler_by_field_type(MYSQL_TYPE_DOUBLE);
+    sum= 0.0;
+    break;
+  case INT_RESULT:
+  case TIME_RESULT:
+  case DECIMAL_RESULT:
+  {
+    /* SUM result can't be longer than length(arg) + length(MAX_ROWS) */
+    int precision= args[0]->decimal_precision() + DECIMAL_LONGLONG_DIGITS;
+    max_length= my_decimal_precision_to_length_no_truncation(precision,
+                                                             decimals,
+                                                             unsigned_flag);
+    curr_dec_buff= 0;
+    set_handler_by_field_type(MYSQL_TYPE_NEWDECIMAL);
+    my_decimal_set_zero(dec_buffs);
+    break;
+  }
+  case ROW_RESULT:
+    DBUG_ASSERT(0);
+  }
+  DBUG_PRINT("info", ("Type: %s (%d, %d)",
+                      (result_type() == REAL_RESULT ? "REAL_RESULT" :
+                       result_type() == DECIMAL_RESULT ? "DECIMAL_RESULT" :
+                       result_type() == INT_RESULT ? "INT_RESULT" :
+                       "--ILLEGAL!!!--"),
+                      max_length,
+                      (int)decimals));
   DBUG_VOID_RETURN;
 }
 
@@ -1324,7 +1377,7 @@ void Item_sum_sum::add_helper(bool perform_removal)
 {
   DBUG_ENTER("Item_sum_sum::add_helper");
 
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_sum::result_type() == DECIMAL_RESULT)
   {
     my_decimal value;
     const my_decimal *val= aggr->arg_val_decimal(&value);
@@ -1381,7 +1434,7 @@ longlong Item_sum_sum::val_int()
   DBUG_ASSERT(fixed == 1);
   if (aggr)
     aggr->endup();
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_sum::result_type() == DECIMAL_RESULT)
   {
     longlong result;
     my_decimal2int(E_DEC_FATAL_ERROR, dec_buffs + curr_dec_buff, unsigned_flag,
@@ -1397,7 +1450,7 @@ double Item_sum_sum::val_real()
   DBUG_ASSERT(fixed == 1);
   if (aggr)
     aggr->endup();
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_sum::result_type() == DECIMAL_RESULT)
     my_decimal2double(E_DEC_FATAL_ERROR, dec_buffs + curr_dec_buff, &sum);
   return sum;
 }
@@ -1407,7 +1460,7 @@ String *Item_sum_sum::val_str(String *str)
 {
   if (aggr)
     aggr->endup();
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_sum::result_type() == DECIMAL_RESULT)
     return val_string_from_decimal(str);
   return val_string_from_real(str);
 }
@@ -1417,7 +1470,7 @@ my_decimal *Item_sum_sum::val_decimal(my_decimal *val)
 {
   if (aggr)
     aggr->endup();
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_sum::result_type() == DECIMAL_RESULT)
     return null_value ? NULL : (dec_buffs + curr_dec_buff);
   return val_decimal_from_real(val);
 }
@@ -1609,39 +1662,28 @@ void Item_sum_count::cleanup()
 /*
   Avgerage
 */
-
-void Item_sum_avg::fix_length_and_dec_decimal()
-{
-  Item_sum_sum::fix_length_and_dec_decimal();
-  int precision= args[0]->decimal_precision() + prec_increment;
-  decimals= MY_MIN(args[0]->decimals + prec_increment, DECIMAL_MAX_SCALE);
-  max_length= my_decimal_precision_to_length_no_truncation(precision,
-                                                           decimals,
-                                                           unsigned_flag);
-  f_precision= MY_MIN(precision+DECIMAL_LONGLONG_DIGITS, DECIMAL_MAX_PRECISION);
-  f_scale=  args[0]->decimals;
-  dec_bin_size= my_decimal_get_binary_size(f_precision, f_scale);
-}
-
-
-void Item_sum_avg::fix_length_and_dec_double()
-{
-  Item_sum_sum::fix_length_and_dec_double();
-  decimals= MY_MIN(args[0]->decimals + prec_increment,
-                   FLOATING_POINT_DECIMALS);
-  max_length= MY_MIN(args[0]->max_length + prec_increment, float_length(decimals));
-}
-
-
 void Item_sum_avg::fix_length_and_dec()
 {
-  DBUG_ENTER("Item_sum_avg::fix_length_and_dec");
-  prec_increment= current_thd->variables.div_precincrement;
+  Item_sum_sum::fix_length_and_dec();
   maybe_null=null_value=1;
-  args[0]->cast_to_int_type_handler()->Item_sum_avg_fix_length_and_dec(this);
-  DBUG_PRINT("info", ("Type: %s (%d, %d)", type_handler()->name().ptr(),
-                      max_length, (int) decimals));
-  DBUG_VOID_RETURN;
+  prec_increment= current_thd->variables.div_precincrement;
+  if (Item_sum_avg::result_type() == DECIMAL_RESULT)
+  {
+    int precision= args[0]->decimal_precision() + prec_increment;
+    decimals= MY_MIN(args[0]->decimals + prec_increment, DECIMAL_MAX_SCALE);
+    max_length= my_decimal_precision_to_length_no_truncation(precision,
+                                                             decimals,
+                                                             unsigned_flag);
+    f_precision= MY_MIN(precision+DECIMAL_LONGLONG_DIGITS, DECIMAL_MAX_PRECISION);
+    f_scale=  args[0]->decimals;
+    dec_bin_size= my_decimal_get_binary_size(f_precision, f_scale);
+  }
+  else
+  {
+    decimals= MY_MIN(args[0]->decimals + prec_increment,
+                     FLOATING_POINT_DECIMALS);
+    max_length= MY_MIN(args[0]->max_length + prec_increment, float_length(decimals));
+  }
 }
 
 
@@ -1653,6 +1695,8 @@ Item *Item_sum_avg::copy_or_same(THD* thd)
 
 Field *Item_sum_avg::create_tmp_field(bool group, TABLE *table)
 {
+  Field *field;
+  MEM_ROOT *mem_root= table->in_use->mem_root;
 
   if (group)
   {
@@ -1661,15 +1705,19 @@ Field *Item_sum_avg::create_tmp_field(bool group, TABLE *table)
       The easiest way is to do this is to store both value in a string
       and unpack on access.
     */
-    Field *field= new (table->in_use->mem_root)
-      Field_string(((result_type() == DECIMAL_RESULT) ?
-                   dec_bin_size : sizeof(double)) + sizeof(longlong),
-                   0, &name, &my_charset_bin);
-    if (field)
-      field->init(table);
-    return field;
+    field= new (mem_root)
+      Field_string(((Item_sum_avg::result_type() == DECIMAL_RESULT) ?
+                    dec_bin_size : sizeof(double)) + sizeof(longlong),
+                   0, name, &my_charset_bin);
   }
-  return tmp_table_field_from_field_type(table);
+  else if (Item_sum_avg::result_type() == DECIMAL_RESULT)
+    field= Field_new_decimal::create_from_item(mem_root, this);
+  else
+    field= new (mem_root) Field_double(max_length, maybe_null, name, decimals,
+                                       TRUE);
+  if (field)
+    field->init(table);
+  return field;
 }
 
 
@@ -1730,7 +1778,7 @@ my_decimal *Item_sum_avg::val_decimal(my_decimal *val)
     For non-DECIMAL result_type() the division will be done in
     Item_sum_avg::val_real().
   */
-  if (result_type() != DECIMAL_RESULT)
+  if (Item_sum_avg::result_type() != DECIMAL_RESULT)
     return val_decimal_from_real(val);
 
   sum_dec= dec_buffs + curr_dec_buff;
@@ -1744,7 +1792,7 @@ String *Item_sum_avg::val_str(String *str)
 {
   if (aggr)
     aggr->endup();
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_avg::result_type() == DECIMAL_RESULT)
     return val_string_from_decimal(str);
   return val_string_from_real(str);
 }
@@ -1834,25 +1882,6 @@ Item_sum_variance::Item_sum_variance(THD *thd, Item_sum_variance *item):
 }
 
 
-void Item_sum_variance::fix_length_and_dec_double()
-{
-  DBUG_ASSERT(Item_sum_variance::type_handler() == &type_handler_double);
-  decimals= MY_MIN(args[0]->decimals + 4, FLOATING_POINT_DECIMALS);
-}
-
-
-void Item_sum_variance::fix_length_and_dec_decimal()
-{
-  DBUG_ASSERT(Item_sum_variance::type_handler() == &type_handler_double);
-  int precision= args[0]->decimal_precision() * 2 + prec_increment;
-  decimals= MY_MIN(args[0]->decimals + prec_increment,
-                   FLOATING_POINT_DECIMALS - 1);
-  max_length= my_decimal_precision_to_length_no_truncation(precision,
-                                                           decimals,
-                                                           unsigned_flag);
-}
-
-
 void Item_sum_variance::fix_length_and_dec()
 {
   DBUG_ENTER("Item_sum_variance::fix_length_and_dec");
@@ -1866,9 +1895,28 @@ void Item_sum_variance::fix_length_and_dec()
     type.
   */
 
-  args[0]->type_handler()->Item_sum_variance_fix_length_and_dec(this);
-  DBUG_PRINT("info", ("Type: %s (%d, %d)", type_handler()->name().ptr(),
-                      max_length, (int)decimals));
+  switch (args[0]->result_type()) {
+  case REAL_RESULT:
+  case STRING_RESULT:
+    decimals= MY_MIN(args[0]->decimals + 4, FLOATING_POINT_DECIMALS);
+    break;
+  case INT_RESULT:
+  case DECIMAL_RESULT:
+  {
+    int precision= args[0]->decimal_precision()*2 + prec_increment;
+    decimals= MY_MIN(args[0]->decimals + prec_increment,
+                     FLOATING_POINT_DECIMALS-1);
+    max_length= my_decimal_precision_to_length_no_truncation(precision,
+                                                             decimals,
+                                                             unsigned_flag);
+
+    break;
+  }
+  case ROW_RESULT:
+  case TIME_RESULT:
+    DBUG_ASSERT(0);
+  }
+  DBUG_PRINT("info", ("Type: REAL_RESULT (%d, %d)", max_length, (int)decimals));
   DBUG_VOID_RETURN;
 }
 
@@ -1894,12 +1942,10 @@ Field *Item_sum_variance::create_tmp_field(bool group, TABLE *table)
       The easiest way is to do this is to store both value in a string
       and unpack on access.
     */
-    field= new Field_string(sizeof(double)*2 + sizeof(longlong), 0,
-                            &name, &my_charset_bin);
+    field= new Field_string(sizeof(double)*2 + sizeof(longlong), 0, name, &my_charset_bin);
   }
   else
-    field= new Field_double(max_length, maybe_null, &name, decimals,
-                            TRUE);
+    field= new Field_double(max_length, maybe_null, name, decimals, TRUE);
 
   if (field != NULL)
     field->init(table);
@@ -2017,18 +2063,6 @@ void Item_sum_hybrid::clear()
 {
   value->clear();
   null_value= 1;
-}
-
-bool
-Item_sum_hybrid::get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
-{
-  DBUG_ASSERT(fixed == 1);
-  if (null_value)
-    return true;
-  bool retval= value->get_date(ltime, fuzzydate);
-  if ((null_value= value->null_value))
-    DBUG_ASSERT(retval == true);
-  return retval;
 }
 
 double Item_sum_hybrid::val_real()
@@ -2339,7 +2373,7 @@ void Item_sum_num::reset_field()
 
 void Item_sum_hybrid::reset_field()
 {
-  switch(result_type()) {
+  switch(Item_sum_hybrid::result_type()) {
   case STRING_RESULT:
   {
     char buff[MAX_FIELD_WIDTH];
@@ -2422,7 +2456,7 @@ void Item_sum_hybrid::reset_field()
 void Item_sum_sum::reset_field()
 {
   DBUG_ASSERT (aggr->Aggrtype() != Aggregator::DISTINCT_AGGREGATOR);
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_sum::result_type() == DECIMAL_RESULT)
   {
     my_decimal value, *arg_val= args[0]->val_decimal(&value);
     if (!arg_val)                               // Null
@@ -2458,7 +2492,7 @@ void Item_sum_avg::reset_field()
 {
   uchar *res=result_field->ptr;
   DBUG_ASSERT (aggr->Aggrtype() != Aggregator::DISTINCT_AGGREGATOR);
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_avg::result_type() == DECIMAL_RESULT)
   {
     longlong tmp;
     my_decimal value, *arg_dec= args[0]->val_decimal(&value);
@@ -2516,7 +2550,7 @@ void Item_sum_bit::update_field()
 void Item_sum_sum::update_field()
 {
   DBUG_ASSERT (aggr->Aggrtype() != Aggregator::DISTINCT_AGGREGATOR);
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_sum::result_type() == DECIMAL_RESULT)
   {
     my_decimal value, *arg_val= args[0]->val_decimal(&value);
     if (!args[0]->null_value)
@@ -2571,7 +2605,7 @@ void Item_sum_avg::update_field()
 
   DBUG_ASSERT (aggr->Aggrtype() != Aggregator::DISTINCT_AGGREGATOR);
 
-  if (result_type() == DECIMAL_RESULT)
+  if (Item_sum_avg::result_type() == DECIMAL_RESULT)
   {
     my_decimal value, *arg_val= args[0]->val_decimal(&value);
     if (!args[0]->null_value)
@@ -2610,7 +2644,7 @@ void Item_sum_avg::update_field()
 Item *Item_sum_avg::result_item(THD *thd, Field *field)
 {
   return
-    result_type() == DECIMAL_RESULT ?
+    Item_sum_avg::result_type() == DECIMAL_RESULT ?
     (Item_avg_field*) new (thd->mem_root) Item_avg_field_decimal(thd, this) :
     (Item_avg_field*) new (thd->mem_root) Item_avg_field_double(thd, this);
 }
@@ -2618,7 +2652,7 @@ Item *Item_sum_avg::result_item(THD *thd, Field *field)
 
 void Item_sum_hybrid::update_field()
 {
-  switch (result_type()) {
+  switch (Item_sum_hybrid::result_type()) {
   case STRING_RESULT:
     min_max_update_str_field();
     break;
@@ -3322,7 +3356,7 @@ void Item_func_group_concat::cleanup()
       table= 0;
       if (tree)
       {
-        delete_tree(tree, 0);
+        delete_tree(tree);
         tree= 0;
       }
       if (unique_filter)
@@ -3347,6 +3381,24 @@ void Item_func_group_concat::cleanup()
     order_ptr++;
   }
   DBUG_VOID_RETURN;
+}
+
+
+Field *Item_func_group_concat::make_string_field(TABLE *table_arg)
+{
+  Field *field;
+  DBUG_ASSERT(collation.collation);
+  if (too_big_for_varchar())
+    field= new Field_blob(max_length,
+                          maybe_null, name, collation.collation, TRUE);
+  else
+    field= new Field_varstring(max_length,
+                               maybe_null, name, table_arg->s,
+                               collation.collation);
+
+  if (field)
+    field->init(table_arg);
+  return field;
 }
 
 

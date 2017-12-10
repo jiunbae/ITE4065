@@ -2449,7 +2449,7 @@ fil_recreate_tablespace(
 
 	/* Step-1: Invalidate buffer pool pages belonging to the tablespace
 	to re-create. */
-	buf_LRU_flush_or_remove_pages(space_id, NULL);
+	buf_LRU_flush_or_remove_pages(space_id, BUF_REMOVE_ALL_NO_WRITE, 0);
 
 	/* Remove all insert buffer entries for the tablespace */
 	ibuf_delete_for_discarded_space(space_id);
@@ -2907,7 +2907,7 @@ fil_close_tablespace(
 	completely and permanently. The flag stop_new_ops also prevents
 	fil_flush() from being applied to this tablespace. */
 
-	buf_LRU_flush_or_remove_pages(id, trx);
+	buf_LRU_flush_or_remove_pages(id, BUF_REMOVE_FLUSH_WRITE, trx);
 
 	/* If the free is successful, the X lock will be released before
 	the space memory data structure is freed. */
@@ -2959,12 +2959,17 @@ fil_table_accessible(const dict_table_t* table)
 	}
 }
 
-/** Delete a tablespace and associated .ibd file.
-@param[in]	id		tablespace identifier
-@param[in]	drop_ahi	whether to drop the adaptive hash index
-@return	DB_SUCCESS or error */
+/** Deletes an IBD tablespace, either general or single-table.
+The tablespace must be cached in the memory cache. This will delete the
+datafile, fil_space_t & fil_node_t entries from the file_system_t cache.
+@param[in]	space_id	Tablespace id
+@param[in]	buf_remove	Specify the action to take on the pages
+for this table in the buffer pool.
+@return DB_SUCCESS or error */
 dberr_t
-fil_delete_tablespace(ulint id, bool drop_ahi)
+fil_delete_tablespace(
+	ulint		id,
+	buf_remove_t	buf_remove)
 {
 	char*		path = 0;
 	fil_space_t*	space = 0;
@@ -3007,7 +3012,7 @@ fil_delete_tablespace(ulint id, bool drop_ahi)
 	To deal with potential read requests, we will check the
 	::stop_new_ops flag in fil_io(). */
 
-	buf_LRU_flush_or_remove_pages(id, NULL, drop_ahi);
+	buf_LRU_flush_or_remove_pages(id, buf_remove, 0);
 
 	/* If it is a delete then also delete any generated files, otherwise
 	when we drop the database the remove directory will fail. */
@@ -3098,7 +3103,7 @@ fil_truncate_tablespace(
 
 	/* Step-2: Invalidate buffer pool pages belonging to the tablespace
 	to re-create. Remove all insert buffer entries for the tablespace */
-	buf_LRU_flush_or_remove_pages(space_id, NULL);
+	buf_LRU_flush_or_remove_pages(space_id, BUF_REMOVE_ALL_NO_WRITE, 0);
 
 	/* Step-3: Truncate the tablespace and accordingly update
 	the fil_space_t handler that is used to access this tablespace. */
@@ -3194,7 +3199,7 @@ fil_reinit_space_header_for_table(
 	from disabling AHI during the scan */
 	btr_search_s_lock_all();
 	DEBUG_SYNC_C("buffer_pool_scan");
-	buf_LRU_flush_or_remove_pages(id, NULL);
+	buf_LRU_flush_or_remove_pages(id, BUF_REMOVE_ALL_NO_WRITE, 0);
 	btr_search_s_unlock_all();
 
 	row_mysql_lock_data_dictionary(trx);
@@ -3287,7 +3292,7 @@ fil_discard_tablespace(
 {
 	dberr_t	err;
 
-	switch (err = fil_delete_tablespace(id, true)) {
+	switch (err = fil_delete_tablespace(id, BUF_REMOVE_ALL_NO_WRITE)) {
 	case DB_SUCCESS:
 		break;
 
@@ -4343,19 +4348,8 @@ fil_ibd_discover(
 
 		/* Look for a remote file-per-table tablespace. */
 
-		switch (srv_operation) {
-		case SRV_OPERATION_BACKUP:
-		case SRV_OPERATION_RESTORE_DELTA:
-			ut_ad(0);
-			break;
-		case SRV_OPERATION_RESTORE_EXPORT:
-		case SRV_OPERATION_RESTORE:
-			break;
-		case SRV_OPERATION_NORMAL:
-			df_rem_per.set_name(db);
-			if (df_rem_per.open_link_file() != DB_SUCCESS) {
-				break;
-			}
+		df_rem_per.set_name(db);
+		if (df_rem_per.open_link_file() == DB_SUCCESS) {
 
 			/* An ISL file was found with contents. */
 			if (df_rem_per.open_read_only(false) != DB_SUCCESS
@@ -4443,18 +4437,6 @@ fil_ibd_load(
 				return(FIL_LOAD_ID_CHANGED);
 		}
 		return(FIL_LOAD_OK);
-	}
-
-	if (srv_operation == SRV_OPERATION_RESTORE) {
-		/* Replace absolute DATA DIRECTORY file paths with
-		short names relative to the backup directory. */
-		if (const char* name = strrchr(filename, OS_PATH_SEPARATOR)) {
-			while (--name > filename
-			       && *name != OS_PATH_SEPARATOR);
-			if (name > filename) {
-				filename = name + 1;
-			}
-		}
 	}
 
 	Datafile	file;

@@ -752,7 +752,7 @@ struct rpl_group_info
     Runtime state for printing a note when slave is taking
     too long while processing a row event.
    */
-  longlong row_stmt_start_timestamp;
+  time_t row_stmt_start_timestamp;
   bool long_find_row_note_printed;
   /* Needs room for "Gtid D-S-N\x00". */
   char gtid_info_buf[5+10+1+10+1+20+1];
@@ -898,15 +898,17 @@ struct rpl_group_info
   char *gtid_info();
   void unmark_start_commit();
 
-  longlong get_row_stmt_start_timestamp()
+  time_t get_row_stmt_start_timestamp()
   {
     return row_stmt_start_timestamp;
   }
 
-  void set_row_stmt_start_timestamp()
+  time_t set_row_stmt_start_timestamp()
   {
     if (row_stmt_start_timestamp == 0)
-      row_stmt_start_timestamp= microsecond_interval_timer();
+      row_stmt_start_timestamp= my_time(0);
+
+    return row_stmt_start_timestamp;
   }
 
   void reset_row_stmt_start_timestamp()
@@ -965,7 +967,6 @@ extern struct rpl_slave_state *rpl_global_gtid_slave_state;
 extern gtid_waiting rpl_global_gtid_waiting;
 
 int rpl_load_gtid_slave_state(THD *thd);
-int find_gtid_slave_pos_tables(THD *thd);
 int event_group_new_gtid(rpl_group_info *rgi, Gtid_log_event *gev);
 void delete_or_keep_event_post_apply(rpl_group_info *rgi,
                                      Log_event_type typ, Log_event *ev);

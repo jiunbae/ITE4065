@@ -31,6 +31,7 @@ Created 11/11/1995 Heikki Tuuri
 
 #include "buf0flu.h"
 #include "buf0buf.h"
+#include "buf0mtflu.h"
 #include "buf0checksum.h"
 #include "srv0start.h"
 #include "srv0srv.h"
@@ -149,8 +150,6 @@ struct page_cleaner_t {
 						threads. */
 	os_event_t		is_finished;	/*!< event to signal that all
 						slots were finished. */
-	os_event_t		is_started;	/*!< event to signal that
-						thread is started/exiting */
 	volatile ulint		n_workers;	/*!< number of worker threads
 						in existence */
 	bool			requested;	/*!< true if requested pages
@@ -929,7 +928,6 @@ buf_flush_init_for_writing(
 			default:
 				switch (page_type) {
 				case FIL_PAGE_INDEX:
-				case FIL_PAGE_TYPE_INSTANT:
 				case FIL_PAGE_RTREE:
 				case FIL_PAGE_UNDO_LOG:
 				case FIL_PAGE_INODE:
@@ -2142,6 +2140,10 @@ buf_flush_lists(
 	ulint		n_flushed = 0;
 	bool		success = true;
 
+	if (buf_mtflu_init_done()) {
+		return(buf_mtflu_flush_list(min_n, lsn_limit, n_processed));
+	}
+
 	if (n_processed) {
 		*n_processed = 0;
 	}
@@ -2299,6 +2301,11 @@ buf_flush_LRU_list(
 	flush_counters_t	n;
 
 	memset(&n, 0, sizeof(flush_counters_t));
+
+	if(buf_mtflu_init_done())
+	{
+		return(buf_mtflu_flush_LRU_tail());
+	}
 
 	ut_ad(buf_pool);
 	/* srv_LRU_scan_depth can be arbitrarily large value.
@@ -2728,7 +2735,6 @@ buf_flush_page_cleaner_init(void)
 
 	page_cleaner->is_requested = os_event_create("pc_is_requested");
 	page_cleaner->is_finished = os_event_create("pc_is_finished");
-	page_cleaner->is_started = os_event_create("pc_is_started");
 
 	page_cleaner->n_slots = static_cast<ulint>(srv_buf_pool_instances);
 
@@ -2758,7 +2764,6 @@ buf_flush_page_cleaner_close(void)
 
 	os_event_destroy(page_cleaner->is_finished);
 	os_event_destroy(page_cleaner->is_requested);
-	os_event_destroy(page_cleaner->is_started);
 
 	ut_free(page_cleaner);
 
@@ -3480,39 +3485,6 @@ thread_exit:
 	OS_THREAD_DUMMY_RETURN;
 }
 
-/** Adjust thread count for page cleaner workers.
-@param[in]	new_cnt		Number of threads to be used */
-void
-buf_flush_set_page_cleaner_thread_cnt(ulong new_cnt)
-{
-	mutex_enter(&page_cleaner->mutex);
-
-	if (new_cnt > srv_n_page_cleaners) {
-		/* User has increased the number of page
-		cleaner threads. */
-		uint add = new_cnt - srv_n_page_cleaners;
-		srv_n_page_cleaners = new_cnt;
-		for (uint i = 0; i < add; i++) {
-			os_thread_id_t cleaner_thread_id;
-			os_thread_create(buf_flush_page_cleaner_worker, NULL, &cleaner_thread_id);
-		}
-	} else if (new_cnt < srv_n_page_cleaners) {
-		/* User has decreased the number of page
-		cleaner threads. */
-		srv_n_page_cleaners = new_cnt;
-	}
-
-	mutex_exit(&page_cleaner->mutex);
-
-	/* Wait until defined number of workers has started. */
-	while (page_cleaner->is_running &&
-	       page_cleaner->n_workers != (srv_n_page_cleaners - 1)) {
-		os_event_set(page_cleaner->is_requested);
-		os_event_reset(page_cleaner->is_started);
-		os_event_wait_time(page_cleaner->is_started, 1000000);
-	}
-}
-
 /******************************************************************//**
 Worker thread of page_cleaner.
 @return a dummy parameter */
@@ -3525,19 +3497,9 @@ DECLARE_THREAD(buf_flush_page_cleaner_worker)(
 			os_thread_create */
 {
 	my_thread_init();
-	os_thread_id_t cleaner_thread_id = os_thread_get_curr_id();
 
 	mutex_enter(&page_cleaner->mutex);
-	ulint thread_no = page_cleaner->n_workers;
 	page_cleaner->n_workers++;
-
-	DBUG_LOG("ib_buf", "Thread "
-		<< cleaner_thread_id
-		<< " started n_workers "
-		<< page_cleaner->n_workers << ".");
-
-	/* Signal that we have started */
-	os_event_set(page_cleaner->is_started);
 	mutex_exit(&page_cleaner->mutex);
 
 #ifdef UNIV_LINUX
@@ -3560,31 +3522,11 @@ DECLARE_THREAD(buf_flush_page_cleaner_worker)(
 			break;
 		}
 
-		ut_ad(srv_n_page_cleaners >= 1);
-
-		/* If number of page cleaner threads is decreased
-		exit those that are not anymore needed. */
-		if (srv_shutdown_state == SRV_SHUTDOWN_NONE &&
-		    thread_no >= (srv_n_page_cleaners - 1)) {
-			DBUG_LOG("ib_buf", "Exiting "
-				<< thread_no
-				<< " page cleaner worker thread_id "
-				<< os_thread_pf(cleaner_thread_id)
-				<< " total threads " << srv_n_page_cleaners << ".");
-			break;
-		}
-
 		pc_flush_slot();
 	}
 
 	mutex_enter(&page_cleaner->mutex);
 	page_cleaner->n_workers--;
-
-	DBUG_LOG("ib_buf", "Thread " << cleaner_thread_id
-		<< " exiting n_workers " << page_cleaner->n_workers<< ".");
-
-	/* Signal that we have stopped */
-	os_event_set(page_cleaner->is_started);
 	mutex_exit(&page_cleaner->mutex);
 
 	my_thread_end();
@@ -3879,16 +3821,24 @@ FlushObserver::notify_remove(
 void
 FlushObserver::flush()
 {
-	if (!m_interrupted && m_stage) {
-		m_stage->begin_phase_flush(buf_flush_get_dirty_pages_count(
-						   m_space_id, this));
+	buf_remove_t	buf_remove;
+
+	if (m_interrupted) {
+		buf_remove = BUF_REMOVE_FLUSH_NO_WRITE;
+	} else {
+		buf_remove = BUF_REMOVE_FLUSH_WRITE;
+
+		if (m_stage != NULL) {
+			ulint	pages_to_flush =
+				buf_flush_get_dirty_pages_count(
+					m_space_id, this);
+
+			m_stage->begin_phase_flush(pages_to_flush);
+		}
 	}
 
-	/* MDEV-14317 FIXME: Discard all changes to only those pages
-	that will be freed by the clean-up of the ALTER operation.
-	(Maybe, instead of buf_pool->flush_list, use a dedicated list
-	for pages on which redo logging has been disabled.) */
-	buf_LRU_flush_or_remove_pages(m_space_id, m_trx);
+	/* Flush or remove dirty pages. */
+	buf_LRU_flush_or_remove_pages(m_space_id, buf_remove, m_trx);
 
 	/* Wait for all dirty pages were flushed. */
 	for (ulint i = 0; i < srv_buf_pool_instances; i++) {

@@ -1775,7 +1775,7 @@ fts_create_in_mem_aux_table(
 @param[in]	table		Table that has FTS Index
 @param[in]	fts_table_name	FTS AUX table name
 @param[in]	fts_suffix	FTS AUX table suffix
-@param[in,out]	heap		temporary memory heap
+@param[in]	heap		heap
 @return table object if created, else NULL */
 static
 dict_table_t*
@@ -1812,7 +1812,6 @@ fts_create_one_common_table(
 			FTS_CONFIG_TABLE_VALUE_COL_LEN);
 	}
 
-	dict_table_add_system_columns(new_table, heap);
 	error = row_create_table_for_mysql(new_table, trx,
 		FIL_ENCRYPTION_DEFAULT, FIL_DEFAULT_ENCRYPTION_KEY);
 
@@ -1907,14 +1906,12 @@ fts_create_common_tables(
 		dict_table_t*	common_table = fts_create_one_common_table(
 			trx, table, full_name[i], fts_table.suffix, heap);
 
-		if (common_table == NULL) {
+		 if (common_table == NULL) {
 			error = DB_ERROR;
 			goto func_exit;
 		} else {
 			common_tables.push_back(common_table);
 		}
-
-		mem_heap_empty(heap);
 
 		DBUG_EXECUTE_IF("ib_fts_aux_table_error",
 			/* Return error after creating FTS_AUX_CONFIG table. */
@@ -1975,7 +1972,7 @@ func_exit:
 @param[in,out]	trx		transaction
 @param[in]	index		the index instance
 @param[in]	fts_table	fts_table structure
-@param[in,out]	heap		temporary memory heap
+@param[in,out]	heap		memory heap
 @see row_merge_create_fts_sort_index()
 @return DB_SUCCESS or error code */
 static
@@ -2032,7 +2029,6 @@ fts_create_one_index_table(
 		(DATA_MTYPE_MAX << 16) | DATA_UNSIGNED | DATA_NOT_NULL,
 		FTS_INDEX_ILIST_LEN);
 
-	dict_table_add_system_columns(new_table, heap);
 	error = row_create_table_for_mysql(new_table, trx,
 		FIL_ENCRYPTION_DEFAULT, FIL_DEFAULT_ENCRYPTION_KEY);
 
@@ -2107,8 +2103,6 @@ fts_create_index_tables_low(
 		} else {
 			aux_idx_tables.push_back(new_table);
 		}
-
-		mem_heap_empty(heap);
 
 		DBUG_EXECUTE_IF("ib_fts_index_table_error",
 			/* Return error after creating FTS_INDEX_5
@@ -3292,8 +3286,6 @@ fts_fetch_doc_from_rec(
 	parser = get_doc->index_cache->index->parser;
 
 	clust_rec = btr_pcur_get_rec(pcur);
-	ut_ad(!page_rec_is_comp(clust_rec)
-	      || rec_get_status(clust_rec) == REC_STATUS_ORDINARY);
 
 	num_field = dict_index_get_n_fields(index);
 
@@ -3589,8 +3581,6 @@ fts_get_max_doc_id(
 		return(0);
 	}
 
-	ut_ad(!index->is_instant());
-
 	dfield = dict_index_get_nth_field(index, 0);
 
 #if 0 /* This can fail when renaming a column to FTS_DOC_ID_COL_NAME. */
@@ -3625,7 +3615,6 @@ fts_get_max_doc_id(
 			goto func_exit;
 		}
 
-		ut_ad(!rec_is_default_row(rec, index));
 		offsets = rec_get_offsets(
 			rec, index, offsets, true, ULINT_UNDEFINED, &heap);
 

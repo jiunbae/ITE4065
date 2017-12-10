@@ -17,6 +17,8 @@
 #ifndef _my_stacktrace_h_
 #define _my_stacktrace_h_
 
+#include <my_global.h>
+
 #ifdef TARGET_OS_LINUX
 #if defined (__x86_64__) || defined (__i386__) || \
     (defined(__alpha__) && defined(__GNUC__))
@@ -42,8 +44,7 @@ C_MODE_START
 
 #if defined(HAVE_STACKTRACE) || defined(HAVE_BACKTRACE)
 void my_init_stacktrace();
-void my_print_stacktrace(uchar* stack_bottom, ulong thread_stack,
-                         my_bool silent);
+void my_print_stacktrace(uchar* stack_bottom, ulong thread_stack);
 int my_safe_print_str(const char* val, int max_len);
 void my_write_core(int sig);
 #if BACKTRACE_DEMANGLE

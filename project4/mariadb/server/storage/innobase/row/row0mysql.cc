@@ -1879,9 +1879,7 @@ row_update_for_mysql(row_prebuilt_t* prebuilt)
 
 	init_fts_doc_id_for_ref(table, &fk_depth);
 
-	if (!table->no_rollback()) {
-		trx_start_if_not_started_xa(trx, true);
-	}
+	trx_start_if_not_started_xa(trx, true);
 
 	if (dict_table_is_referenced_by_foreign_key(table)) {
 		/* Share lock the data dictionary to prevent any
@@ -2505,7 +2503,10 @@ err_exit:
 		/* We already have .ibd file here. it should be deleted. */
 
 		if (dict_table_is_file_per_table(table)
-		    && fil_delete_tablespace(table->space) != DB_SUCCESS) {
+		    && fil_delete_tablespace(
+			    table->space,
+			    BUF_REMOVE_FLUSH_NO_WRITE)
+		    != DB_SUCCESS) {
 
 			ib::error() << "Not able to delete tablespace "
 				<< table->space << " of table "
@@ -2644,8 +2645,6 @@ row_create_index_for_mysql(
 		index = dict_index_get_if_in_cache_low(index_id);
 		ut_a(index != NULL);
 		index->table = table;
-		ut_ad(!index->is_instant());
-		index->n_core_null_bytes = UT_BITS_IN_BYTES(index->n_nullable);
 
 		err = dict_create_index_tree_in_mem(index, trx);
 
@@ -3174,6 +3173,9 @@ row_discard_tablespace(
 	4) FOREIGN KEY operations: if table->n_foreign_key_checks_running > 0,
 	we do not allow the discard. */
 
+	/* Play safe and remove all insert buffer entries, though we should
+	have removed them already when DISCARD TABLESPACE was called */
+
 	ibuf_delete_for_discarded_space(table->space);
 
 	table_id_t	new_id;
@@ -3538,7 +3540,8 @@ row_drop_single_table_tablespace(
 
 		ib::info() << "Removed datafile " << filepath
 			<< " for table " << tablename;
-	} else if (fil_delete_tablespace(space_id) != DB_SUCCESS) {
+	} else if (fil_delete_tablespace(space_id, BUF_REMOVE_FLUSH_NO_WRITE)
+		   != DB_SUCCESS) {
 
 		ib::error() << "We removed the InnoDB internal data"
 			" dictionary entry of table " << tablename
@@ -3668,7 +3671,7 @@ row_drop_table_for_mysql(
 		RemoteDatafile::delete_link_file(name);
 	}
 
-	if (!dict_table_is_temporary(table) && !table->no_rollback()) {
+	if (!dict_table_is_temporary(table)) {
 
 		dict_stats_recalc_pool_del(table);
 		dict_stats_defrag_pool_del(table, NULL);
@@ -3850,8 +3853,8 @@ row_drop_table_for_mysql(
 		TRX_DICT_OP_INDEX, we should be dropping auxiliary
 		tables for full-text indexes or temp tables. */
 		ut_ad(strstr(table->name.m_name, "/FTS_") != NULL
-		      || strstr(table->name.m_name,
-				TEMP_TABLE_PATH_PREFIX) != NULL);
+		      || strstr(table->name.m_name, TEMP_FILE_PREFIX_INNODB)
+		      != NULL);
 	}
 
 	/* Mark all indexes unavailable in the data dictionary cache
@@ -3995,8 +3998,9 @@ row_drop_table_for_mysql(
 		}
 
 		sql +=	"DELETE FROM SYS_VIRTUAL\n"
-			"WHERE TABLE_ID = table_id;\n"
-			"END;\n";
+			"WHERE TABLE_ID = table_id;\n";
+
+		sql += "END;\n";
 
 		err = que_eval_sql(info, sql.c_str(), FALSE, trx);
 	} else {

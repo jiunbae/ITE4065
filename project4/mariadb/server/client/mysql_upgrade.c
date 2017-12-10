@@ -673,7 +673,7 @@ static int get_upgrade_info_file_name(char* name)
 
 */
 
-static int upgrade_already_done(myf flags)
+static int upgrade_already_done(void)
 {
   FILE *in;
   char upgrade_info_file[FN_REFLEN]= {0};
@@ -681,23 +681,17 @@ static int upgrade_already_done(myf flags)
   if (get_upgrade_info_file_name(upgrade_info_file))
     return 0; /* Could not get filename => not sure */
 
-  if (!(in= my_fopen(upgrade_info_file, O_RDONLY, flags)))
+  if (!(in= my_fopen(upgrade_info_file, O_RDONLY, MYF(0))))
     return 0; /* Could not open file => not sure */
 
   bzero(upgrade_from_version, sizeof(upgrade_from_version));
   if (!fgets(upgrade_from_version, sizeof(upgrade_from_version), in))
   {
-    /* Preserve errno for caller */
-    int save_errno= errno;
-    (void) my_fclose(in, flags);
-    errno= save_errno;
-    return 0;
+    /* Ignore, will be detected by strncmp() below */
   }
 
-  if (my_fclose(in, flags))
-    return 0;
+  my_fclose(in, MYF(0));
 
-  errno= 0;
   return (strncmp(upgrade_from_version, MYSQL_SERVER_VERSION,
                   sizeof(MYSQL_SERVER_VERSION)-1)==0);
 }
@@ -726,24 +720,23 @@ static void create_mysql_upgrade_info_file(void)
   {
     fprintf(stderr,
             "Could not create the upgrade info file '%s' in "
-            "the MariaDB Servers datadir, errno: %d\n",
+            "the MySQL Servers datadir, errno: %d\n",
             upgrade_info_file, errno);
     return;
   }
 
   /* Write new version to file */
-  my_fwrite(out, (uchar*) MYSQL_SERVER_VERSION,
-            sizeof(MYSQL_SERVER_VERSION), MY_WME);
-  my_fclose(out, MYF(MY_WME));
+  fputs(MYSQL_SERVER_VERSION, out);
+  my_fclose(out, MYF(0));
 
   /*
     Check if the upgrad_info_file was properly created/updated
     It's not a fatal error -> just print a message if it fails
   */
-  if (!upgrade_already_done(MY_WME))
+  if (!upgrade_already_done())
     fprintf(stderr,
-            "Upgrade file '%s' was not properly created. "
-            "Got error errno while checking file content: %d\n",
+            "Could not write to the upgrade info file '%s' in "
+            "the MySQL Servers datadir, errno: %d\n",
             upgrade_info_file, errno);
   return;
 }
@@ -965,9 +958,8 @@ static int install_used_engines(void)
 {
   char buf[512];
   DYNAMIC_STRING ds_result;
-  const char *query = "SELECT DISTINCT LOWER(engine) AS c1 FROM information_schema.tables"
-                      " WHERE table_comment LIKE 'Unknown storage engine%'"
-                      " ORDER BY c1";
+  const char *query = "SELECT DISTINCT LOWER(engine) FROM information_schema.tables"
+                      " WHERE table_comment LIKE 'Unknown storage engine%'";
 
   if (opt_systables_only || !from_before_10_1())
   {
@@ -1199,7 +1191,7 @@ int main(int argc, char **argv)
     Read the mysql_upgrade_info file to check if mysql_upgrade
     already has been run for this installation of MySQL
   */
-  if (!opt_force && upgrade_already_done(0))
+  if (!opt_force && upgrade_already_done())
   {
     printf("This installation of MySQL is already upgraded to %s, "
            "use --force if you still need to run mysql_upgrade\n",

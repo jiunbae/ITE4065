@@ -229,7 +229,6 @@ EXPLAIN
         {
           "query_block": {
             "select_id": 2,
-            "operation": "UNION",
             "table": {
               "table_name": "B",
               "access_type": "ALL",
@@ -264,7 +263,6 @@ EXPLAIN
         {
           "query_block": {
             "select_id": 2,
-            "operation": "UNION",
             "table": {
               "table_name": "B",
               "access_type": "ALL",

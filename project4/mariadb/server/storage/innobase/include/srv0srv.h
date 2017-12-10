@@ -261,6 +261,12 @@ extern	ulong	srv_thread_sleep_delay;
 /** Maximum sleep delay (in micro-seconds), value of 0 disables it.*/
 extern	ulong	srv_adaptive_max_sleep_delay;
 
+/** The file format to use on new *.ibd files. */
+extern ulint	srv_file_format;
+/** Whether to check file format during startup.  A value of
+UNIV_FORMAT_MAX + 1 means no checking ie. FALSE.  The default is to
+set it to the highest format we support. */
+extern ulint	srv_max_file_format_at_startup;
 /** Place locks to records only i.e. do not use next-key locking except
 on duplicate key checking and foreign key checking */
 extern ibool	srv_locks_unsafe_for_binlog;
@@ -277,11 +283,24 @@ Currently we support native aio on windows and linux */
 extern my_bool	srv_use_native_aio;
 extern my_bool	srv_numa_interleave;
 
+/* Use trim operation */
+extern my_bool srv_use_trim;
+
 /* Use atomic writes i.e disable doublewrite buffer */
 extern my_bool srv_use_atomic_writes;
 
 /* Compression algorithm*/
 extern ulong innodb_compression_algorithm;
+
+/* Number of flush threads */
+#define MTFLUSH_MAX_WORKER		64
+#define MTFLUSH_DEFAULT_WORKER		8
+
+/* Number of threads used for multi-threaded flush */
+extern long    srv_mtflush_threads;
+
+/* If this flag is TRUE, then we will use multi threaded flush. */
+extern my_bool	srv_use_mtflush;
 
 /** TRUE if the server was successfully started */
 extern bool	srv_was_started;
@@ -1008,9 +1027,6 @@ struct export_var_t{
 						failures*/
 	ulint innodb_defragment_count;		/*!< Number of defragment
 						operations*/
-
-	/** Number of instant ALTER TABLE operations that affect columns */
-	ulong innodb_instant_alter_column;
 
 	ulint innodb_onlineddl_rowlog_rows;	/*!< Online alter rows */
 	ulint innodb_onlineddl_rowlog_pct_used; /*!< Online alter percentage

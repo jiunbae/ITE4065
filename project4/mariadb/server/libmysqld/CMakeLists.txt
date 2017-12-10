@@ -30,8 +30,6 @@ ${SSL_INTERNAL_INCLUDE_DIRS}
 SET(GEN_SOURCES
 ${CMAKE_BINARY_DIR}/sql/sql_yacc.h 
 ${CMAKE_BINARY_DIR}/sql/sql_yacc.cc
-${CMAKE_BINARY_DIR}/sql/sql_yacc_ora.h
-${CMAKE_BINARY_DIR}/sql/sql_yacc_ora.cc
 ${CMAKE_BINARY_DIR}/sql/lex_hash.h 
 )
 
@@ -43,7 +41,7 @@ SET(SQL_EMBEDDED_SOURCES emb_qcache.cc libmysqld.c lib_sql.cc
            ../sql-common/my_user.c ../sql-common/pack.c
            ../sql-common/client_plugin.c ../sql-common/mysql_async.c
            ../sql/password.c ../sql/discover.cc ../sql/derror.cc 
-           ../sql/field.cc ../sql/field_conv.cc ../sql/field_comp.cc
+           ../sql/field.cc ../sql/field_conv.cc
            ../sql/filesort_utils.cc ../sql/sql_digest.cc
            ../sql/filesort.cc ../sql/gstream.cc ../sql/slave.cc
            ../sql/signal_handler.cc
@@ -113,12 +111,8 @@ SET(SQL_EMBEDDED_SOURCES emb_qcache.cc libmysqld.c lib_sql.cc
            ../sql/wsrep_dummy.cc ../sql/encryption.cc
            ../sql/item_windowfunc.cc ../sql/sql_window.cc
            ../sql/sql_cte.cc
-           ../sql/sql_sequence.cc ../sql/sql_sequence.h
-           ../sql/ha_sequence.cc ../sql/ha_sequence.h
            ../sql/temporary_tables.cc
            ../sql/session_tracker.cc
-           ../sql/proxy_protocol.cc
-           ../sql/sql_tvc.cc ../sql/sql_tvc.h
            ${GEN_SOURCES}
            ${MYSYS_LIBWRAP_SOURCE}
 )

@@ -26,7 +26,7 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_base.h"
 #include "sql_select.h"
 #include "filesort.h"
@@ -432,9 +432,9 @@ referred to, we can only generate equalities that refer to the outer (or inner)
 tables. Note that this will disallow handling of cases like (CASE-FOR-SUBST).
 
 Currently, solution #2 is implemented.
+
 */
 
-LEX_CSTRING weedout_key= {STRING_WITH_LEN("weedout_key")};
 
 static
 bool subquery_types_allow_materialization(Item_in_subselect *in_subs);
@@ -461,7 +461,7 @@ void best_access_path(JOIN *join, JOIN_TAB *s,
 
 static Item *create_subq_in_equalities(THD *thd, SJ_MATERIALIZATION_INFO *sjm, 
                                 Item_in_subselect *subq_pred);
-static bool remove_sj_conds(THD *thd, Item **tree);
+static void remove_sj_conds(THD *thd, Item **tree);
 static bool is_cond_sj_in_equality(Item *item);
 static bool sj_table_is_included(JOIN *join, JOIN_TAB *join_tab);
 static Item *remove_additional_cond(Item* conds);
@@ -843,9 +843,34 @@ bool subquery_types_allow_materialization(Item_in_subselect *in_subs)
     all_are_fields &= (outer->real_item()->type() == Item::FIELD_ITEM && 
                        inner->real_item()->type() == Item::FIELD_ITEM);
     total_key_length += inner->max_length;
-    if (!inner->type_handler()->subquery_type_allows_materialization(inner,
-                                                                     outer))
+    if (outer->cmp_type() != inner->cmp_type())
       DBUG_RETURN(FALSE);
+    switch (outer->cmp_type()) {
+    case STRING_RESULT:
+      if (!(outer->collation.collation == inner->collation.collation))
+        DBUG_RETURN(FALSE);
+      // Materialization does not work with BLOB columns
+      if (inner->field_type() == MYSQL_TYPE_BLOB || 
+          inner->field_type() == MYSQL_TYPE_GEOMETRY)
+        DBUG_RETURN(FALSE);
+      /* 
+        Materialization also is unable to work when create_tmp_table() will
+        create a blob column because item->max_length is too big.
+        The following check is copied from Item::make_string_field():
+      */ 
+      if (inner->too_big_for_varchar())
+      {
+        DBUG_RETURN(FALSE);
+      }
+      break;
+    case TIME_RESULT:
+      if (mysql_type_to_time_type(outer->field_type()) !=
+          mysql_type_to_time_type(inner->field_type()))
+        DBUG_RETURN(FALSE);
+    default:
+      /* suitable for materialization */
+      break;
+    }
   }
 
   /*
@@ -1064,8 +1089,6 @@ bool convert_join_subqueries_to_semijoins(JOIN *join)
     if (subq_sel->handle_derived(thd->lex, DT_OPTIMIZE))
       DBUG_RETURN(1);
     if (subq_sel->handle_derived(thd->lex, DT_MERGE))
-      DBUG_RETURN(TRUE);
-    if (subq_sel->join->transform_in_predicates_into_in_subq(thd))
       DBUG_RETURN(TRUE);
     subq_sel->update_used_tables();
   }
@@ -1644,7 +1667,7 @@ static bool convert_subq_to_sj(JOIN *parent_join, Item_in_subselect *subq_pred)
     {
       tl->jtbm_table_no= table_no;
       Item *dummy= tl->jtbm_subselect;
-      tl->jtbm_subselect->fix_after_pullout(parent_lex, &dummy, true);
+      tl->jtbm_subselect->fix_after_pullout(parent_lex, &dummy);
       DBUG_ASSERT(dummy == tl->jtbm_subselect);
     }
     SELECT_LEX *old_sl= tl->select_lex;
@@ -1750,9 +1773,9 @@ static bool convert_subq_to_sj(JOIN *parent_join, Item_in_subselect *subq_pred)
     */
     Item_row *row= new (thd->mem_root) Item_row(thd, subq_lex->pre_fix);
     /* fix fields on subquery was call so they should be the same */
+    DBUG_ASSERT(subq_pred->left_expr->cols() == row->cols());
     if (!row)
       DBUG_RETURN(TRUE);
-    DBUG_ASSERT(subq_pred->left_expr->cols() == row->cols());
     nested_join->sj_outer_expr_list.push_back(&subq_pred->left_expr);
     Item_func_eq *item_eq=
       new (thd->mem_root) Item_func_eq(thd, subq_pred->left_expr_orig, row);
@@ -1785,8 +1808,7 @@ static bool convert_subq_to_sj(JOIN *parent_join, Item_in_subselect *subq_pred)
     Walk through sj nest's WHERE and ON expressions and call
     item->fix_table_changes() for all items.
   */
-  sj_nest->sj_on_expr->fix_after_pullout(parent_lex, &sj_nest->sj_on_expr,
-                                         TRUE);
+  sj_nest->sj_on_expr->fix_after_pullout(parent_lex, &sj_nest->sj_on_expr);
   fix_list_after_tbl_changes(parent_lex, &sj_nest->nested_join->join_list);
 
 
@@ -1839,8 +1861,7 @@ static bool convert_subq_to_sj(JOIN *parent_join, Item_in_subselect *subq_pred)
   }
 
   parent_lex->have_merged_subqueries= TRUE;
-  /* Fatal error may have been set to by fix_after_pullout() */
-  DBUG_RETURN(thd->is_fatal_error);
+  DBUG_RETURN(FALSE);
 }
 
 
@@ -1881,7 +1902,6 @@ static bool convert_subq_to_jtbm(JOIN *parent_join,
   bool optimization_delayed= TRUE;
   TABLE_LIST *jtbm;
   char *tbl_alias;
-  THD *thd= parent_join->thd;
   DBUG_ENTER("convert_subq_to_jtbm");
 
   subq_pred->set_strategy(SUBS_MATERIALIZATION);
@@ -1889,8 +1909,8 @@ static bool convert_subq_to_jtbm(JOIN *parent_join,
 
   *remove_item= TRUE;
 
-  if (!(tbl_alias= (char*)thd->calloc(SUBQERY_TEMPTABLE_NAME_MAX_LEN)) ||
-      !(jtbm= alloc_join_nest(thd))) //todo: this is not a join nest!
+  if (!(tbl_alias= (char*)parent_join->thd->calloc(SUBQERY_TEMPTABLE_NAME_MAX_LEN)) ||
+      !(jtbm= alloc_join_nest(parent_join->thd))) //todo: this is not a join nest!
   {
     DBUG_RETURN(TRUE);
   }
@@ -1902,13 +1922,13 @@ static bool convert_subq_to_jtbm(JOIN *parent_join,
 
   /* Nests do not participate in those 'chains', so: */
   /* jtbm->next_leaf= jtbm->next_local= jtbm->next_global == NULL*/
-  emb_join_list->push_back(jtbm, thd->mem_root);
+  emb_join_list->push_back(jtbm, parent_join->thd->mem_root);
   
   /* 
     Inject the jtbm table into TABLE_LIST::next_leaf list, so that 
     make_join_statistics() and co. can find it.
   */
-  parent_lex->leaf_tables.push_back(jtbm, thd->mem_root);
+  parent_lex->leaf_tables.push_back(jtbm, parent_join->thd->mem_root);
 
   if (subq_pred->unit->first_select()->options & OPTION_SCHEMA_TABLE)
     parent_lex->options |= OPTION_SCHEMA_TABLE;
@@ -1933,7 +1953,7 @@ static bool convert_subq_to_jtbm(JOIN *parent_join,
                                    subq_pred->unit->first_select()->select_number);
     jtbm->alias= tbl_alias;
     parent_join->table_count++;
-    DBUG_RETURN(thd->is_fatal_error);
+    DBUG_RETURN(FALSE);
   }
   subselect_hash_sj_engine *hash_sj_engine=
     ((subselect_hash_sj_engine*)subq_pred->engine);
@@ -1947,7 +1967,7 @@ static bool convert_subq_to_jtbm(JOIN *parent_join,
   DBUG_ASSERT(parent_join->table_count < MAX_TABLES);
 
   Item *conds= hash_sj_engine->semi_join_conds;
-  conds->fix_after_pullout(parent_lex, &conds, TRUE);
+  conds->fix_after_pullout(parent_lex, &conds);
 
   DBUG_EXECUTE("where", print_where(conds,"SJ-EXPR", QT_ORDINARY););
   
@@ -1956,10 +1976,27 @@ static bool convert_subq_to_jtbm(JOIN *parent_join,
   jtbm->alias= tbl_alias;
 
   parent_lex->have_merged_subqueries= TRUE;
-
+#if 0
+  /* Inject sj_on_expr into the parent's WHERE or ON */
+  if (emb_tbl_nest)
+  {
+    DBUG_ASSERT(0);
+    /*emb_tbl_nest->on_expr= and_items(emb_tbl_nest->on_expr, 
+                                     sj_nest->sj_on_expr);
+    emb_tbl_nest->on_expr->fix_fields(parent_join->thd, &emb_tbl_nest->on_expr);
+    */
+  }
+  else
+  {
+    /* Inject into the WHERE */
+    parent_join->conds= and_items(parent_join->conds, conds);
+    parent_join->conds->fix_fields(parent_join->thd, &parent_join->conds);
+    parent_join->select_lex->where= parent_join->conds;
+  }
+#endif
   /* Don't unlink the child subselect, as the subquery will be used. */
 
-  DBUG_RETURN(thd->is_fatal_error);
+  DBUG_RETURN(FALSE);
 }
 
 
@@ -1974,9 +2011,6 @@ static TABLE_LIST *alloc_join_nest(THD *thd)
   return tbl;
 }
 
-/*
-  @Note  thd->is_fatal_error can be set in case of OOM
-*/
 
 void fix_list_after_tbl_changes(SELECT_LEX *new_parent, List<TABLE_LIST> *tlist)
 {
@@ -1985,7 +2019,7 @@ void fix_list_after_tbl_changes(SELECT_LEX *new_parent, List<TABLE_LIST> *tlist)
   while ((table= it++))
   {
     if (table->on_expr)
-      table->on_expr->fix_after_pullout(new_parent, &table->on_expr, TRUE);
+      table->on_expr->fix_after_pullout(new_parent, &table->on_expr);
     if (table->nested_join)
       fix_list_after_tbl_changes(new_parent, &table->nested_join->join_list);
   }
@@ -3706,11 +3740,6 @@ bool setup_sj_materialization_part1(JOIN_TAB *sjm_tab)
   DBUG_RETURN(FALSE);
 }
 
-/**
-   @retval
-   FALSE ok
-   TRUE  error
-*/
 
 bool setup_sj_materialization_part2(JOIN_TAB *sjm_tab)
 {
@@ -3723,6 +3752,8 @@ bool setup_sj_materialization_part2(JOIN_TAB *sjm_tab)
   SJ_MATERIALIZATION_INFO *sjm= emb_sj_nest->sj_mat_info;
   THD *thd= tab->join->thd;
   uint i;
+  //List<Item> &item_list= emb_sj_nest->sj_subq_pred->unit->first_select()->item_list;
+  //List_iterator<Item> it(item_list);
 
   if (!sjm->is_sj_scan)
   {
@@ -3772,8 +3803,6 @@ bool setup_sj_materialization_part2(JOIN_TAB *sjm_tab)
                                    null_count ? cur_ref_buff : 0,
                                    cur_key_part->length, tab_ref->items[i],
                                    FALSE);
-      if (!*ref_key)
-        DBUG_RETURN(TRUE);
       cur_ref_buff+= cur_key_part->store_length;
     }
     *ref_key= NULL; /* End marker. */
@@ -3799,9 +3828,9 @@ bool setup_sj_materialization_part2(JOIN_TAB *sjm_tab)
     */
     for (i= 0; i < sjm->tables; i++)
     {
-      if (remove_sj_conds(thd, &tab[i].select_cond) ||
-          (tab[i].select && remove_sj_conds(thd, &tab[i].select->cond)))
-        DBUG_RETURN(TRUE);
+      remove_sj_conds(thd, &tab[i].select_cond);
+      if (tab[i].select)
+        remove_sj_conds(thd, &tab[i].select->cond);
     }
     if (!(sjm->in_equality= create_subq_in_equalities(thd, sjm,
                                                       emb_sj_nest->sj_subq_pred)))
@@ -3838,9 +3867,7 @@ bool setup_sj_materialization_part2(JOIN_TAB *sjm_tab)
       temptable record, we copy its columns to their corresponding columns
       in the record buffers for the source tables. 
     */
-    if (!(sjm->copy_field= new Copy_field[sjm->sjm_table_cols.elements]))
-      DBUG_RETURN(TRUE);
-
+    sjm->copy_field= new Copy_field[sjm->sjm_table_cols.elements];
     //it.rewind();
     Ref_ptr_array p_items= emb_sj_nest->sj_subq_pred->unit->first_select()->ref_pointer_array;
     for (uint i=0; i < sjm->sjm_table_cols.elements; i++)
@@ -3908,7 +3935,7 @@ bool setup_sj_materialization_part2(JOIN_TAB *sjm_tab)
     sjm_tab->read_record.copy_field= sjm->copy_field;
     sjm_tab->read_record.copy_field_end= sjm->copy_field +
                                          sjm->sjm_table_cols.elements;
-    sjm_tab->read_record.read_record_func= rr_sequential_and_unpack;
+    sjm_tab->read_record.read_record= rr_sequential_and_unpack;
   }
 
   sjm_tab->bush_children->end[-1].next_select= end_sj_materialize;
@@ -3967,20 +3994,16 @@ static Item *create_subq_in_equalities(THD *thd, SJ_MATERIALIZATION_INFO *sjm,
 }
 
 
-/**
-  @retval
-  0 ok
-  1 error
-*/
 
-static bool remove_sj_conds(THD *thd, Item **tree)
+
+static void remove_sj_conds(THD *thd, Item **tree)
 {
   if (*tree)
   {
     if (is_cond_sj_in_equality(*tree))
     {
       *tree= NULL;
-      return 0;
+      return;
     }
     else if ((*tree)->type() == Item::COND_ITEM) 
     {
@@ -3989,18 +4012,11 @@ static bool remove_sj_conds(THD *thd, Item **tree)
       while ((item= li++))
       {
         if (is_cond_sj_in_equality(item))
-        {
-          Item_int *tmp= new (thd->mem_root) Item_int(thd, 1);
-          if (!tmp)
-            return 1;
-          li.replace(tmp);
-        }
+          li.replace(new (thd->mem_root) Item_int(thd, 1));
       }
     }
   }
-  return 0;
 }
-
 
 /* Check if given Item was injected by semi-join equality */
 static bool is_cond_sj_in_equality(Item *item)
@@ -4148,13 +4164,12 @@ SJ_TMP_TABLE::create_sj_weedout_tmp_table(THD *thd)
 
   /* Create the field */
   {
-    LEX_CSTRING field_name= {STRING_WITH_LEN("rowids") };
     /*
       For the sake of uniformity, always use Field_varstring (altough we could
       use Field_string for shorter keys)
     */
-    field= new Field_varstring(uniq_tuple_length_arg, FALSE, &field_name,
-                               share, &my_charset_bin);
+    field= new Field_varstring(uniq_tuple_length_arg, FALSE, "rowids", share,
+                               &my_charset_bin);
     if (!field)
       DBUG_RETURN(0);
     field->table= table;
@@ -4189,7 +4204,7 @@ SJ_TMP_TABLE::create_sj_weedout_tmp_table(THD *thd)
     share->db_plugin= ha_lock_engine(0, heap_hton);
     table->file= get_new_handler(share, &table->mem_root,
                                  share->db_type());
-    DBUG_ASSERT(!table->file || uniq_tuple_length_arg <= table->file->max_key_length());
+    DBUG_ASSERT(uniq_tuple_length_arg <= table->file->max_key_length());
   }
   if (!table->file)
     goto err;
@@ -4289,7 +4304,7 @@ SJ_TMP_TABLE::create_sj_weedout_tmp_table(THD *thd)
     keyinfo->key_length=0;
     keyinfo->rec_per_key=0;
     keyinfo->algorithm= HA_KEY_ALG_UNDEF;
-    keyinfo->name= weedout_key;
+    keyinfo->name= (char*) "weedout_key";
     {
       key_part_info->null_bit=0;
       key_part_info->field=  field;
@@ -5018,13 +5033,13 @@ int rewrite_to_index_subquery_engine(JOIN *join)
       join->unit->item && 
       join->unit->item->substype() == Item_subselect::IN_SUBS &&
       join->table_count == 1 && join->conds &&
-      !join->unit->is_unit_op())
+      !join->unit->is_union())
   {
     if (!join->having)
     {
       Item *where= join->conds;
       if (join_tab[0].type == JT_EQ_REF &&
-	  join_tab[0].ref.items[0]->name.str == in_left_expr_name.str)
+	  join_tab[0].ref.items[0]->name == in_left_expr_name)
       {
         remove_subq_pushed_predicates(join, &where);
         save_index_subquery_explain_info(join_tab, where);
@@ -5038,7 +5053,7 @@ int rewrite_to_index_subquery_engine(JOIN *join)
                                                                   where)));
       }
       else if (join_tab[0].type == JT_REF &&
-	       join_tab[0].ref.items[0]->name.str == in_left_expr_name.str)
+	       join_tab[0].ref.items[0]->name == in_left_expr_name)
       {
 	remove_subq_pushed_predicates(join, &where);
         save_index_subquery_explain_info(join_tab, where);
@@ -5054,8 +5069,8 @@ int rewrite_to_index_subquery_engine(JOIN *join)
                                                                  0)));
       }
     } else if (join_tab[0].type == JT_REF_OR_NULL &&
-	       join_tab[0].ref.items[0]->name.str == in_left_expr_name.str &&
-               join->having->name.str == in_having_cond.str)
+	       join_tab[0].ref.items[0]->name == in_left_expr_name &&
+               join->having->name == in_having_cond)
     {
       join_tab[0].type= JT_INDEX_SUBQUERY;
       join->error= 0;
@@ -5086,7 +5101,7 @@ int rewrite_to_index_subquery_engine(JOIN *join)
 
 static Item *remove_additional_cond(Item* conds)
 {
-  if (conds->name.str == in_additional_cond.str)
+  if (conds->name == in_additional_cond)
     return 0;
   if (conds->type() == Item::COND_ITEM)
   {
@@ -5095,7 +5110,7 @@ static Item *remove_additional_cond(Item* conds)
     Item *item;
     while ((item= li++))
     {
-      if (item->name.str == in_additional_cond.str)
+      if (item->name == in_additional_cond)
       {
 	li.remove();
 	if (cnd->argument_list()->elements == 1)
@@ -5308,9 +5323,6 @@ TABLE *create_dummy_tmp_table(THD *thd)
   sjm_table_param.field_count= 1;
   List<Item> sjm_table_cols;
   Item *column_item= new (thd->mem_root) Item_int(thd, 1);
-  if (!column_item)
-    DBUG_RETURN(NULL);
-
   sjm_table_cols.push_back(column_item, thd->mem_root);
   if (!(table= create_tmp_table(thd, &sjm_table_param, 
                                 sjm_table_cols, (ORDER*) 0, 
@@ -5361,7 +5373,7 @@ int select_value_catcher::setup(List<Item> *items)
   List_iterator<Item> li(*items);
   for (uint i= 0; (sel_item= li++); i++)
   {
-    if (!(row[i]= sel_item->get_cache(thd)))
+    if (!(row[i]= Item_cache::get_cache(thd, sel_item)))
       return TRUE;
     row[i]->setup(thd, sel_item);
   }

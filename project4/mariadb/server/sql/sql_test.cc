@@ -16,7 +16,7 @@
 
 /* Write some debug info */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "unireg.h"
 #include "sql_test.h"
@@ -137,8 +137,7 @@ void TEST_filesort(SORT_FIELD *sortorder,uint s_length)
 	out.append(*sortorder->field->table_name);
 	out.append('.');
       }
-      out.append(sortorder->field->field_name.str ?
-                 sortorder->field->field_name.str :
+      out.append(sortorder->field->field_name ? sortorder->field->field_name:
 		 "tmp_table_column");
     }
     else
@@ -239,11 +238,11 @@ static void print_keyuse(KEYUSE *keyuse)
   keyuse->val->print(&str, QT_ORDINARY);
   str.append('\0');
   if (keyuse->is_for_hash_join())
-    fieldname= keyuse->table->field[keyuse->keypart]->field_name.str;
+    fieldname= keyuse->table->field[keyuse->keypart]->field_name;
   else if (keyuse->keypart == FT_KEYPART)
     fieldname= "FT_KEYPART";
   else
-    fieldname= key_info->key_part[keyuse->keypart].field->field_name.str;
+    fieldname= key_info->key_part[keyuse->keypart].field->field_name;
   ll2str(keyuse->used_tables, buf2, 16, 0); 
   fprintf(DBUG_FILE, "KEYUSE: %s.%s=%s  optimize: %u  used_tables: %s "
           "ref_table_rows: %lu  keypart_map: %0lx\n",
@@ -388,10 +387,10 @@ void print_sjm(SJ_MATERIALIZATION_INFO *sjm)
 /*
   Debugging help: force List<...>::elem function not be removed as unused.
 */
-Item* (List<Item>:: *dbug_list_item_elem_ptr)(uint)= &List<Item>::elem;
-Item_equal* (List<Item_equal>:: *dbug_list_item_equal_elem_ptr)(uint)=
+Item* (List<Item>:: *dbug_list_item_elem_ptr)(int)= &List<Item>::elem;
+Item_equal* (List<Item_equal>:: *dbug_list_item_equal_elem_ptr)(int)=
   &List<Item_equal>::elem;
-TABLE_LIST* (List<TABLE_LIST>:: *dbug_list_table_list_elem_ptr)(uint) =
+TABLE_LIST* (List<TABLE_LIST>:: *dbug_list_table_list_elem_ptr)(int) =
   &List<TABLE_LIST>::elem;
 
 #endif

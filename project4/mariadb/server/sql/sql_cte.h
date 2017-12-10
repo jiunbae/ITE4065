@@ -1,26 +1,10 @@
-/*
-   Copyright (c) 2016, 2017 MariaDB
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
-
 #ifndef SQL_CTE_INCLUDED
 #define SQL_CTE_INCLUDED
 #include "sql_list.h"
 #include "sql_lex.h"
 #include "sql_select.h"
 
-class select_unit;
+class select_union;
 struct st_unit_ctxt_elem;
 
 
@@ -89,7 +73,7 @@ private:
     Unparsed specification of the query that specifies this element.
     It used to build clones of the specification if they are needed.
   */
-  LEX_CSTRING unparsed_spec;
+  LEX_STRING unparsed_spec;
 
   /* Return the map where 1 is set only in the position for this element */
   table_map get_elem_map() { return (table_map) 1 << number; }
@@ -99,14 +83,14 @@ public:
     The name of the table introduced by this with elememt. The name
      can be used in FROM lists of the queries in the scope of the element.
   */
-  LEX_CSTRING *query_name;
+  LEX_STRING *query_name;
   /*
     Optional list of column names to name the columns of the table introduced
     by this with element. It is used in the case when the names are not
     inherited from the query that specified the table. Otherwise the list is
     always empty.
   */
-  List <LEX_CSTRING> column_list;
+  List <LEX_STRING> column_list;
   /* The query that specifies the table introduced by this with element */
   st_select_lex_unit *spec;
   /* 
@@ -148,8 +132,8 @@ public:
   /* List of Item_subselects containing recursive references to this CTE */
   SQL_I_List<Item_subselect> sq_with_rec_ref; 
 
-  With_element(LEX_CSTRING *name,
-               List <LEX_CSTRING> list,
+  With_element(LEX_STRING *name,
+               List <LEX_STRING> list,
                st_select_lex_unit *unit)
     : next(NULL), base_dep_map(0), derived_dep_map(0),
       sq_dep_map(0), work_dep_map(0), mutually_recursive(0),

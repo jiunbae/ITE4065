@@ -2618,14 +2618,14 @@ void my_fill_utf32(CHARSET_INFO *cs,
                    char *s, size_t slen, int fill)
 {
   char buf[10];
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   uint buflen;
 #endif
   char *e= s + slen;
   
   DBUG_ASSERT((slen % 4) == 0);
 
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   buflen=
 #endif
     cs->cset->wc_mb(cs, (my_wc_t) fill, (uchar*) buf,

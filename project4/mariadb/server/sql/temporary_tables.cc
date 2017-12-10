@@ -19,7 +19,6 @@
   All methods pertaining to temporary tables.
 */
 
-#include "mariadb.h"
 #include "sql_acl.h"                            /* TMP_TABLE_ACLS */
 #include "sql_base.h"                           /* tdc_create_key */
 #include "lock.h"                               /* mysql_lock_remove */
@@ -74,9 +73,7 @@ TABLE *THD::create_and_open_tmp_table(handlerton *hton,
 
   if ((share= create_temporary_table(hton, frm, path, db, table_name)))
   {
-    open_options|= HA_OPEN_FOR_CREATE;
     table= open_temporary_table(share, table_name, open_in_engine);
-    open_options&= ~HA_OPEN_FOR_CREATE;
 
     /*
       Failed to open a temporary table instance. As we are not passing
@@ -1106,10 +1103,8 @@ TABLE *THD::open_temporary_table(TMP_TABLE_SHARE *share,
 
   if (open_table_from_share(this, share, alias,
                             open_in_engine ? (uint)HA_OPEN_KEYFILE : 0,
-                            EXTRA_RECORD,
-                            (ha_open_options |
-                             (open_options & HA_OPEN_FOR_CREATE)),
-                            table, open_in_engine ? false : true))
+                            EXTRA_RECORD, ha_open_options, table,
+                            open_in_engine ? false : true))
   {
     my_free(table);
     DBUG_RETURN(NULL);
@@ -1117,9 +1112,8 @@ TABLE *THD::open_temporary_table(TMP_TABLE_SHARE *share,
 
   table->reginfo.lock_type= TL_WRITE;           /* Simulate locked */
   table->grant.privilege= TMP_TABLE_ACLS;
-  share->tmp_table= (table->file->has_transaction_manager() ?
+  share->tmp_table= (table->file->has_transactions() ?
                      TRANSACTIONAL_TMP_TABLE : NON_TRANSACTIONAL_TMP_TABLE);
-  share->not_usable_by_query_cache= 1;
 
   table->pos_in_table_list= 0;
   table->query_id= query_id;

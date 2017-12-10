@@ -28,7 +28,6 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
 #include "my_bit.h"
 #include "sql_select.h"
 
@@ -1844,7 +1843,7 @@ void Dep_analysis_context::dbug_print_deps()
               (long)(eq_mod - equality_mods),
               str.c_ptr(),
               eq_mod->field->table->table->alias.c_ptr(),
-              eq_mod->field->field->field_name.str);
+              eq_mod->field->field->field_name);
     }
     else
     {
@@ -1868,7 +1867,7 @@ void Dep_analysis_context::dbug_print_deps()
       {
         fprintf(DBUG_FILE, "    field %s.%s ->",
                 table_dep->table->alias.c_ptr(),
-                field_dep->field->field_name.str);
+                field_dep->field->field_name);
         uint ofs= field_dep->bitmap_offset;
         for (uint bit= ofs; bit < ofs + n_equality_mods; bit++)
         {

@@ -681,7 +681,7 @@ def	test	t1	t1	g	g	255	4294967295	0	Y	144	0	63
 g
 select ST_asbinary(g) from t1;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def					ST_asbinary(g)	251	4294967295	0	Y	128	0	63
+def					ST_asbinary(g)	252	4294967295	0	Y	128	0	63
 ST_asbinary(g)
 drop table t1;
 create table t1 (a TEXT, b GEOMETRY NOT NULL, INDEX(b(5)));
@@ -868,8 +868,8 @@ down3,left3,right3,up3
 SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS MBRequals       FROM t1 a1 JOIN t1 a2 ON MBREquals(        a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
 MBRequals
 center
-SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS intersects    FROM t1 a1 JOIN t1 a2 ON MBRIntersects(    a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
-intersects
+SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS intersect    FROM t1 a1 JOIN t1 a2 ON MBRIntersects(    a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
+intersect
 big,center,down,down2,left,left2,right,right2,small,up,up2
 SELECT GROUP_CONCAT(a2.name ORDER BY a2.name) AS MBRoverlaps     FROM t1 a1 JOIN t1 a2 ON MBROverlaps(      a1.square, a2.square) WHERE a1.name = "center" GROUP BY a1.name;
 MBRoverlaps
@@ -996,7 +996,9 @@ ST_GEOMFROMTEXT(
 'multipolygon(((1 2,3 4,5 6,7 8,9 8,1 2,1 2),(7 6,5 4,3 2,1 2,3 4,7 6)))'));
 # must not crash
 SELECT 1 FROM t1 WHERE a <> (SELECT ST_GEOMETRYCOLLECTIONFROMWKB(b) FROM t1);
-ERROR HY000: Illegal parameter data types int and geometry for operation '<>'
+1
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '\x00\x00\x00\x00\x01\x06\x00\x00\x00\x01\x00\x00\x00\x01\x03\x00\x00\x00\x02\x00\x00\x00\x07\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 DROP TABLE t1;
 #
 # Bug #49250 : spatial btree index corruption and crash
@@ -1024,9 +1026,9 @@ f5	datetime	YES		NULL
 drop view v1;
 drop table t1;
 SELECT MultiPoint(12345,'');
-ERROR HY000: Illegal parameter data type int for operation 'geometrycollection'
+ERROR 22007: Illegal non geometric '12345' value found during parsing
 SELECT 1 FROM (SELECT GREATEST(1,GEOMETRYCOLLECTION('00000','00000')) b FROM DUAL) AS d WHERE (LINESTRING(d.b));
-ERROR HY000: Illegal parameter data type varchar for operation 'geometrycollection'
+ERROR 22007: Illegal non geometric ''00000'' value found during parsing
 #
 # BUG#51875: crash when loading data into geometry function ST_polyfromwkb
 #
@@ -1090,7 +1092,7 @@ ST_ISCLOSED(CONVERT(CONCAT('     ', 0x2), BINARY(20)))
 # GEOMETRY FUNCTION ARGUMENTS
 #
 SELECT GEOMETRYCOLLECTION((SELECT @@OLD));
-ERROR HY000: Illegal parameter data type bigint for operation 'geometrycollection'
+ERROR 22007: Illegal non geometric '' value found during parsing
 End of 5.1 tests
 #
 # Bug#11908153: CRASH AND/OR VALGRIND ERRORS IN FIELD_BLOB::GET_KEY_IMAGE
@@ -1103,7 +1105,11 @@ FLUSH TABLES;
 SELECT 1 FROM g1 
 FORCE INDEX(i) WHERE a = date_sub(now(), interval 2808.4 year_month)
 ;
-ERROR HY000: Illegal parameter data types geometry and datetime for operation '='
+1
+Warnings:
+Warning	1292	Incorrect datetime value: '\x00\x00\x00\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xF0?\x00\x00\x00\x00\x00\x00\xF0?'
+Warning	1441	Datetime function: datetime field overflow
+Warning	1292	Incorrect datetime value: '\x00\x00\x00\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xF0?\x00\x00\x00\x00\x00\x00\x00@'
 DROP TABLE g1;
 #
 # Bug#13013970 MORE CRASHES IN FIELD_BLOB::GET_KEY_IMAGE
@@ -1489,4 +1495,5 @@ DROP DATABASE gis_ogs;
 # Bug#13362660 ASSERTION `FIELD_POS < FIELD_COUNT' FAILED. IN PROTOCOL_TEXT::STORE
 #
 SELECT ST_Union('', ''), md5(1);
-ERROR HY000: Illegal parameter data type varchar for operation 'st_union'
+ST_Union('', '')	md5(1)
+NULL	c4ca4238a0b923820dcc509a6f75849b

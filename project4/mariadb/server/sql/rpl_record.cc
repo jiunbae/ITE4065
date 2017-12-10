@@ -14,7 +14,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "unireg.h"
 #include "rpl_rli.h"
@@ -107,7 +107,7 @@ pack_row(TABLE *table, MY_BITMAP const* cols,
                               field->max_data_length());
         DBUG_PRINT("debug", ("field: %s; real_type: %d, pack_ptr: %p;"
                              " pack_ptr':%p; bytes: %d",
-                             field->field_name.str, field->real_type(),
+                             field->field_name, field->real_type(),
                              old_pack_ptr,pack_ptr,
                              (int) (pack_ptr - old_pack_ptr)));
         DBUG_DUMP("packed_data", old_pack_ptr, pack_ptr - old_pack_ptr);
@@ -254,7 +254,7 @@ unpack_row(rpl_group_info *rgi,
       conv_field ? conv_field : *field_ptr;
     DBUG_PRINT("debug", ("Conversion %srequired for field '%s' (#%ld)",
                          conv_field ? "" : "not ",
-                         (*field_ptr)->field_name.str,
+                         (*field_ptr)->field_name,
                          (long) (field_ptr - begin_ptr)));
     DBUG_ASSERT(f != NULL);
 
@@ -305,7 +305,7 @@ unpack_row(rpl_group_info *rgi,
           push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
                               ER_BAD_NULL_ERROR,
                               ER_THD(thd, ER_BAD_NULL_ERROR),
-                              f->field_name.str);
+                              f->field_name);
         }
       }
       else
@@ -323,7 +323,7 @@ unpack_row(rpl_group_info *rgi,
         pack_ptr= f->unpack(f->ptr, pack_ptr, row_end, metadata);
 	DBUG_PRINT("debug", ("field: %s; metadata: 0x%x;"
                              " pack_ptr: %p; pack_ptr': %p; bytes: %d",
-                             f->field_name.str, metadata,
+                             f->field_name, metadata,
                              old_pack_ptr, pack_ptr,
                              (int) (pack_ptr - old_pack_ptr)));
         if (!pack_ptr)
@@ -338,7 +338,7 @@ unpack_row(rpl_group_info *rgi,
             WSREP_WARN("ROW event unpack field: %s  metadata: 0x%x;"
                        " pack_ptr: %p; conv_table %p conv_field %p table %s"
                        " row_end: %p",
-                       f->field_name.str, metadata,
+                       f->field_name, metadata,
                        old_pack_ptr, conv_table, conv_field,
                        (table_found) ? "found" : "not found", row_end
             );
@@ -347,7 +347,7 @@ unpack_row(rpl_group_info *rgi,
           rgi->rli->report(ERROR_LEVEL, ER_SLAVE_CORRUPT_EVENT,
                       rgi->gtid_info(),
                       "Could not read field '%s' of table '%s.%s'",
-                      f->field_name.str, table->s->db.str,
+                      f->field_name, table->s->db.str,
                       table->s->table_name.str);
           DBUG_RETURN(HA_ERR_CORRUPT_EVENT);
         }
@@ -370,7 +370,7 @@ unpack_row(rpl_group_info *rgi,
         conv_field->sql_type(source_type);
         conv_field->val_str(&value_string);
         DBUG_PRINT("debug", ("Copying field '%s' of type '%s' with value '%s'",
-                             (*field_ptr)->field_name.str,
+                             (*field_ptr)->field_name,
                              source_type.c_ptr_safe(), value_string.c_ptr_safe()));
 #endif
         copy.set(*field_ptr, f, TRUE);
@@ -381,7 +381,7 @@ unpack_row(rpl_group_info *rgi,
         (*field_ptr)->sql_type(target_type);
         (*field_ptr)->val_str(&value_string);
         DBUG_PRINT("debug", ("Value of field '%s' of type '%s' is now '%s'",
-                             (*field_ptr)->field_name.str,
+                             (*field_ptr)->field_name,
                              target_type.c_ptr_safe(), value_string.c_ptr_safe()));
 #endif
       }
@@ -489,7 +489,7 @@ int prepare_record(TABLE *const table, const uint skip, const bool check)
                           Sql_condition::WARN_LEVEL_WARN,
                           ER_NO_DEFAULT_FOR_FIELD,
                           ER_THD(thd, ER_NO_DEFAULT_FOR_FIELD),
-                          f->field_name.str);
+                          f->field_name);
     }
   }
 

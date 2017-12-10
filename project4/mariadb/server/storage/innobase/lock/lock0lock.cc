@@ -47,8 +47,6 @@ Created 5/7/1996 Heikki Tuuri
 #include "row0mysql.h"
 #include "pars0pars.h"
 
-#include <set>
-
 #ifdef WITH_WSREP
 #include <mysql/service_wsrep.h>
 #endif /* WITH_WSREP */
@@ -356,9 +354,6 @@ lock_report_trx_id_insanity(
 	const ulint*	offsets,	/*!< in: rec_get_offsets(rec, index) */
 	trx_id_t	max_trx_id)	/*!< in: trx_sys_get_max_trx_id() */
 {
-	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(!rec_is_default_row(rec, index));
-
 	ib::error()
 		<< "Transaction id " << trx_id
 		<< " associated with record" << rec_offsets_print(rec, offsets)
@@ -385,7 +380,6 @@ lock_check_trx_id_sanity(
 	const ulint*	offsets)	/*!< in: rec_get_offsets(rec, index) */
 {
 	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(!rec_is_default_row(rec, index));
 
 	trx_id_t	max_trx_id = trx_sys_get_max_trx_id();
 	bool		is_ok = trx_id < max_trx_id;
@@ -414,7 +408,6 @@ lock_clust_rec_cons_read_sees(
 	ut_ad(dict_index_is_clust(index));
 	ut_ad(page_rec_is_user_rec(rec));
 	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(!rec_is_default_row(rec, index));
 
 	/* Temp-tables are not shared across connections and multiple
 	transactions from different connections cannot simultaneously
@@ -453,8 +446,6 @@ lock_sec_rec_cons_read_sees(
 	const ReadView*	view)	/*!< in: consistent read view */
 {
 	ut_ad(page_rec_is_user_rec(rec));
-	ut_ad(!index->is_clust());
-	ut_ad(!rec_is_default_row(rec, index));
 
 	/* NOTE that we might call this function while holding the search
 	system latch. */
@@ -513,6 +504,11 @@ lock_sys_create(
 		lock_latest_err_file = os_file_create_tmpfile(NULL);
 		ut_a(lock_latest_err_file);
 	}
+
+	//Jiun: Initialize gclist
+	lock_sys->gclist = static_cast<hash_cell_t*>(ut_malloc_nokey(sizeof(hash_cell_t*)));
+	lock_sys->gclist->head = NULL;
+	lock_sys->gclist->tail = lock_sys->gclist->head;
 }
 
 /** Calculates the fold value of a lock: used in migrating the hash table.
@@ -1499,7 +1495,6 @@ lock_sec_rec_some_has_impl(
 	ut_ad(!dict_index_is_clust(index));
 	ut_ad(page_rec_is_user_rec(rec));
 	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(!rec_is_default_row(rec, index));
 
 	max_trx_id = page_get_max_trx_id(page);
 
@@ -1547,8 +1542,6 @@ lock_rec_other_trx_holds_expl(
 	const buf_block_t*	block)		/*!< in: buffer block
 						containing the record */
 {
-	ut_ad(!page_rec_is_default_row(rec));
-
 	trx_t* holds = NULL;
 
 	lock_mutex_enter();
@@ -1717,10 +1710,14 @@ RecLock::lock_alloc(
 	const RecID&	rec_id,
 	ulint		size)
 {
+	//Jiun: No need to check global mutex own
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
+#endif
 
 	lock_t*	lock;
 
+#ifndef ITE4065
 	if (trx->lock.rec_cached >= trx->lock.rec_pool.size()
 	    || sizeof(*lock) + size > REC_LOCK_SIZE) {
 
@@ -1733,6 +1730,9 @@ RecLock::lock_alloc(
 		lock = trx->lock.rec_pool[trx->lock.rec_cached];
 		++trx->lock.rec_cached;
 	}
+#else
+	lock = static_cast<lock_t*>(ut_malloc_nokey(sizeof(lock_t)));
+#endif
 
 	lock->trx = trx;
 
@@ -1744,6 +1744,7 @@ RecLock::lock_alloc(
 
 	lock_rec_t&	rec_lock = lock->un_member.rec_lock;
 
+#ifndef ITE4065
 	/* Predicate lock always on INFIMUM (0) */
 
 	if (is_predicate_lock(mode)) {
@@ -1758,11 +1759,13 @@ RecLock::lock_alloc(
 
 		memset(&lock[1], 0x0, size);
 	}
+#endif
 
 	rec_lock.space = rec_id.m_space_id;
 
 	rec_lock.page_no = rec_id.m_page_no;
 
+#ifndef ITE4065
 	/* Set the bit corresponding to rec */
 
 	lock_rec_set_nth_bit(lock, rec_id.m_heap_no);
@@ -1770,6 +1773,13 @@ RecLock::lock_alloc(
 	MONITOR_INC(MONITOR_NUM_RECLOCK);
 
 	MONITOR_INC(MONITOR_RECLOCK_CREATED);
+#else
+	lock->timestamp = trx->start_time;
+
+	lock->hash = NULL;
+	
+	lock->state = TRUE;
+#endif
 
 	return(lock);
 }
@@ -1875,7 +1885,7 @@ lock_queue_validate(
 	hash_table_t*		hash;
 	hash_cell_t*		cell;
 	lock_t*				next;
-	bool				wait_lock __attribute__((unused))= false;
+	bool				wait_lock = false;
 
 	if (in_lock == NULL) {
 		return true;
@@ -1921,7 +1931,35 @@ lock_rec_insert_to_head(
 	node = (lock_t *) cell->node;
 	if (node != in_lock) {
 		cell->node = in_lock;
-		in_lock->hash = node;
+	}
+}
+
+static
+void
+lock_rec_insert_to_tail(
+	lock_t *in_lock,   /*!< in: lock to be insert */
+	ulint	rec_fold)  /*!< in: rec_fold of the page */
+{
+	hash_table_t*		hash;
+	hash_cell_t*		cell;
+	lock_t*				old_tail;
+
+	if (in_lock == NULL) {
+		return;
+	}
+
+	hash = lock_hash_get(in_lock->type_mode);
+	cell = hash_get_nth_cell(hash,
+			hash_calc_hash(rec_fold, hash));
+	
+	//Jiun: Append lock to tail of hash 
+	//		using atomic test_and_set operation
+	old_tail = (lock_t*) __sync_lock_test_and_set(&cell->tail, in_lock);
+
+	if (old_tail == NULL) {
+		cell->head = in_lock;
+	} else {
+		old_tail->hash = in_lock;
 	}
 }
 
@@ -1932,12 +1970,18 @@ Add the lock to the record lock hash and the transaction's lock list
 void
 RecLock::lock_add(lock_t* lock, bool add_to_hash)
 {
+	//Jiun: No need to check global mutex own
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
+#endif
 	ut_ad(trx_mutex_own(lock->trx));
 
+#ifndef ITE4065
 	bool wait_lock = m_mode & LOCK_WAIT;
+#endif
 
 	if (add_to_hash) {
+#ifndef ITE4065
 		ulint	key = m_rec_id.fold();
 		hash_table_t *lock_hash = lock_hash_get(m_mode);
 
@@ -1953,11 +1997,18 @@ RecLock::lock_add(lock_t* lock, bool add_to_hash)
 		} else {
 			HASH_INSERT(lock_t, hash, lock_hash, key, lock);
 		}
+#else
+		__sync_fetch_and_add(&lock->index->table->n_rec_locks, 1);
+
+		lock_rec_insert_to_tail(lock, m_rec_id.fold());
+#endif
 	}
 
+#ifndef ITE4065
 	if (wait_lock) {
 		lock_set_lock_and_trx_wait(lock, lock->trx);
 	}
+#endif
 
 	UT_LIST_ADD_LAST(lock->trx->lock.trx_locks, lock);
 }
@@ -1972,8 +2023,9 @@ Create a new lock.
 lock_t*
 RecLock::create(trx_t* trx, bool owns_trx_mutex, bool add_to_hash, const lock_prdt_t* prdt)
 {
-	return create(NULL, trx, owns_trx_mutex, add_to_hash, prdt);
+ 	return create(NULL, trx, owns_trx_mutex, add_to_hash, prdt);
 }
+
 lock_t*
 RecLock::create(
 	lock_t* const c_lock,
@@ -1982,21 +2034,25 @@ RecLock::create(
 	bool	add_to_hash,
 	const	lock_prdt_t* prdt)
 {
+	//Jiun: No need to check global mutex own
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
+#endif
 	ut_ad(owns_trx_mutex == trx_mutex_own(trx));
 
 	/* Create the explicit lock instance and initialise it. */
 
 	lock_t*	lock = lock_alloc(trx, m_index, m_mode, m_rec_id, m_size);
 
+#ifndef ITE4065
 	if (prdt != NULL && (m_mode & LOCK_PREDICATE)) {
-
 		lock_prdt_set_prdt(lock, prdt);
 	}
 
-#ifdef WITH_WSREP
+# ifdef WITH_WSREP
 	if (c_lock && wsrep_on_trx(trx) &&
 	    wsrep_thd_is_BF(trx->mysql_thd, FALSE)) {
+
 		lock_t *hash	= (lock_t *)c_lock->hash;
 		lock_t *prev	= NULL;
 
@@ -2082,7 +2138,8 @@ RecLock::create(
 		++lock->index->table->n_rec_locks;
 		lock_add(lock, false);
 	} else {
-#endif /* WITH_WSREP */
+# endif /* WITH_WSREP */
+#endif /* ITE4065 */
 
 	/* Ensure that another transaction doesn't access the trx
 	lock state and lock data structures while we are adding the
@@ -2097,9 +2154,12 @@ RecLock::create(
 	if (!owns_trx_mutex) {
 		trx_mutex_exit(trx);
 	}
-#ifdef WITH_WSREP
+
+#ifndef ITE4065
+# ifdef WITH_WSREP
 	}
-#endif /* WITH_WSREP */
+# endif /* WITH_WSREP */
+#endif /* ITE4065 */
 
 	return(lock);
 }
@@ -2239,22 +2299,19 @@ queue is itself waiting roll it back, also do a deadlock check and resolve.
 @param[in, out] wait_for	The lock that the joining transaction is
 				waiting for
 @param[in] prdt			Predicate [optional]
-@return DB_LOCK_WAIT, DB_LOCK_WAIT_TIMEOUT, DB_DEADLOCK, or
-	DB_QUE_THR_SUSPENDED, or DB_SUCCESS_LOCKED_REC; DB_SUCCESS_LOCKED_REC
-	means that there was a deadlock, but another transaction was chosen
-	as a victim, and we got the lock immediately: no need to wait then;
-	DB_LOCK_WAIT_TIMEOUT means no need to wait */
+@return DB_LOCK_WAIT, DB_DEADLOCK, or DB_QUE_THR_SUSPENDED, or
+	DB_SUCCESS_LOCKED_REC; DB_SUCCESS_LOCKED_REC means that
+	there was a deadlock, but another transaction was chosen
+	as a victim, and we got the lock immediately: no need to
+	wait then */
 dberr_t
 RecLock::add_to_waitq(const lock_t* wait_for, const lock_prdt_t* prdt)
 {
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
+#endif
 	ut_ad(m_trx == thr_get_trx(m_thr));
 	ut_ad(trx_mutex_own(m_trx));
-
-	if (m_trx->mysql_thd && thd_lock_wait_timeout(m_trx->mysql_thd) == 0) {
-		m_trx->error_state = DB_LOCK_WAIT_TIMEOUT;
-		return(DB_LOCK_WAIT_TIMEOUT);
-	}
 
 	DEBUG_SYNC_C("rec_lock_add_to_waitq");
 
@@ -2400,13 +2457,11 @@ lock_rec_add_to_queue(
 
 		if (lock_get_wait(lock)
 		    && lock_rec_get_nth_bit(lock, heap_no)) {
-
 			break;
 		}
 	}
 
 	if (lock == NULL && !(type_mode & LOCK_WAIT)) {
-
 		/* Look for a similar record lock on the same page:
 		if one is found and there are no waiting lock requests,
 		we can just set the bit */
@@ -2415,9 +2470,7 @@ lock_rec_add_to_queue(
 			type_mode, heap_no, first_lock, trx);
 
 		if (lock != NULL) {
-
 			lock_rec_set_nth_bit(lock, heap_no);
-
 			return;
 		}
 	}
@@ -2452,7 +2505,11 @@ lock_rec_lock_fast(
 	dict_index_t*		index,	/*!< in: index of record */
 	que_thr_t*		thr)	/*!< in: query thread */
 {
+	//Jiun: No need to check global mutex own
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
+#endif
+
 	ut_ad(!srv_read_only_mode);
 	ut_ad((LOCK_MODE_MASK & mode) != LOCK_S
 	      || lock_table_has(thr_get_trx(thr), index->table, LOCK_IS));
@@ -2468,12 +2525,15 @@ lock_rec_lock_fast(
 
 	DBUG_EXECUTE_IF("innodb_report_deadlock", return(LOCK_REC_FAIL););
 
+#ifndef ITE4065
 	lock_t*	lock = lock_rec_get_first_on_page(lock_sys->rec_hash, block);
+#endif
 
 	trx_t*	trx = thr_get_trx(thr);
 
 	lock_rec_req_status	status = LOCK_REC_SUCCESS;
 
+#ifndef ITE4065
 	if (lock == NULL) {
 
 		if (!impl) {
@@ -2505,6 +2565,17 @@ lock_rec_lock_fast(
 
 		trx_mutex_exit(trx);
 	}
+#else
+	RecLock	rec_lock(index, block, heap_no, mode);
+
+	trx_mutex_enter(trx);
+	
+	rec_lock.create(NULL, trx, true, true);
+
+	trx_mutex_exit(trx);
+
+	status = LOCK_REC_SUCCESS_CREATED;
+#endif
 
 	return(status);
 }
@@ -2533,7 +2604,10 @@ lock_rec_lock_slow(
 	dict_index_t*		index,	/*!< in: index of record */
 	que_thr_t*		thr)	/*!< in: query thread */
 {
+	//Jiun: No need to check global mutex own
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
+#endif
 	ut_ad(!srv_read_only_mode);
 	ut_ad((LOCK_MODE_MASK & mode) != LOCK_S
 	      || lock_table_has(thr_get_trx(thr), index->table, LOCK_IS));
@@ -2554,7 +2628,6 @@ lock_rec_lock_slow(
 	trx_mutex_enter(trx);
 
 	if (lock_rec_has_expl(mode, block, heap_no, trx)) {
-
 		/* The trx already has a strong enough lock on rec: do
 		nothing */
 
@@ -2566,7 +2639,6 @@ lock_rec_lock_slow(
 			mode, block, heap_no, trx);
 
 		if (wait_for != NULL) {
-
 			/* If another transaction has a non-gap conflicting
 			request in the queue, as this transaction does not
 			have a lock strong enough already granted on the
@@ -2577,7 +2649,6 @@ lock_rec_lock_slow(
 			err = rec_lock.add_to_waitq(wait_for);
 
 		} else if (!impl) {
-
 			/* Set the requested lock on the record, note that
 			we already own the transaction mutex. */
 
@@ -2621,7 +2692,11 @@ lock_rec_lock(
 	dict_index_t*		index,	/*!< in: index of record */
 	que_thr_t*		thr)	/*!< in: query thread */
 {
+	//Jiun: No need to check global mutex own
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
+#endif
+
 	ut_ad(!srv_read_only_mode);
 	ut_ad((LOCK_MODE_MASK & mode) != LOCK_S
 	      || lock_table_has(thr_get_trx(thr), index->table, LOCK_IS));
@@ -2636,6 +2711,8 @@ lock_rec_lock(
 
 	/* We try a simplified and faster subroutine for the most
 	common cases */
+
+	//Jiun: Latch-free lock append
 	switch (lock_rec_lock_fast(impl, mode, block, heap_no, index, thr)) {
 	case LOCK_REC_SUCCESS:
 		return(DB_SUCCESS);
@@ -3112,7 +3189,9 @@ lock_rec_dequeue_from_page(
 	trx_lock_t*	trx_lock;
 	hash_table_t*	lock_hash;
 
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
+#endif
 	ut_ad(lock_get_type_low(in_lock) == LOCK_REC);
 	/* We may or may not be holding in_lock->trx->mutex here. */
 
@@ -3122,17 +3201,93 @@ lock_rec_dequeue_from_page(
 	page_no = in_lock->un_member.rec_lock.page_no;
 
 	ut_ad(in_lock->index->table->n_rec_locks > 0);
+#ifndef ITE4065
 	in_lock->index->table->n_rec_locks--;
+#else
+	__sync_fetch_and_sub(&in_lock->index->table->n_rec_locks, 1);
+#endif
 
 	lock_hash = lock_hash_get(in_lock->type_mode);
 
+#ifndef ITE4065
 	HASH_DELETE(lock_t, hash, lock_hash,
 		    lock_rec_fold(space, page_no), in_lock);
+#else
+	hash_cell_t*    cell3333;
+	lock_t*       cur_lock;
+	lock_t*		  next_lock;
+	ulint 		  	old_timestamp;
+
+	cell3333 = hash_get_nth_cell(lock_hash, hash_calc_hash(lock_rec_fold(space, page_no), lock_hash));
+
+	cur_lock = (lock_t*) cell3333->head;
+
+	ut_a(cur_lock);
+
+	//Jiun: Spin from marked head to non-marked node (not-logically deleted)
+	while (!cur_lock->state) {
+
+		if (__sync_bool_compare_and_swap(&cell3333->head, cur_lock, cur_lock->hash)) {
+			lock_t* old_gclist_tail = (lock_t *) __sync_lock_test_and_set(&lock_sys->gclist->tail, (void*) cur_lock);
+
+			//Jiun: Update timestamp, save recently latest
+			cur_lock->timestamp = trx_sys->timestamp;
+			
+			if (old_gclist_tail == NULL) {
+				lock_sys->gclist->head = cur_lock;
+			} else {
+				old_gclist_tail->gc_hash = cur_lock;
+			}
+		}
+
+		cur_lock = (lock_t*) cell3333->head;
+	}
+
+	//Jiun: Find in_lock for logical delete (marking)
+	while (cur_lock != in_lock) {
+
+		next_lock = cur_lock->hash;
+		ut_a(next_lock);
+
+		//Jiun: Assert cur_lock is logically deleted (case of race)
+		if (!cur_lock->state) {
+			cur_lock = next_lock;
+			continue;
+		}
+
+		if (next_lock->state) {
+			cur_lock = next_lock;
+			continue;
+		} else {
+			//Jiun: If next_lock is logically deleted,
+			//		connect to next_lock->hash, wait for new transaction or pointing next_lock
+			while (next_lock->hash == NULL && cell3333->tail != next_lock);
+
+			//Jiun: Change cur_lock->hash pointing to next_lock->hash
+			if (__sync_bool_compare_and_swap(&cur_lock->hash, next_lock, next_lock->hash)) {
+				lock_t* old_gclist_tail = (lock_t *)__sync_lock_test_and_set(&lock_sys->gclist->tail, (void*)next_lock);
+				
+				//Jiun: Update timestamp, save recently latest
+				next_lock->timestamp = trx_sys->timestamp;
+
+				if (old_gclist_tail == NULL) {
+					lock_sys->gclist->head = next_lock;
+				} else {
+					old_gclist_tail->gc_hash = next_lock;
+				}
+			}
+		}
+	}
+	
+	cur_lock->state = false;
+#endif
 
 	UT_LIST_REMOVE(trx_lock->trx_locks, in_lock);
 
+#ifndef ITE4065
 	MONITOR_INC(MONITOR_RECLOCK_REMOVED);
 	MONITOR_DEC(MONITOR_NUM_RECLOCK);
+#endif
 
 	if (innodb_lock_schedule_algorithm
 		== INNODB_LOCK_SCHEDULE_ALGORITHM_FCFS ||
@@ -3169,9 +3324,9 @@ lock_rec_dequeue_from_page(
 				}
 			}
 		}
-		} else {
-			lock_grant_and_move_on_page(lock_hash, space, page_no);
-		}
+	} else {
+		lock_grant_and_move_on_page(lock_hash, space, page_no);
+	}
 }
 
 /*************************************************************//**
@@ -3584,9 +3739,6 @@ lock_move_reorganize_page(
 		for (;;) {
 			ulint	old_heap_no;
 			ulint	new_heap_no;
-			ut_d(const rec_t* const orec = rec1);
-			ut_ad(page_rec_is_default_row(rec1)
-			      == page_rec_is_default_row(rec2));
 
 			if (comp) {
 				old_heap_no = rec_get_heap_no_new(rec2);
@@ -3607,8 +3759,6 @@ lock_move_reorganize_page(
 			/* Clear the bit in old_lock. */
 			if (old_heap_no < lock->un_member.rec_lock.n_bits
 			    && lock_rec_reset_nth_bit(lock, old_heap_no)) {
-				ut_ad(!page_rec_is_default_row(orec));
-
 				/* NOTE that the old lock bitmap could be too
 				small for the new heap number! */
 
@@ -3688,10 +3838,6 @@ lock_move_rec_list_end(
 		reset the lock bits on the old */
 
 		for (;;) {
-			ut_ad(page_rec_is_default_row(rec1)
-			      == page_rec_is_default_row(rec2));
-			ut_d(const rec_t* const orec = rec1);
-
 			ulint	rec1_heap_no;
 			ulint	rec2_heap_no;
 
@@ -3714,11 +3860,8 @@ lock_move_rec_list_end(
 
 				rec2_heap_no = rec_get_heap_no_old(rec2);
 
-				ut_ad(rec_get_data_size_old(rec1)
-				      == rec_get_data_size_old(rec2));
-
 				ut_ad(!memcmp(rec1, rec2,
-					      rec_get_data_size_old(rec1)));
+					      rec_get_data_size_old(rec2)));
 
 				rec1 = page_rec_get_next_low(rec1, FALSE);
 				rec2 = page_rec_get_next_low(rec2, FALSE);
@@ -3726,8 +3869,6 @@ lock_move_rec_list_end(
 
 			if (rec1_heap_no < lock->un_member.rec_lock.n_bits
 			    && lock_rec_reset_nth_bit(lock, rec1_heap_no)) {
-				ut_ad(!page_rec_is_default_row(orec));
-
 				if (type_mode & LOCK_WAIT) {
 					lock_reset_lock_and_trx_wait(lock);
 				}
@@ -3771,7 +3912,6 @@ lock_move_rec_list_start(
 	ut_ad(block->frame == page_align(rec));
 	ut_ad(new_block->frame == page_align(old_end));
 	ut_ad(comp == page_rec_is_comp(old_end));
-	ut_ad(!page_rec_is_default_row(rec));
 
 	lock_mutex_enter();
 
@@ -3797,9 +3937,6 @@ lock_move_rec_list_start(
 		reset the lock bits on the old */
 
 		while (rec1 != rec) {
-			ut_ad(!page_rec_is_default_row(rec1));
-			ut_ad(!page_rec_is_default_row(rec2));
-
 			ulint	rec1_heap_no;
 			ulint	rec2_heap_no;
 
@@ -3900,8 +4037,6 @@ lock_rtr_move_rec_list(
 
 			rec1 = rec_move[moved].old_rec;
 			rec2 = rec_move[moved].new_rec;
-			ut_ad(!page_rec_is_default_row(rec1));
-			ut_ad(!page_rec_is_default_row(rec2));
 
 			if (comp) {
 				rec1_heap_no = rec_get_heap_no_new(rec1);
@@ -3980,8 +4115,6 @@ lock_update_merge_right(
 						page which will be
 						discarded */
 {
-	ut_ad(!page_rec_is_default_row(orig_succ));
-
 	lock_mutex_enter();
 
 	/* Inherit the locks from the supremum of the left page to the
@@ -4239,7 +4372,6 @@ lock_update_insert(
 	ulint	donator_heap_no;
 
 	ut_ad(block->frame == page_align(rec));
-	ut_ad(!page_rec_is_default_row(rec));
 
 	/* Inherit the gap-locking locks for rec, in gap mode, from the next
 	record */
@@ -4271,7 +4403,6 @@ lock_update_delete(
 	ulint		next_heap_no;
 
 	ut_ad(page == page_align(rec));
-	ut_ad(!page_rec_is_default_row(rec));
 
 	if (page_is_comp(page)) {
 		heap_no = rec_get_heap_no_new(rec);
@@ -5107,7 +5238,6 @@ lock_rec_unlock(
 	ut_ad(block->frame == page_align(rec));
 	ut_ad(!trx->lock.wait_lock);
 	ut_ad(trx_state_eq(trx, TRX_STATE_ACTIVE));
-	ut_ad(!page_rec_is_default_row(rec));
 
 	heap_no = page_rec_get_heap_no(rec);
 
@@ -5235,7 +5365,9 @@ lock_release(
 
 		if (lock_get_type_low(lock) == LOCK_REC) {
 
+			//Jiun: Atomic dequeuing
 			lock_rec_dequeue_from_page(lock);
+
 		} else {
 			dict_table_t*	table;
 
@@ -5258,9 +5390,11 @@ lock_release(
 			/* Release the mutex for a while, so that we
 			do not monopolize it */
 
+#ifndef ITE4065
 			lock_mutex_exit();
 
 			lock_mutex_enter();
+#endif
 
 			count = 0;
 		}
@@ -5634,7 +5768,6 @@ lock_rec_print(FILE* file, const lock_t* lock)
 
 			rec = page_find_rec_with_heap_no(
 				buf_block_get_frame(block), i);
-			ut_ad(!page_rec_is_default_row(rec));
 
 			offsets = rec_get_offsets(
 				rec, lock->index, offsets, true,
@@ -6264,7 +6397,6 @@ lock_rec_queue_validate(
 	ut_a(block->frame == page_align(rec));
 	ut_ad(rec_offs_validate(rec, index, offsets));
 	ut_ad(!page_rec_is_comp(rec) == !rec_offs_comp(offsets));
-	ut_ad(page_rec_is_leaf(rec));
 	ut_ad(lock_mutex_own() == locked_lock_trx_sys);
 	ut_ad(!index || dict_index_is_clust(index)
 	      || !dict_index_is_online_ddl(index));
@@ -6367,7 +6499,6 @@ lock_rec_queue_validate(
 	     lock = lock_rec_get_next_const(heap_no, lock)) {
 
 		ut_ad(!trx_is_ac_nl_ro(lock->trx));
-		ut_ad(!page_rec_is_default_row(rec));
 
 		if (index) {
 			ut_a(lock->index == index);
@@ -6710,7 +6841,6 @@ lock_rec_insert_check_and_lock(
 	      || dict_index_is_clust(index)
 	      || (flags & BTR_CREATE_FLAG));
 	ut_ad(mtr->is_named_space(index->space));
-	ut_ad(page_rec_is_leaf(rec));
 
 	if (flags & BTR_NO_LOCKING_FLAG) {
 
@@ -6725,7 +6855,6 @@ lock_rec_insert_check_and_lock(
 	trx_t*		trx = thr_get_trx(thr);
 	const rec_t*	next_rec = page_rec_get_next_const(rec);
 	ulint		heap_no = page_rec_get_heap_no(next_rec);
-	ut_ad(!rec_is_default_row(next_rec, index));
 
 	lock_mutex_enter();
 	/* Because this code is invoked for a running transaction by
@@ -6851,8 +6980,6 @@ lock_rec_convert_impl_to_expl_for_trx(
 	ulint			heap_no)/*!< in: rec heap number to lock */
 {
 	ut_ad(trx_is_referenced(trx));
-	ut_ad(page_rec_is_leaf(rec));
-	ut_ad(!rec_is_default_row(rec, index));
 
 	DEBUG_SYNC_C("before_lock_rec_convert_impl_to_expl_for_trx");
 
@@ -6897,8 +7024,6 @@ lock_rec_convert_impl_to_expl(
 	ut_ad(page_rec_is_user_rec(rec));
 	ut_ad(rec_offs_validate(rec, index, offsets));
 	ut_ad(!page_rec_is_comp(rec) == !rec_offs_comp(offsets));
-	ut_ad(page_rec_is_leaf(rec));
-	ut_ad(!rec_is_default_row(rec, index));
 
 	if (dict_index_is_clust(index)) {
 		trx_id_t	trx_id;
@@ -6953,7 +7078,6 @@ lock_clust_rec_modify_check_and_lock(
 	ulint	heap_no;
 
 	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(page_rec_is_leaf(rec));
 	ut_ad(dict_index_is_clust(index));
 	ut_ad(block->frame == page_align(rec));
 
@@ -6961,7 +7085,6 @@ lock_clust_rec_modify_check_and_lock(
 
 		return(DB_SUCCESS);
 	}
-	ut_ad(!rec_is_default_row(rec, index));
 	ut_ad(!dict_table_is_temporary(index->table));
 
 	heap_no = rec_offs_comp(offsets)
@@ -7020,8 +7143,6 @@ lock_sec_rec_modify_check_and_lock(
 	ut_ad(!dict_index_is_online_ddl(index) || (flags & BTR_CREATE_FLAG));
 	ut_ad(block->frame == page_align(rec));
 	ut_ad(mtr->is_named_space(index->space));
-	ut_ad(page_rec_is_leaf(rec));
-	ut_ad(!rec_is_default_row(rec, index));
 
 	if (flags & BTR_NO_LOCKING_FLAG) {
 
@@ -7114,7 +7235,6 @@ lock_sec_rec_read_check_and_lock(
 	ut_ad(block->frame == page_align(rec));
 	ut_ad(page_rec_is_user_rec(rec) || page_rec_is_supremum(rec));
 	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(page_rec_is_leaf(rec));
 	ut_ad(mode == LOCK_X || mode == LOCK_S);
 
 	if ((flags & BTR_NO_LOCKING_FLAG)
@@ -7124,7 +7244,6 @@ lock_sec_rec_read_check_and_lock(
 		return(DB_SUCCESS);
 	}
 
-	ut_ad(!rec_is_default_row(rec, index));
 	heap_no = page_rec_get_heap_no(rec);
 
 	/* Some transaction may have an implicit x-lock on the record only
@@ -7196,8 +7315,6 @@ lock_clust_rec_read_check_and_lock(
 	ut_ad(gap_mode == LOCK_ORDINARY || gap_mode == LOCK_GAP
 	      || gap_mode == LOCK_REC_NOT_GAP);
 	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(page_rec_is_leaf(rec));
-	ut_ad(!rec_is_default_row(rec, index));
 
 	if ((flags & BTR_NO_LOCKING_FLAG)
 	    || srv_read_only_mode
@@ -7213,7 +7330,10 @@ lock_clust_rec_read_check_and_lock(
 		lock_rec_convert_impl_to_expl(block, rec, index, offsets);
 	}
 
+	//Jiun: No need to enter global mutex
+#ifndef ITE4065
 	lock_mutex_enter();
+#endif
 
 	ut_ad(mode != LOCK_X
 	      || lock_table_has(thr_get_trx(thr), index->table, LOCK_IX));
@@ -7224,7 +7344,10 @@ lock_clust_rec_read_check_and_lock(
 
 	MONITOR_INC(MONITOR_NUM_RECLOCK_REQ);
 
+	//Jiun: No need to enter global mutex
+#ifndef ITE4065
 	lock_mutex_exit();
+#endif
 
 	ut_ad(lock_rec_queue_validate(FALSE, block, rec, index, offsets));
 
@@ -7661,10 +7784,12 @@ lock_trx_release_locks(
 
 	/* Don't take lock_sys mutex if trx didn't acquire any lock. */
 	if (release_lock) {
-
 		/* The transition of trx->state to TRX_STATE_COMMITTED_IN_MEMORY
 		is protected by both the lock_sys->mutex and the trx->mutex. */
+		
+#ifndef ITE4065
 		lock_mutex_enter();
+#endif
 	}
 
 	trx_mutex_enter(trx);
@@ -7691,7 +7816,9 @@ lock_trx_release_locks(
 
 		ut_a(release_lock);
 
+#ifndef ITE4065
 		lock_mutex_exit();
+#endif
 
 		while (trx_is_referenced(trx)) {
 
@@ -7708,7 +7835,9 @@ lock_trx_release_locks(
 
 		trx_mutex_exit(trx);
 
+#ifndef ITE4065
 		lock_mutex_enter();
+#endif
 
 		trx_mutex_enter(trx);
 	}
@@ -7734,7 +7863,50 @@ lock_trx_release_locks(
 
 		lock_release(trx);
 
+#ifndef ITE4065
 		lock_mutex_exit();
+#else
+		//Jiun: Execute physical delete
+		if (!__sync_lock_test_and_set(&lock_sys->gclist_state, true)) {
+			time_t min_timestamp = std::numeric_limits<time_t>::max();
+			for (trx_t* t = UT_LIST_GET_FIRST(trx_sys->mysql_trx_list);
+				t != NULL;
+				t = UT_LIST_GET_NEXT(trx_list, t)) {
+		     	if ( (t->state == TRX_STATE_ACTIVE ||t->state == TRX_STATE_COMMITTED_IN_MEMORY) && t->timestamp < min_timestamp) {
+					min_timestamp = t->timestamp;
+				}
+			}
+
+			lock_t* old_gclist_tail = (lock_t*)lock_sys->gclist->tail;
+			lock_t* prev_gclist_lock = NULL;
+			lock_t* cur_gclist_lock = (lock_t*)lock_sys->gclist->head;
+
+			//Jihye : cur_gclist_lock null check is valid if tail is updated but head is not updated
+			while (cur_gclist_lock != NULL && cur_gclist_lock != old_gclist_tail) {
+				//Jihye : do physical delete of head
+				if (cur_gclist_lock == lock_sys->gclist->head && cur_gclist_lock->timestamp < min_timestamp) {
+					lock_sys->gclist->head = cur_gclist_lock->gc_hash;
+					//ib::info() << cur_gclist_lock << "(" << cur_gclist_lock->timestamp<<") is physically deleted";
+					ut_free(cur_gclist_lock);
+					cur_gclist_lock = (lock_t*)lock_sys->gclist->head;
+					continue;
+				}
+				//Jihye : not head, delete middle node
+				if (cur_gclist_lock->timestamp < min_timestamp) {
+					prev_gclist_lock->gc_hash = cur_gclist_lock->gc_hash;
+					//ib::info() << cur_gclist_lock << "(" << cur_gclist_lock->timestamp<<") is physically deleted";
+					ut_free(cur_gclist_lock);
+					cur_gclist_lock = prev_gclist_lock->gc_hash;
+				} else {
+					//Jihye : cannot delete cur node because of timestamp
+					prev_gclist_lock = cur_gclist_lock;
+					cur_gclist_lock = cur_gclist_lock->gc_hash;
+				}
+			}
+
+			__sync_lock_release(&lock_sys->gclist_state);
+		}
+#endif
 	}
 
 	trx->lock.n_rec_locks = 0;
@@ -8611,14 +8783,12 @@ lock_update_split_and_merge(
 {
 	const rec_t* left_next_rec;
 
-	ut_ad(page_is_leaf(left_block->frame));
-	ut_ad(page_is_leaf(right_block->frame));
-	ut_ad(page_align(orig_pred) == left_block->frame);
+	ut_a(left_block && right_block);
+	ut_a(orig_pred);
 
 	lock_mutex_enter();
 
 	left_next_rec = page_rec_get_next_const(orig_pred);
-	ut_ad(!page_rec_is_default_row(left_next_rec));
 
 	/* Inherit the locks on the supremum of the left page to the
 	first record which was moved from the right page */

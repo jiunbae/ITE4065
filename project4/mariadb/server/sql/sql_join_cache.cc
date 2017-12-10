@@ -27,7 +27,6 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
 #include "key.h"
 #include "sql_base.h"
 #include "sql_select.h"
@@ -2571,11 +2570,10 @@ finish:
     BNLH, BKA or BKAH) to the data structure
 
   RETURN VALUE
-   0 ok
-   1 error
+    none
 */ 
 
-bool JOIN_CACHE::save_explain_data(EXPLAIN_BKA_TYPE *explain)
+void JOIN_CACHE::save_explain_data(EXPLAIN_BKA_TYPE *explain)
 {
   explain->incremental= MY_TEST(prev_cache);
 
@@ -2597,7 +2595,6 @@ bool JOIN_CACHE::save_explain_data(EXPLAIN_BKA_TYPE *explain)
   default:
     DBUG_ASSERT(0);
   }
-  return 0;
 }
 
 /**
@@ -2610,7 +2607,7 @@ THD *JOIN_CACHE::thd()
 }
 
 
-static bool add_mrr_explain_info(String *str, uint mrr_mode, handler *file)
+static void add_mrr_explain_info(String *str, uint mrr_mode, handler *file)
 {
   char mrr_str_buf[128]={0};
   int len;
@@ -2619,30 +2616,22 @@ static bool add_mrr_explain_info(String *str, uint mrr_mode, handler *file)
   if (len > 0)
   {
     if (str->length())
-    {
-      if (str->append(STRING_WITH_LEN("; ")))
-        return 1;
-    }
-    if (str->append(mrr_str_buf, len))
-      return 1;
+      str->append(STRING_WITH_LEN("; "));
+    str->append(mrr_str_buf, len);
   }
-  return 0;
+}
+
+void JOIN_CACHE_BKA::save_explain_data(EXPLAIN_BKA_TYPE *explain)
+{
+  JOIN_CACHE::save_explain_data(explain); 
+  add_mrr_explain_info(&explain->mrr_type, mrr_mode, join_tab->table->file);
 }
 
 
-bool JOIN_CACHE_BKA::save_explain_data(EXPLAIN_BKA_TYPE *explain)
+void JOIN_CACHE_BKAH::save_explain_data(EXPLAIN_BKA_TYPE *explain)
 {
-  if (JOIN_CACHE::save_explain_data(explain))
-    return 1;
-  return add_mrr_explain_info(&explain->mrr_type, mrr_mode, join_tab->table->file);
-}
-
-
-bool JOIN_CACHE_BKAH::save_explain_data(EXPLAIN_BKA_TYPE *explain)
-{
-  if (JOIN_CACHE::save_explain_data(explain))
-    return 1;
-  return add_mrr_explain_info(&explain->mrr_type, mrr_mode, join_tab->table->file);
+  JOIN_CACHE::save_explain_data(explain); 
+  add_mrr_explain_info(&explain->mrr_type, mrr_mode, join_tab->table->file);
 }
 
 
@@ -3383,7 +3372,7 @@ int JOIN_TAB_SCAN::next()
   if (is_first_record)
     is_first_record= FALSE;
   else
-    err= info->read_record();
+    err= info->read_record(info);
 
   if (!err)
   {
@@ -3398,7 +3387,7 @@ int JOIN_TAB_SCAN::next()
       Move to the next record if the last retrieved record does not
       meet the condition pushed to the table join_tab.
     */
-    err= info->read_record();
+    err= info->read_record(info);
     if (!err)
     {
       join_tab->tracker->r_rows++;

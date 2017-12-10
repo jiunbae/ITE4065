@@ -29,9 +29,10 @@
   - "profiling_history_size", integer, session + global, "Num queries stored?"
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "sql_profile.h"
+#include <my_sys.h>
 #include "sql_show.h"                     // schema_table_store_record
 #include "sql_class.h"                    // THD
 
@@ -119,10 +120,8 @@ int make_profile_table_for_show(THD *thd, ST_SCHEMA_TABLE *schema_table)
       continue;
 
     field_info= &schema_table->fields_info[i];
-    LEX_CSTRING field_name= {field_info->field_name,
-                             strlen(field_info->field_name) };
     Item_field *field= new (thd->mem_root) Item_field(thd, context,
-                                      NullS, NullS, &field_name);
+                                      NullS, NullS, field_info->field_name);
     if (field)
     {
       field->set_name(thd, field_info->old_name,

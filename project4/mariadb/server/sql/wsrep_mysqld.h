@@ -193,8 +193,13 @@ extern wsrep_seqno_t wsrep_locked_seqno;
     ? wsrep_forced_binlog_format : (ulong)(my_format))
 
 // prefix all messages with "WSREP"
-void wsrep_log(void (*fun)(const char *, ...), const char *format, ...);
-#define WSREP_LOG(fun, ...) wsrep_log(fun,  ## __VA_ARGS__)
+#define WSREP_LOG(fun, ...)                                       \
+    do {                                                          \
+        char msg[1024] = {'\0'};                                  \
+        snprintf(msg, sizeof(msg) - 1, ## __VA_ARGS__);           \
+        fun("WSREP: %s", msg);                                    \
+    } while(0)
+
 #define WSREP_LOG_CONFLICT_THD(thd, role)                                      \
     WSREP_LOG(sql_print_information, 	                                       \
       "%s: \n "       	                                                       \
@@ -279,7 +284,7 @@ extern PSI_mutex_key key_LOCK_wsrep_desync;
 extern PSI_file_key key_file_wsrep_gra_log;
 #endif /* HAVE_PSI_INTERFACE */
 struct TABLE_LIST;
-int wsrep_to_isolation_begin(THD *thd, const char *db_, const char *table_,
+int wsrep_to_isolation_begin(THD *thd, char *db_, char *table_,
                              const TABLE_LIST* table_list);
 void wsrep_to_isolation_end(THD *thd);
 void wsrep_cleanup_transaction(THD *thd);

@@ -301,11 +301,11 @@ create trigger trg before insert on t2 for each row set @a:=1;
 ERROR 42S02: Table 'test.t2' doesn't exist
 create trigger trg before insert on t1 for each row set @a:=1;
 create trigger trg after insert on t1 for each row set @a:=1;
-ERROR HY000: Trigger 'test.trg' already exists
+ERROR HY000: Trigger already exists
 create trigger trg2 before insert on t1 for each row set @a:=1;
 drop trigger trg2;
 create trigger trg before insert on t3 for each row set @a:=1;
-ERROR HY000: Trigger 'test.trg' already exists
+ERROR HY000: Trigger already exists
 create trigger trg2 before insert on t3 for each row set @a:=1;
 drop trigger trg2;
 drop trigger trg;
@@ -313,7 +313,7 @@ drop trigger trg;
 ERROR HY000: Trigger does not exist
 create view v1 as select * from t1;
 create trigger trg before insert on v1 for each row set @a:=1;
-ERROR HY000: 'test.v1' is not of type 'BASE TABLE'
+ERROR HY000: 'test.v1' is not BASE TABLE
 drop view v1;
 drop table t1;
 drop table t3;
@@ -1986,7 +1986,7 @@ drop table if exists t1;
 create table t1 (i int, j int);
 create trigger t1_bi before insert on t1 for each row begin end;
 create trigger t1_bi before insert on t1 for each row begin end;
-ERROR HY000: Trigger 'test.t1_bi' already exists
+ERROR HY000: Trigger already exists
 create trigger t1_bi2 before insert on t1 for each row begin end;
 drop trigger t1_bi;
 drop trigger t1_bi2;
@@ -2125,7 +2125,7 @@ SHOW TRIGGERS IN db1;
 Trigger	Event	Table	Statement	Timing	Created	sql_mode	Definer	character_set_client	collation_connection	Database Collation
 trg1	INSERT	t2	CREATE DEFINER=`root`@`localhost` TRIGGER trg1 BEFORE INSERT ON t2 FOR EACH ROW INSERTINTOt1 VALUES (1)	BEFORE	#	STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION		latin1	latin1_swedish_ci	latin1_swedish_ci
 INSERT INTO t2 VALUES (1);
-ERROR 42000: Trigger 'trg1' has an error in its body: 'You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '(1)' at line 1'
+ERROR 42000: Trigger 'trg1' has an error in its body: 'You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'VALUES (1)' at line 1'
 SELECT * FROM t1;
 b
 # Work around Bug#45235
@@ -2368,6 +2368,7 @@ tr1	1	2016-01-01 10:10:10.33
 tr2	2	2016-01-01 10:10:10.99
 drop table t1;
 set time_zone= @@global.time_zone;
+#
 # MDEV-12992: Increasing memory consumption
 with each invocation of trigger
 #
@@ -2378,23 +2379,3 @@ CREATE TRIGGER tr
 AFTER UPDATE ON t1 FOR EACH ROW SELECT (SELECT b FROM t2) INTO @x;
 # Running 20000 queries
 DROP TABLE t1,t2;
-#
-# Start of 10.3 tests
-#
-#
-# MDEV-12461 TYPE OF and ROW TYPE OF anchored data types
-#
-CREATE TABLE t1 (a INT, b INT, total INT);
-CREATE TRIGGER tr1 BEFORE INSERT ON t1
-FOR EACH ROW
-BEGIN
-DECLARE va TYPE OF t1.a DEFAULT NEW.a;
-DECLARE vb TYPE OF t1.b DEFAULT NEW.b;
-SET NEW.total:= va + vb;
-END;
-$$
-INSERT INTO t1 (a,b) VALUES (10, 20);
-SELECT * FROM t1;
-a	b	total
-10	20	30
-DROP TABLE t1;

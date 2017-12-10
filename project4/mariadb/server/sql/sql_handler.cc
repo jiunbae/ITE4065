@@ -52,7 +52,7 @@
   cursor points at the first record).
 */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "sql_handler.h"
 #include "sql_base.h"                           // close_thread_tables
@@ -286,7 +286,7 @@ bool mysql_ha_open(THD *thd, TABLE_LIST *tables, SQL_HANDLER *reopen)
   mdl_savepoint= thd->mdl_context.mdl_savepoint();
 
   /* for now HANDLER can be used only for real TABLES */
-  tables->required_type= TABLE_TYPE_NORMAL;
+  tables->required_type= FRMTYPE_TABLE;
 
   /*
     We use open_tables() here, rather than, say,
@@ -549,7 +549,7 @@ SQL_HANDLER *mysql_ha_find_handler(THD *thd, const char *name)
 
 static bool
 mysql_ha_fix_cond_and_key(SQL_HANDLER *handler, 
-                          enum enum_ha_read_modes mode, const char *keyname,
+                          enum enum_ha_read_modes mode, char *keyname,
                           List<Item> *key_expr,
                           Item *cond, bool in_prepare)
 {
@@ -571,7 +571,7 @@ mysql_ha_fix_cond_and_key(SQL_HANDLER *handler,
     if (handler->keyno < 0 ||
         my_strcasecmp(&my_charset_latin1,
                       keyname,
-                      table->s->key_info[handler->keyno].name.str))
+                      table->s->key_info[handler->keyno].name))
     {
       if ((handler->keyno= find_type(keyname, &table->s->keynames,
                                      FIND_TYPE_NO_PREFIX) - 1) < 0)
@@ -671,7 +671,7 @@ mysql_ha_fix_cond_and_key(SQL_HANDLER *handler,
 */
  
 bool mysql_ha_read(THD *thd, TABLE_LIST *tables,
-                   enum enum_ha_read_modes mode, const char *keyname,
+                   enum enum_ha_read_modes mode, char *keyname,
                    List<Item> *key_expr,
                    enum ha_rkey_function ha_rkey_mode, Item *cond,
                    ha_rows select_limit_cnt, ha_rows offset_limit_cnt)
@@ -926,8 +926,7 @@ err0:
 */
 
 SQL_HANDLER *mysql_ha_read_prepare(THD *thd, TABLE_LIST *tables,
-                                   enum enum_ha_read_modes mode,
-                                   const char *keyname,
+                                   enum enum_ha_read_modes mode, char *keyname,
                                    List<Item> *key_expr, Item *cond)
 {
   SQL_HANDLER *handler;

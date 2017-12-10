@@ -48,8 +48,10 @@ public:
   {
     uint i;
     for (i= 0; i < num_parts; i++)
-      delete ha_shares[i];
-    delete[] ha_shares;
+      if (ha_shares[i])
+        delete ha_shares[i];
+    if (ha_shares)
+      delete [] ha_shares;
   }
   bool init(uint arg_num_parts)
   {
@@ -84,7 +86,7 @@ public:
   bool partition_name_hash_initialized;
   HASH partition_name_hash;
   /** Storage for each partitions Handler_share */
-  Parts_share_refs partitions_share_refs;
+  Parts_share_refs *partitions_share_refs;
   Partition_share() {}
   ~Partition_share()
   {
@@ -92,6 +94,8 @@ public:
     mysql_mutex_destroy(&auto_inc_mutex);
     if (partition_name_hash_initialized)
       my_hash_free(&partition_name_hash);
+    if (partitions_share_refs)
+      delete partitions_share_refs;
     DBUG_VOID_RETURN;
   }
   bool init(uint num_parts);
@@ -133,7 +137,7 @@ private:
   handler **m_new_file;                 // Array of references to new handlers
   handler **m_reorged_file;             // Reorganised partitions
   handler **m_added_file;               // Added parts kept for errors
-  LEX_CSTRING *m_connect_string;
+  LEX_STRING *m_connect_string;
   partition_info *m_part_info;          // local reference to partition
   Field **m_part_field_array;           // Part field array locally to save acc
   uchar *m_ordered_rec_buffer;          // Row and key buffer for ord. idx scan
@@ -422,8 +426,6 @@ public:
   virtual THR_LOCK_DATA **store_lock(THD * thd, THR_LOCK_DATA ** to,
 				     enum thr_lock_type lock_type);
   virtual int external_lock(THD * thd, int lock_type);
-  LEX_CSTRING *engine_name()
-  { return hton_name(table->part_info->default_engine_type); }
   /*
     When table is locked a statement is started by calling start_stmt
     instead of external_lock
@@ -479,7 +481,7 @@ public:
     number of calls to write_row.
   */
   virtual int write_row(uchar * buf);
-  virtual int update_row(const uchar * old_data, const uchar * new_data);
+  virtual int update_row(const uchar * old_data, uchar * new_data);
   virtual int delete_row(const uchar * buf);
   virtual int delete_all_rows(void);
   virtual int truncate();

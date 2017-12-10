@@ -22,6 +22,8 @@
 #ifndef _my_net_h
 #define _my_net_h
 
+#include "my_global.h"                  /* C_MODE_START, C_MODE_END */
+
 C_MODE_START
 
 #include <errno.h>

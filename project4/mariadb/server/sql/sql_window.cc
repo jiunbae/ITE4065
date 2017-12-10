@@ -1,27 +1,10 @@
-/*
-   Copyright (c) 2016, 2017 MariaDB
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
-
-#include "mariadb.h"
-#include "sql_parse.h"
 #include "sql_select.h"
 #include "sql_list.h"
 #include "item_windowfunc.h"
 #include "filesort.h"
 #include "sql_base.h"
 #include "sql_window.h"
+#include "my_dbug.h"
 
 
 bool
@@ -29,13 +12,13 @@ Window_spec::check_window_names(List_iterator_fast<Window_spec> &it)
 {
   if (window_names_are_checked)
     return false;
-  const char *name= this->name();
-  const char *ref_name= window_reference();
+  char *name= this->name();
+  char *ref_name= window_reference();
   it.rewind();
   Window_spec *win_spec;
   while((win_spec= it++) && win_spec != this)
   {
-    const char *win_spec_name= win_spec->name();
+    char *win_spec_name= win_spec->name();
     if (!win_spec_name)
       break;
     if (name && my_strcasecmp(system_charset_info, name, win_spec_name) == 0)
@@ -321,90 +304,8 @@ setup_windows(THD *thd, Ref_ptr_array ref_pointer_array, TABLE_LIST *tables,
     win_func_item->update_used_tables();
   }
 
-  li.rewind();
-  while ((win_func_item= li++))
-  {
-    if (win_func_item->check_result_type_of_order_item())
-      DBUG_RETURN(1);
-  }
   DBUG_RETURN(0);
 }
-
-
-/**
-  @brief
-  Find fields common for all partition lists used in window functions
-
-  @param thd       The thread handle
-
-  @details
-   This function looks for the field references in the partition lists
-   of all window functions used in this select that are common for
-   all the partition lists. The function returns an ORDER list contained
-   all such references.The list either is specially built by the function
-   or is taken directly from the first window specification.
-
-  @retval
-    pointer to the first element of the ORDER list contained field
-    references common for all partition lists
-    0 if no such reference is found.
-*/
-
-ORDER *st_select_lex::find_common_window_func_partition_fields(THD *thd)
-{
-  ORDER *ord;
-  Item *item;
-  DBUG_ASSERT(window_funcs.elements);
-  List_iterator_fast<Item_window_func> it(window_funcs);
-  Item_window_func *first_wf= it++;
-  if (!first_wf->window_spec->partition_list)
-    return 0;
-  List<Item> common_fields;
-  uint first_partition_elements= 0;
-  for (ord= first_wf->window_spec->partition_list->first; ord; ord= ord->next)
-  {
-    if ((*ord->item)->real_item()->type() == Item::FIELD_ITEM)
-      common_fields.push_back(*ord->item, thd->mem_root);
-    first_partition_elements++;
-  }
-  if (window_specs.elements == 1 &&
-      common_fields.elements == first_partition_elements)
-    return first_wf->window_spec->partition_list->first;
-  List_iterator<Item> li(common_fields);
-  Item_window_func *wf;
-  while (common_fields.elements && (wf= it++))
-  {
-    if (!wf->window_spec->partition_list)
-      return 0;
-    while ((item= li++))
-    {
-      for (ord= wf->window_spec->partition_list->first; ord; ord= ord->next)
-      {
-        if (item->eq(*ord->item, false))
-	  break;
-      }
-      if (!ord)
-        li.remove();
-    }
-    li.rewind();
-  }
-  if (!common_fields.elements)
-    return 0;
-  if (common_fields.elements == first_partition_elements)
-    return first_wf->window_spec->partition_list->first;
-  SQL_I_List<ORDER> res_list;
-  for (ord= first_wf->window_spec->partition_list->first, item= li++;
-       ord; ord= ord->next)
-  {
-    if (item != *ord->item)
-      continue;
-    if (add_to_list(thd, res_list, item, ord->direction))
-      return 0;
-    item= li++;
-  }
-  return res_list.first;
-}
-
 
 /////////////////////////////////////////////////////////////////////////////
 // Sorting window functions to minimize the number of table scans
@@ -426,8 +327,7 @@ int compare_order_elements(ORDER *ord1, ORDER *ord2)
   Item *item2= (*ord2->item)->real_item();
   DBUG_ASSERT(item1->type() == Item::FIELD_ITEM &&
               item2->type() == Item::FIELD_ITEM); 
-  int cmp= ((Item_field *) item1)->field->field_index -
-           ((Item_field *) item2)->field->field_index;
+  ptrdiff_t cmp= ((Item_field *) item1)->field - ((Item_field *) item2)->field;
   if (cmp == 0)
   {
     if (ord1->direction == ord2->direction)
@@ -484,8 +384,8 @@ int compare_window_frame_bounds(Window_frame_bound *win_frame_bound1,
       return CMP_EQ;
     else
     {
-      res= strcmp(win_frame_bound1->offset->name.str,
-                  win_frame_bound2->offset->name.str);
+      res= strcmp(win_frame_bound1->offset->name,
+                  win_frame_bound2->offset->name);
       res= res > 0 ? CMP_GT : CMP_LT;
       if (is_bottom_bound)
         res= -res;
@@ -745,7 +645,7 @@ public:
   void init(READ_RECORD *info)
   {
     ref_length= info->ref_length;
-    if (info->read_record_func == rr_from_pointers)
+    if (info->read_record == rr_from_pointers)
     {
       io_cache= NULL;
       cache_start= info->cache_pos;
@@ -973,8 +873,6 @@ private:
   Group_bound_tracker bound_tracker;
   bool end_of_partition;
 };
-
-
 
 /////////////////////////////////////////////////////////////////////////////
 
@@ -1743,17 +1641,7 @@ public:
     /* Walk to the end of the partition, find how many rows there are. */
     while (!cursor.next())
       num_rows_in_partition++;
-    set_win_funcs_row_count(num_rows_in_partition);
-  }
 
-  ha_rows get_curr_rownum() const
-  {
-    return cursor.get_rownum();
-  }
-
-protected:
-  void set_win_funcs_row_count(ha_rows num_rows_in_partition)
-  {
     List_iterator_fast<Item_sum> it(sum_functions);
     Item_sum* item;
     while ((item= it++))
@@ -1763,43 +1651,11 @@ protected:
       item_with_row_count->set_row_count(num_rows_in_partition);
     }
   }
-};
-
-class Frame_unbounded_following_set_count_no_nulls:
-            public Frame_unbounded_following_set_count
-{
-
-public:
-  Frame_unbounded_following_set_count_no_nulls(THD *thd,
-      SQL_I_List<ORDER> *partition_list,
-      SQL_I_List<ORDER> *order_list) :
-  Frame_unbounded_following_set_count(thd,partition_list, order_list)
-  {
-    order_item= order_list->first->item[0];
-  }
-  void next_partition(ha_rows rownum)
-  {
-    ha_rows num_rows_in_partition= 0;
-    if (cursor.fetch())
-      return;
-
-    /* Walk to the end of the partition, find how many rows there are. */
-    do
-    {
-      if (!order_item->is_null())
-        num_rows_in_partition++;
-    } while (!cursor.next());
-
-    set_win_funcs_row_count(num_rows_in_partition);
-  }
 
   ha_rows get_curr_rownum() const
   {
     return cursor.get_rownum();
   }
-
-private:
-  Item* order_item;
 };
 
 /////////////////////////////////////////////////////////////////////////////
@@ -2540,21 +2396,6 @@ void add_special_frame_cursors(THD *thd, Cursor_manager *cursor_manager,
       cursor_manager->add_cursor(fc);
       break;
     }
-    case Item_sum::PERCENTILE_CONT_FUNC:
-    case Item_sum::PERCENTILE_DISC_FUNC:
-    {
-      fc= new Frame_unbounded_preceding(thd,
-                                        spec->partition_list,
-                                        spec->order_list);
-      fc->add_sum_func(item_sum);
-      cursor_manager->add_cursor(fc);
-      fc= new Frame_unbounded_following(thd,
-                                          spec->partition_list,
-                                          spec->order_list);
-      fc->add_sum_func(item_sum);
-      cursor_manager->add_cursor(fc);
-      break;
-    }
     default:
       fc= new Frame_unbounded_preceding(
               thd, spec->partition_list, spec->order_list);
@@ -2579,8 +2420,6 @@ static bool is_computed_with_remove(Item_sum::Sumfunctype sum_func)
     case Item_sum::NTILE_FUNC:
     case Item_sum::FIRST_VALUE_FUNC:
     case Item_sum::LAST_VALUE_FUNC:
-    case Item_sum::PERCENTILE_CONT_FUNC:
-    case Item_sum::PERCENTILE_DISC_FUNC:
       return false;
     default:
       return true;
@@ -2611,18 +2450,9 @@ void get_window_functions_required_cursors(
     */
     if (item_win_func->requires_partition_size())
     {
-      if (item_win_func->only_single_element_order_list())
-      {
-        fc= new Frame_unbounded_following_set_count_no_nulls(thd,
+      fc= new Frame_unbounded_following_set_count(thd,
                 item_win_func->window_spec->partition_list,
                 item_win_func->window_spec->order_list);
-      }
-      else
-      {
-        fc= new Frame_unbounded_following_set_count(thd,
-                item_win_func->window_spec->partition_list,
-                item_win_func->window_spec->order_list);
-      }
       fc->add_sum_func(sum_func);
       cursor_manager->add_cursor(fc);
     }
@@ -2775,7 +2605,7 @@ bool compute_window_func(THD *thd,
 
   while (true)
   {
-    if ((err= info.read_record()))
+    if ((err= info.read_record(&info)))
       break; // End of file.
 
     /* Remember current row so that we can restore it before computing
@@ -2803,13 +2633,6 @@ bool compute_window_func(THD *thd,
       {
         cursor_manager->notify_cursors_next_row();
       }
-
-      /* Check if we found any error in the window function while adding values
-         through cursors. */
-      if (thd->is_error() || thd->is_killed())
-        break;
-
-
       /* Return to current row after notifying cursors for each window
          function. */
       tbl->file->ha_rnd_pos(tbl->record[0], rowid_buf);
@@ -3093,14 +2916,10 @@ Window_funcs_computation::save_explain_plan(MEM_ROOT *mem_root,
   Explain_aggr_window_funcs *xpl= new Explain_aggr_window_funcs;
   List_iterator<Window_funcs_sort> it(win_func_sorts);
   Window_funcs_sort *srt;
-  if (!xpl)
-    return 0;
   while ((srt = it++))
   {
     Explain_aggr_filesort *eaf=
       new Explain_aggr_filesort(mem_root, is_analyze, srt->filesort);
-    if (!eaf)
-      return 0;
     xpl->sorts.push_back(eaf, mem_root);
   }
   return xpl;
@@ -3230,3 +3049,5 @@ Window_funcs_computation::save_explain_plan(MEM_ROOT *mem_root,
   }
   else
 #endif
+
+

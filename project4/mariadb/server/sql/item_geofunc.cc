@@ -26,7 +26,7 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 /*
   It is necessary to include set_var.h instead of item.h because there
@@ -40,11 +40,20 @@
 #include "opt_range.h"
 
 
+Field *Item_geometry_func::create_field_for_create_select(TABLE *t_arg)
+{
+  Field *result;
+  if ((result= new Field_geom(max_length, maybe_null, name, t_arg->s,
+                              get_geometry_type())))
+    result->init(t_arg);
+  return result;
+}
+
 void Item_geometry_func::fix_length_and_dec()
 {
   collation.set(&my_charset_bin);
   decimals=0;
-  max_length= (uint32) UINT_MAX32;
+  max_length= (uint32) 4294967295U;
   maybe_null= 1;
 }
 
@@ -135,7 +144,7 @@ String *Item_func_geometry_from_json::val_str(String *str)
     {
       String *sv= args[1]->val_str(&tmp_js);
       my_error(ER_WRONG_VALUE_FOR_TYPE, MYF(0),
-               "option", sv->c_ptr_safe(), "ST_GeometryFromJSON");
+               "option", sv->c_ptr(), "ST_GeometryFromJSON");
       null_value= 1;
       return 0;
     }
@@ -214,7 +223,7 @@ String *Item_func_as_wkt::val_str_ascii(String *str)
 void Item_func_as_wkt::fix_length_and_dec()
 {
   collation.set(default_charset(), DERIVATION_COERCIBLE, MY_REPERTOIRE_ASCII);
-  max_length= (uint32) UINT_MAX32;
+  max_length=MAX_BLOB_WIDTH;
   maybe_null= 1;
 }
 

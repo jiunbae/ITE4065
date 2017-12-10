@@ -1841,8 +1841,11 @@ row_truncate_table_for_mysql(
 	till some point. Associate rollback segment to record undo log. */
 	if (!dict_table_is_temporary(table)) {
 		mutex_enter(&trx->undo_mutex);
-		err = trx_undo_assign_undo(trx, trx->rsegs.m_redo.rseg,
-					   &trx->rsegs.m_redo.undo);
+
+		trx_undo_t**	pundo = &trx->rsegs.m_redo.update_undo;
+		err = trx_undo_assign_undo(
+			trx, trx->rsegs.m_redo.rseg, pundo, TRX_UNDO_UPDATE);
+
 		mutex_exit(&trx->undo_mutex);
 
 		DBUG_EXECUTE_IF("ib_err_trunc_assigning_undo_log",
@@ -1950,11 +1953,16 @@ row_truncate_table_for_mysql(
 			return(row_truncate_complete(
 				table, trx, fsp_flags, logger, DB_ERROR));
 		}
+	}
 
-		DBUG_EXECUTE_IF("ib_trunc_crash_after_redo_log_write_complete",
-				log_buffer_flush_to_disk();
-				os_thread_sleep(3000000);
-				DBUG_SUICIDE(););
+	DBUG_EXECUTE_IF("ib_trunc_crash_after_redo_log_write_complete",
+			log_buffer_flush_to_disk();
+			os_thread_sleep(3000000);
+			DBUG_SUICIDE(););
+
+	/* Step-9: Drop all indexes (free index pages associated with these
+	indexes) */
+	if (!dict_table_is_temporary(table)) {
 
 		DropIndex	dropIndex(table, no_redo);
 
@@ -1969,10 +1977,7 @@ row_truncate_table_for_mysql(
 			return(row_truncate_complete(
 				table, trx, fsp_flags, logger, err));
 		}
-
-		dict_table_get_first_index(table)->remove_instant();
 	} else {
-		ut_ad(!table->is_instant());
 		/* For temporary tables we don't have entries in SYSTEM TABLES*/
 		ut_ad(fsp_is_system_temporary(table->space));
 		for (dict_index_t* index = UT_LIST_GET_FIRST(table->indexes);
@@ -2105,8 +2110,6 @@ row_truncate_table_for_mysql(
 
 		trx_commit_for_mysql(trx);
 	}
-
-	ut_ad(!table->is_instant());
 
 	return(row_truncate_complete(table, trx, fsp_flags, logger, err));
 }

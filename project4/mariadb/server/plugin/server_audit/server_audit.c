@@ -15,11 +15,15 @@
 
 
 #define PLUGIN_VERSION 0x104
-#define PLUGIN_STR_VERSION "1.4.3"
+#define PLUGIN_STR_VERSION "1.4.2"
 
 #define _my_thread_var loc_thread_var
 
 #include <my_config.h>
+#include <stdio.h>
+#include <time.h>
+#include <string.h>
+#include <fcntl.h>
 #include <assert.h>
 
 #ifndef _WIN32
@@ -72,7 +76,6 @@ static void closelog() {}
 */
 
 #if !defined(MYSQL_DYNAMIC_PLUGIN) && !defined(MARIADB_ONLY)
-#include <typelib.h>
 #define MARIADB_ONLY
 #endif /*MYSQL_PLUGIN_DYNAMIC*/
 
@@ -80,12 +83,11 @@ static void closelog() {}
 #define MYSQL_SERVICE_LOGGER_INCLUDED
 #endif /*MARIADB_ONLY*/
 
-#include <my_global.h>
 #include <my_base.h>
+//#include <my_dir.h>
 #include <typelib.h>
 #include <mysql/plugin.h>
 #include <mysql/plugin_audit.h>
-#include <string.h>
 #ifndef RTLD_DEFAULT
 #define RTLD_DEFAULT NULL
 #endif
@@ -1116,21 +1118,6 @@ do { \
 } while(0)
 
 
-#define ESC_MAP_SIZE 0x60
-static const char esc_map[ESC_MAP_SIZE]=
-{
-  0, 0, 0, 0, 0, 0, 0, 0, 'b', 't', 'n', 0, 'f', 'r', 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, '\'', 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '\\', 0, 0, 0
-};
-
-static char escaped_char(char c)
-{
-  return ((unsigned char ) c) >= ESC_MAP_SIZE ? 0 : esc_map[(unsigned char) c];
-}
 
 
 static void setup_connection_initdb(struct connection_info *cn,
@@ -1337,16 +1324,21 @@ static size_t escape_string(const char *str, unsigned int len,
   const char *res_end= result + result_len - 2;
   while (len)
   {
-    char esc_c;
-
     if (result >= res_end)
       break;
-    if ((esc_c= escaped_char(*str)))
+    if (*str == '\'')
     {
       if (result+1 >= res_end)
         break;
       *(result++)= '\\';
-      *(result++)= esc_c;
+      *(result++)= '\'';
+    }
+    else if (*str == '\\')
+    {
+      if (result+1 >= res_end)
+        break;
+      *(result++)= '\\';
+      *(result++)= '\\';
     }
     else if (is_space(*str))
       *(result++)= ' ';
@@ -1435,12 +1427,19 @@ static size_t escape_string_hide_passwords(const char *str, unsigned int len,
 no_password:
     if (result >= res_end)
       break;
-    if ((b_char= escaped_char(*str)))
+    if (*str == '\'')
     {
       if (result+1 >= res_end)
         break;
       *(result++)= '\\';
-      *(result++)= b_char;
+      *(result++)= '\'';
+    }
+    else if (*str == '\\')
+    {
+      if (result+1 >= res_end)
+        break;
+      *(result++)= '\\';
+      *(result++)= '\\';
     }
     else if (is_space(*str))
       *(result++)= ' ';

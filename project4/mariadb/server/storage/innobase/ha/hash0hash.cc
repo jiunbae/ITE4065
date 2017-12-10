@@ -109,6 +109,13 @@ hash_create(
 	array = static_cast<hash_cell_t*>(
 		ut_malloc_nokey(sizeof(hash_cell_t) * prime));
 
+#ifdef ITE4065
+	for (int i = 0; i < prime; i++) {
+		array[i].head = NULL;
+		array[i].tail = array[i].head;
+	}
+#endif
+
 	/* The default type of hash_table is HASH_TABLE_SYNC_NONE i.e.:
 	the caller is responsible for access control to the table. */
 	table->type = HASH_TABLE_SYNC_NONE;

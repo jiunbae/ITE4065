@@ -171,7 +171,6 @@ my @DEFAULT_SUITES= qw(
     binlog-
     binlog_encryption-
     csv-
-    compat/oracle-
     encryption-
     federated-
     funcs_1-
@@ -189,12 +188,12 @@ my @DEFAULT_SUITES= qw(
     multi_source-
     optimizer_unfixed_bugs-
     parts-
+    percona-
     perfschema-
     plugins-
     roles-
     rpl-
     sys_vars-
-    sql_sequence-
     unit-
     vcol-
     wsrep-
@@ -1732,6 +1731,18 @@ sub command_line_setup {
     $opt_strace=1;
   }
 
+  # InnoDB does not bother to do individual de-allocations at exit. Instead it
+  # relies on a custom allocator to track every allocation, and frees all at
+  # once during exit.
+  # In XtraDB, an option use-sys-malloc is introduced (and on by default) to
+  # disable this (for performance). But this exposes Valgrind to all the
+  # missing de-allocations, so we need to disable it to at least get
+  # meaningful leak checking for the rest of the server.
+  if ($opt_valgrind_mysqld)
+  {
+    push(@opt_extra_mysqld_opt, "--loose-skip-innodb-use-sys-malloc");
+  }
+
   if ($opt_debug_common)
   {
     $opt_debug= 1;
@@ -1914,10 +1925,10 @@ sub collect_mysqld_features_from_running_server ()
     #print "Major: $1 Minor: $2 Build: $3\n";
     $mysql_version_id= $1*10000 + $2*100 + $3;
     #print "mysql_version_id: $mysql_version_id\n";
-    mtr_report("MariaDB Version $1.$2.$3");
+    mtr_report("MySQL Version $1.$2.$3");
     $mysql_version_extra= $4;
   }
-  mtr_error("Could not find version of MariaDBL") unless $mysql_version_id;
+  mtr_error("Could not find version of MySQL") unless $mysql_version_id;
 }
 
 sub find_mysqld {
@@ -2207,7 +2218,7 @@ sub environment_setup {
   $ENV{'UMASK_DIR'}=          "0770"; # The octal *string*
 
   #
-  # MariaDB tests can produce output in various character sets
+  # MySQL tests can produce output in various character sets
   # (especially, ctype_xxx.test). To avoid confusing Perl
   # with output which is incompatible with the current locale
   # settings, we reset the current values of LC_ALL and LC_CTYPE to "C".
@@ -2538,7 +2549,7 @@ sub setup_vardir() {
   if (check_socket_path_length("$opt_tmpdir/testsocket.sock")){
     mtr_error("Socket path '$opt_tmpdir' too long, it would be ",
 	      "truncated and thus not possible to use for connection to ",
-	      "MariaDB Server. Set a shorter with --tmpdir=<path> option");
+	      "MySQL Server. Set a shorter with --tmpdir=<path> option");
   }
 
   # copy all files from std_data into var/std_data
@@ -4250,7 +4261,7 @@ sub extract_server_log ($$) {
 	push(@lines, $line);
 	if (scalar(@lines) > 1000000) {
 	  $Ferr = undef;
-	  mtr_warning("Too much log in $error_log, bailing out from extracting");
+	  mtr_warning("Too much log from test, bailing out from extracting");
 	  return ();
 	}
       }
@@ -4394,12 +4405,12 @@ sub extract_warning_lines ($$) {
      qr/Slave I\/O: error reconnecting to master '.*' - retry-time: [1-3]  retries/,
      qr/Slave I\/0: Master command COM_BINLOG_DUMP failed/,
      qr/Error reading packet/,
-     qr/Lost connection to MariaDB server at 'reading initial communication packet'/,
+     qr/Lost connection to MySQL server at 'reading initial communication packet'/,
      qr/Failed on request_dump/,
      qr/Slave: Can't drop database.* database doesn't exist/,
      qr/Slave: Operation DROP USER failed for 'create_rout_db'/,
      qr|Checking table:   '\..mtr.test_suppressions'|,
-     qr|Table \./test/bug53592 has a primary key in InnoDB data dictionary, but not in|,
+     qr|Table \./test/bug53592 has a primary key in InnoDB data dictionary, but not in MySQL|,
      qr|Table '\..mtr.test_suppressions' is marked as crashed and should be repaired|,
      qr|Table 'test_suppressions' is marked as crashed and should be repaired|,
      qr|Can't open shared library|,
@@ -5230,7 +5241,6 @@ sub server_need_restart {
     if (!My::Options::same($started_opts, $extra_opts) ||
         exists $server->{'restart_opts'})
     {
-      delete $server->{'restart_opts'};
       my $use_dynamic_option_switch= 0;
       if (!$use_dynamic_option_switch)
       {
@@ -5951,7 +5961,7 @@ Examples:
 
 alias
 main.alias              'main' is the name of the suite for the 't' directory.
-rpl.rpl_invoked_features,mix,innodb
+rpl.rpl_invoked_features,mix,xtradb_plugin
 suite/rpl/t/rpl.rpl_invoked_features
 
 Options to control what engine/variation to run:

@@ -15,7 +15,7 @@
 
 /* drop and alter of tablespaces */
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "unireg.h"
 #include "sql_tablespace.h"

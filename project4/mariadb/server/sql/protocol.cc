@@ -25,7 +25,7 @@
 #pragma implementation				// gcc: Class implementation
 #endif
 
-#include "mariadb.h"
+#include <my_global.h>
 #include "sql_priv.h"
 #include "protocol.h"
 #include "sql_class.h"                          // THD
@@ -791,7 +791,8 @@ bool Protocol::send_result_set_metadata(List<Item> *list, uint flags)
 {
   List_iterator_fast<Item> it(*list);
   Item *item;
-  ValueBuffer<MAX_FIELD_WIDTH> tmp;
+  uchar buff[MAX_FIELD_WIDTH];
+  String tmp((char*) buff,sizeof(buff),&my_charset_bin);
   Protocol_text prot(thd);
   String *local_packet= prot.storage_packet();
   CHARSET_INFO *thd_charset= thd->variables.character_set_results;
@@ -799,9 +800,7 @@ bool Protocol::send_result_set_metadata(List<Item> *list, uint flags)
 
   if (flags & SEND_NUM_ROWS)
   {				// Packet with number of elements
-    uchar buff[MAX_INT_WIDTH];
     uchar *pos= net_store_length(buff, list->elements);
-    DBUG_ASSERT(pos <= buff + sizeof(buff));
     if (my_net_write(&thd->net, buff, (size_t) (pos-buff)))
       DBUG_RETURN(1);
   }
@@ -841,9 +840,9 @@ bool Protocol::send_result_set_metadata(List<Item> *list, uint flags)
 		     cs, thd_charset) ||
 	  prot.store(field.org_table_name, (uint) strlen(field.org_table_name),
 		     cs, thd_charset) ||
-	  prot.store(field.col_name.str, (uint) field.col_name.length,
+	  prot.store(field.col_name, (uint) strlen(field.col_name),
 		     cs, thd_charset) ||
-	  prot.store(field.org_col_name.str, (uint) field.org_col_name.length,
+	  prot.store(field.org_col_name, (uint) strlen(field.org_col_name),
 		     cs, thd_charset) ||
 	  local_packet->realloc(local_packet->length()+12))
 	goto err;
@@ -899,7 +898,7 @@ bool Protocol::send_result_set_metadata(List<Item> *list, uint flags)
     {
       if (prot.store(field.table_name, (uint) strlen(field.table_name),
 		     cs, thd_charset) ||
-	  prot.store(field.col_name.str, (uint) field.col_name.length,
+	  prot.store(field.col_name, (uint) strlen(field.col_name),
 		     cs, thd_charset) ||
 	  local_packet->realloc(local_packet->length()+10))
 	goto err;
@@ -969,20 +968,15 @@ bool Protocol::write()
 
 bool Protocol::send_result_set_row(List<Item> *row_items)
 {
+  char buffer[MAX_FIELD_WIDTH];
+  String str_buffer(buffer, sizeof (buffer), &my_charset_bin);
   List_iterator_fast<Item> it(*row_items);
 
   DBUG_ENTER("Protocol::send_result_set_row");
 
   for (Item *item= it++; item; item= it++)
   {
-    /*
-      ValueBuffer::m_string can be altered during Item::send().
-      It's important to declare value_buffer inside the loop,
-      to have ValueBuffer::m_string point to ValueBuffer::buffer
-      on every iteration.
-    */
-    ValueBuffer<MAX_FIELD_WIDTH> value_buffer;
-    if (item->send(this, &value_buffer))
+    if (item->send(this, &str_buffer))
     {
       // If we're out of memory, reclaim some, to help us recover.
       this->free();
@@ -991,6 +985,12 @@ bool Protocol::send_result_set_row(List<Item> *row_items)
     /* Item::send() may generate an error. If so, abort the loop. */
     if (thd->is_error())
       DBUG_RETURN(TRUE);
+
+    /*
+      Reset str_buffer to its original state, as it may have been altered in
+      Item::send().
+    */
+    str_buffer.set(buffer, sizeof(buffer), &my_charset_bin);
   }
 
   DBUG_RETURN(FALSE);
@@ -1116,7 +1116,7 @@ bool Protocol_text::store(const char *from, size_t length,
 #ifndef DBUG_OFF
   DBUG_PRINT("info", ("Protocol_text::store field %u (%u): %.*s", field_pos,
                       field_count, (int) length, (length == 0 ? "" : from)));
-  DBUG_ASSERT(field_types == 0 || field_pos < field_count);
+  DBUG_ASSERT(field_pos < field_count);
   DBUG_ASSERT(field_types == 0 ||
 	      field_types[field_pos] == MYSQL_TYPE_DECIMAL ||
               field_types[field_pos] == MYSQL_TYPE_BIT ||
@@ -1235,7 +1235,7 @@ bool Protocol_text::store(Field *field)
   char buff[MAX_FIELD_WIDTH];
   String str(buff,sizeof(buff), &my_charset_bin);
   CHARSET_INFO *tocs= this->thd->variables.character_set_results;
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   TABLE *table= field->table;
   my_bitmap_map *old_map= 0;
   if (table->file)
@@ -1243,7 +1243,7 @@ bool Protocol_text::store(Field *field)
 #endif
 
   field->val_str(&str);
-#ifdef DBUG_ASSERT_EXISTS
+#ifndef DBUG_OFF
   if (old_map)
     dbug_tmp_restore_column_map(table->read_set, old_map);
 #endif
