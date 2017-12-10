@@ -541,7 +541,7 @@ trx_sys_init_at_db_start()
 	}
 
 	//Jiun: Set transaction timestamp as 1
-#ifdef ITE4068
+#ifdef ITE4065
 	trx_sys->timestamp = 1;
 #endif
 

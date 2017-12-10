@@ -1711,13 +1711,13 @@ RecLock::lock_alloc(
 	ulint		size)
 {
 	//Jiun: No need to check global mutex own
-#ifndef ITE4068
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
 #endif
 
 	lock_t*	lock;
 
-#ifndef ITE4068
+#ifndef ITE4065
 	if (trx->lock.rec_cached >= trx->lock.rec_pool.size()
 	    || sizeof(*lock) + size > REC_LOCK_SIZE) {
 
@@ -1744,7 +1744,7 @@ RecLock::lock_alloc(
 
 	lock_rec_t&	rec_lock = lock->un_member.rec_lock;
 
-#ifndef ITE4068
+#ifndef ITE4065
 	/* Predicate lock always on INFIMUM (0) */
 
 	if (is_predicate_lock(mode)) {
@@ -1765,7 +1765,7 @@ RecLock::lock_alloc(
 
 	rec_lock.page_no = rec_id.m_page_no;
 
-#ifndef ITE4068
+#ifndef ITE4065
 	/* Set the bit corresponding to rec */
 
 	lock_rec_set_nth_bit(lock, rec_id.m_heap_no);
@@ -1971,17 +1971,17 @@ void
 RecLock::lock_add(lock_t* lock, bool add_to_hash)
 {
 	//Jiun: No need to check global mutex own
-#ifndef ITE4068
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
 #endif
 	ut_ad(trx_mutex_own(lock->trx));
 
-#ifndef ITE4068
+#ifndef ITE4065
 	bool wait_lock = m_mode & LOCK_WAIT;
 #endif
 
 	if (add_to_hash) {
-#ifndef ITE4068
+#ifndef ITE4065
 		ulint	key = m_rec_id.fold();
 		hash_table_t *lock_hash = lock_hash_get(m_mode);
 
@@ -2004,7 +2004,7 @@ RecLock::lock_add(lock_t* lock, bool add_to_hash)
 #endif
 	}
 
-#ifndef ITE4068
+#ifndef ITE4065
 	if (wait_lock) {
 		lock_set_lock_and_trx_wait(lock, lock->trx);
 	}
@@ -2035,7 +2035,7 @@ RecLock::create(
 	const	lock_prdt_t* prdt)
 {
 	//Jiun: No need to check global mutex own
-#ifndef ITE4068
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
 #endif
 	ut_ad(owns_trx_mutex == trx_mutex_own(trx));
@@ -2044,7 +2044,7 @@ RecLock::create(
 
 	lock_t*	lock = lock_alloc(trx, m_index, m_mode, m_rec_id, m_size);
 
-#ifndef ITE4068
+#ifndef ITE4065
 	if (prdt != NULL && (m_mode & LOCK_PREDICATE)) {
 		lock_prdt_set_prdt(lock, prdt);
 	}
@@ -2139,7 +2139,7 @@ RecLock::create(
 		lock_add(lock, false);
 	} else {
 # endif /* WITH_WSREP */
-#endif /* ITE4068 */
+#endif /* ITE4065 */
 
 	/* Ensure that another transaction doesn't access the trx
 	lock state and lock data structures while we are adding the
@@ -2155,11 +2155,11 @@ RecLock::create(
 		trx_mutex_exit(trx);
 	}
 
-#ifndef ITE4068
+#ifndef ITE4065
 # ifdef WITH_WSREP
 	}
 # endif /* WITH_WSREP */
-#endif /* ITE4068 */
+#endif /* ITE4065 */
 
 	return(lock);
 }
@@ -2307,7 +2307,7 @@ queue is itself waiting roll it back, also do a deadlock check and resolve.
 dberr_t
 RecLock::add_to_waitq(const lock_t* wait_for, const lock_prdt_t* prdt)
 {
-#ifndef ITE4068
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
 #endif
 	ut_ad(m_trx == thr_get_trx(m_thr));
@@ -2506,7 +2506,7 @@ lock_rec_lock_fast(
 	que_thr_t*		thr)	/*!< in: query thread */
 {
 	//Jiun: No need to check global mutex own
-#ifndef ITE4068
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
 #endif
 
@@ -2525,7 +2525,7 @@ lock_rec_lock_fast(
 
 	DBUG_EXECUTE_IF("innodb_report_deadlock", return(LOCK_REC_FAIL););
 
-#ifndef ITE4068
+#ifndef ITE4065
 	lock_t*	lock = lock_rec_get_first_on_page(lock_sys->rec_hash, block);
 #endif
 
@@ -2533,7 +2533,7 @@ lock_rec_lock_fast(
 
 	lock_rec_req_status	status = LOCK_REC_SUCCESS;
 
-#ifndef ITE4068
+#ifndef ITE4065
 	if (lock == NULL) {
 
 		if (!impl) {
@@ -2605,7 +2605,7 @@ lock_rec_lock_slow(
 	que_thr_t*		thr)	/*!< in: query thread */
 {
 	//Jiun: No need to check global mutex own
-#ifndef ITE4068
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
 #endif
 	ut_ad(!srv_read_only_mode);
@@ -2693,7 +2693,7 @@ lock_rec_lock(
 	que_thr_t*		thr)	/*!< in: query thread */
 {
 	//Jiun: No need to check global mutex own
-#ifndef ITE4068
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
 #endif
 
@@ -3189,7 +3189,7 @@ lock_rec_dequeue_from_page(
 	trx_lock_t*	trx_lock;
 	hash_table_t*	lock_hash;
 
-#ifndef ITE4068
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
 #endif
 	ut_ad(lock_get_type_low(in_lock) == LOCK_REC);
@@ -3201,7 +3201,7 @@ lock_rec_dequeue_from_page(
 	page_no = in_lock->un_member.rec_lock.page_no;
 
 	ut_ad(in_lock->index->table->n_rec_locks > 0);
-#ifndef ITE4068
+#ifndef ITE4065
 	in_lock->index->table->n_rec_locks--;
 #else
 	__sync_fetch_and_sub(&in_lock->index->table->n_rec_locks, 1);
@@ -3209,7 +3209,7 @@ lock_rec_dequeue_from_page(
 
 	lock_hash = lock_hash_get(in_lock->type_mode);
 
-#ifndef ITE4068
+#ifndef ITE4065
 	HASH_DELETE(lock_t, hash, lock_hash,
 		    lock_rec_fold(space, page_no), in_lock);
 #else
@@ -3284,7 +3284,7 @@ lock_rec_dequeue_from_page(
 
 	UT_LIST_REMOVE(trx_lock->trx_locks, in_lock);
 
-#ifndef ITE4068
+#ifndef ITE4065
 	MONITOR_INC(MONITOR_RECLOCK_REMOVED);
 	MONITOR_DEC(MONITOR_NUM_RECLOCK);
 #endif
@@ -5390,7 +5390,7 @@ lock_release(
 			/* Release the mutex for a while, so that we
 			do not monopolize it */
 
-#ifndef ITE4068
+#ifndef ITE4065
 			lock_mutex_exit();
 
 			lock_mutex_enter();
@@ -7331,7 +7331,7 @@ lock_clust_rec_read_check_and_lock(
 	}
 
 	//Jiun: No need to enter global mutex
-#ifndef ITE4068
+#ifndef ITE4065
 	lock_mutex_enter();
 #endif
 
@@ -7345,7 +7345,7 @@ lock_clust_rec_read_check_and_lock(
 	MONITOR_INC(MONITOR_NUM_RECLOCK_REQ);
 
 	//Jiun: No need to enter global mutex
-#ifndef ITE4068
+#ifndef ITE4065
 	lock_mutex_exit();
 #endif
 
@@ -7787,7 +7787,7 @@ lock_trx_release_locks(
 		/* The transition of trx->state to TRX_STATE_COMMITTED_IN_MEMORY
 		is protected by both the lock_sys->mutex and the trx->mutex. */
 		
-#ifndef ITE4068
+#ifndef ITE4065
 		lock_mutex_enter();
 #endif
 	}
@@ -7816,7 +7816,7 @@ lock_trx_release_locks(
 
 		ut_a(release_lock);
 
-#ifndef ITE4068
+#ifndef ITE4065
 		lock_mutex_exit();
 #endif
 
@@ -7835,7 +7835,7 @@ lock_trx_release_locks(
 
 		trx_mutex_exit(trx);
 
-#ifndef ITE4068
+#ifndef ITE4065
 		lock_mutex_enter();
 #endif
 
@@ -7863,7 +7863,7 @@ lock_trx_release_locks(
 
 		lock_release(trx);
 
-#ifndef ITE4068
+#ifndef ITE4065
 		lock_mutex_exit();
 #else
 		//Jiun: Execute physical delete

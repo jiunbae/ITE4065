@@ -211,7 +211,7 @@ trx_init(
 
 	++trx->version;
 
-#ifdef ITE4068
+#ifdef ITE4065
 	trx->timestamp = 0;
 #endif
 }
@@ -2012,7 +2012,7 @@ trx_commit(
 		mtr = NULL;
 	}
 
-#ifdef ITE4068
+#ifdef ITE4065
 	trx->timestamp = __sync_fetch_and_add(&trx_sys->timestamp, 1);
 #endif
 

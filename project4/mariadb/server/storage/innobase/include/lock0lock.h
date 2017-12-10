@@ -981,7 +981,7 @@ struct lock_sys_t{
 	bool		timeout_thread_active;	/*!< True if the timeout thread
 						is running */
 
-#ifdef ITE4068
+#ifdef ITE4065
 	//Jiun: List of garbage for deletion
 	hash_cell_t*	gclist;
 

@@ -140,7 +140,7 @@ struct lock_t {
 					LOCK_INSERT_INTENTION,
 					wait flag, ORed */
 
-#ifdef ITE4068
+#ifdef ITE4065
 	//Jiun: For physical delete, mark delete time
 	time_t		timestamp;
 

@@ -1272,7 +1272,7 @@ struct trx_t {
 	ulint		magic_n;
 
 	//Jiun: Timestamp of transaction
-#ifdef ITE4068
+#ifdef ITE4065
 	ulint 		timestamp;
 #endif
 

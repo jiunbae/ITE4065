@@ -17,14 +17,14 @@ this program; if not, write to the Free Software Foundation, Inc.,
 *****************************************************************************/
 
 /**************************************************//**
-@file include/ite4068.h
-Global flag for ite4068 project
+@file include/ite4065.h
+Global flag for ite4065 project
 
 Created 12/10/2017 Bae jiun
 *******************************************************/
 
-#ifndef ite4068_h
-#define ite4068_h
+#ifndef ite4065_h
+#define ite4065_h
 
 /* Do not include univ.i because univ.i includes this. */
 

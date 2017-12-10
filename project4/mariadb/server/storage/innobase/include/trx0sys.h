@@ -654,7 +654,7 @@ struct trx_sys_t {
 					if such transactions exist. */
 
 	//Jiun: Count of commited transaction
-#ifdef ITE4068
+#ifdef ITE4065
 	ulint 		timestamp;
 #endif
 };
