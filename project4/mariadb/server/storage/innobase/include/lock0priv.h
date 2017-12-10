@@ -141,13 +141,13 @@ struct lock_t {
 					wait flag, ORed */
 
 #ifdef ITE4068
-	//Jiun: Attribute timestamp for check epoch
+	//Jiun: For physical delete, mark delete time
 	time_t		timestamp;
 
-	//Jiun: Attribute state for check logical deletiong (if true)
+	//Jiun: False for logical delete, default true
 	bool		state;
 #endif
-	
+
 	/** Determine if the lock object is a record lock.
 	@return true if record lock, false otherwise. */
 	bool is_record_lock() const
@@ -761,7 +761,7 @@ public:
 	@param[in] lock			Lock to compare with
 	@return true if the record lock is on m_rec_id*/
 	bool is_on_row(const lock_t* lock) const;
-	
+
 	//Jiun: Edited for latch-free design
 	/**
 	Create the lock instance

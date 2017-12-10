@@ -982,11 +982,11 @@ struct lock_sys_t{
 						is running */
 
 #ifdef ITE4068
-	//Jiun:	List of garbage for deletion
-	hash_cell_t* 	gclist;
+	//Jiun: List of garbage for deletion
+	hash_cell_t*	gclist;
 
 	//Jiun: Latch for gclist iteration
-	bool 			gclist_state; 
+	bool 			gclist_state; /* if true, a thread execute physical deletion, other thread pass */
 #endif
 };
 

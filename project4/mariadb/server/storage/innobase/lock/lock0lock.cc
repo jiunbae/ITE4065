@@ -47,8 +47,6 @@ Created 5/7/1996 Heikki Tuuri
 #include "row0mysql.h"
 #include "pars0pars.h"
 
-#include <set>
-
 #ifdef WITH_WSREP
 #include <mysql/service_wsrep.h>
 #endif /* WITH_WSREP */
@@ -1712,6 +1710,7 @@ RecLock::lock_alloc(
 	const RecID&	rec_id,
 	ulint		size)
 {
+	//Jiun: No need to check global mutex own
 #ifndef ITE4068
 	ut_ad(lock_mutex_own());
 #endif
@@ -1732,12 +1731,7 @@ RecLock::lock_alloc(
 		++trx->lock.rec_cached;
 	}
 #else
-	//Jiun: Allocate new lock as <lock_t*>
 	lock = static_cast<lock_t*>(ut_malloc_nokey(sizeof(lock_t)));
-
-	lock->timestamp = trx->start_time;
-	lock->hash = NULL;
-	lock->state = TRUE;
 #endif
 
 	lock->trx = trx;
@@ -1750,9 +1744,9 @@ RecLock::lock_alloc(
 
 	lock_rec_t&	rec_lock = lock->un_member.rec_lock;
 
+#ifndef ITE4068
 	/* Predicate lock always on INFIMUM (0) */
 
-#ifndef ITE4068
 	if (is_predicate_lock(mode)) {
 
 		rec_lock.n_bits = 8;
@@ -1779,6 +1773,12 @@ RecLock::lock_alloc(
 	MONITOR_INC(MONITOR_NUM_RECLOCK);
 
 	MONITOR_INC(MONITOR_RECLOCK_CREATED);
+#else
+	lock->timestamp = trx->start_time;
+
+	lock->hash = NULL;
+	
+	lock->state = TRUE;
 #endif
 
 	return(lock);
@@ -1931,15 +1931,14 @@ lock_rec_insert_to_head(
 	node = (lock_t *) cell->node;
 	if (node != in_lock) {
 		cell->node = in_lock;
-		in_lock->hash = node;
 	}
 }
 
 static
 void
 lock_rec_insert_to_tail(
-	lock_t *in_lock,	/*!< in: lock to be insert */
-	ulint 	rec_fold)	/*!< in: rec_fold of the page */
+	lock_t *in_lock,   /*!< in: lock to be insert */
+	ulint	rec_fold)  /*!< in: rec_fold of the page */
 {
 	hash_table_t*		hash;
 	hash_cell_t*		cell;
@@ -1952,16 +1951,16 @@ lock_rec_insert_to_tail(
 	hash = lock_hash_get(in_lock->type_mode);
 	cell = hash_get_nth_cell(hash,
 			hash_calc_hash(rec_fold, hash));
+	
+	//Jiun: Append lock to tail of hash 
+	//		using atomic test_and_set operation
+	old_tail = (lock_t*) __sync_lock_test_and_set(&cell->tail, in_lock);
 
-	//Jiun: TAS to append lock to tail of hash
-	old_tail = (lock_t *) __sync_lock_test_and_set(&cell->tail, in_lock);
 	if (old_tail == NULL) {
 		cell->head = in_lock;
 	} else {
 		old_tail->hash = in_lock;
 	}
-
-	ib::info() << cell << " has prev " << old_tail << ", new tail is " << in_lock;
 }
 
 /**
@@ -1986,6 +1985,7 @@ RecLock::lock_add(lock_t* lock, bool add_to_hash)
 		ulint	key = m_rec_id.fold();
 		hash_table_t *lock_hash = lock_hash_get(m_mode);
 #endif
+
 		++lock->index->table->n_rec_locks;
 
 #ifndef ITE4068
@@ -2023,8 +2023,9 @@ Create a new lock.
 lock_t*
 RecLock::create(trx_t* trx, bool owns_trx_mutex, bool add_to_hash, const lock_prdt_t* prdt)
 {
-	return create(NULL, trx, owns_trx_mutex, add_to_hash, prdt);
+ 	return create(NULL, trx, owns_trx_mutex, add_to_hash, prdt);
 }
+
 lock_t*
 RecLock::create(
 	lock_t* const c_lock,
@@ -2045,15 +2046,13 @@ RecLock::create(
 
 #ifndef ITE4068
 	if (prdt != NULL && (m_mode & LOCK_PREDICATE)) {
-
 		lock_prdt_set_prdt(lock, prdt);
 	}
-#endif
 
-#ifndef	ITE4068
 # ifdef WITH_WSREP
 	if (c_lock && wsrep_on_trx(trx) &&
 	    wsrep_thd_is_BF(trx->mysql_thd, FALSE)) {
+
 		lock_t *hash	= (lock_t *)c_lock->hash;
 		lock_t *prev	= NULL;
 
@@ -2156,7 +2155,7 @@ RecLock::create(
 		trx_mutex_exit(trx);
 	}
 
-#ifndef	ITE4068
+#ifndef ITE4068
 # ifdef WITH_WSREP
 	}
 # endif /* WITH_WSREP */
@@ -2308,7 +2307,9 @@ queue is itself waiting roll it back, also do a deadlock check and resolve.
 dberr_t
 RecLock::add_to_waitq(const lock_t* wait_for, const lock_prdt_t* prdt)
 {
-	// ut_ad(lock_mutex_own());
+#ifndef ITE4068
+	ut_ad(lock_mutex_own());
+#endif
 	ut_ad(m_trx == thr_get_trx(m_thr));
 	ut_ad(trx_mutex_own(m_trx));
 
@@ -2456,13 +2457,11 @@ lock_rec_add_to_queue(
 
 		if (lock_get_wait(lock)
 		    && lock_rec_get_nth_bit(lock, heap_no)) {
-
 			break;
 		}
 	}
 
 	if (lock == NULL && !(type_mode & LOCK_WAIT)) {
-
 		/* Look for a similar record lock on the same page:
 		if one is found and there are no waiting lock requests,
 		we can just set the bit */
@@ -2471,9 +2470,7 @@ lock_rec_add_to_queue(
 			type_mode, heap_no, first_lock, trx);
 
 		if (lock != NULL) {
-
 			lock_rec_set_nth_bit(lock, heap_no);
-
 			return;
 		}
 	}
@@ -2508,10 +2505,11 @@ lock_rec_lock_fast(
 	dict_index_t*		index,	/*!< in: index of record */
 	que_thr_t*		thr)	/*!< in: query thread */
 {
-	//Jiun: Not need to check global mutex own
+	//Jiun: No need to check global mutex own
 #ifndef ITE4068
 	ut_ad(lock_mutex_own());
 #endif
+
 	ut_ad(!srv_read_only_mode);
 	ut_ad((LOCK_MODE_MASK & mode) != LOCK_S
 	      || lock_table_has(thr_get_trx(thr), index->table, LOCK_IS));
@@ -2527,13 +2525,15 @@ lock_rec_lock_fast(
 
 	DBUG_EXECUTE_IF("innodb_report_deadlock", return(LOCK_REC_FAIL););
 
+#ifndef ITE4068
+	lock_t*	lock = lock_rec_get_first_on_page(lock_sys->rec_hash, block);
+#endif
+
 	trx_t*	trx = thr_get_trx(thr);
 
 	lock_rec_req_status	status = LOCK_REC_SUCCESS;
 
 #ifndef ITE4068
-	lock_t*	lock = lock_rec_get_first_on_page(lock_sys->rec_hash, block);
-
 	if (lock == NULL) {
 
 		if (!impl) {
@@ -2569,14 +2569,14 @@ lock_rec_lock_fast(
 	RecLock	rec_lock(index, block, heap_no, mode);
 
 	trx_mutex_enter(trx);
-
+	
 	rec_lock.create(NULL, trx, true, true);
 
 	trx_mutex_exit(trx);
 
 	status = LOCK_REC_SUCCESS_CREATED;
 #endif
-	
+
 	return(status);
 }
 
@@ -2604,7 +2604,7 @@ lock_rec_lock_slow(
 	dict_index_t*		index,	/*!< in: index of record */
 	que_thr_t*		thr)	/*!< in: query thread */
 {
-	//Jiun: Not need to global mutex own check
+	//Jiun: No need to check global mutex own
 #ifndef ITE4068
 	ut_ad(lock_mutex_own());
 #endif
@@ -2628,7 +2628,6 @@ lock_rec_lock_slow(
 	trx_mutex_enter(trx);
 
 	if (lock_rec_has_expl(mode, block, heap_no, trx)) {
-
 		/* The trx already has a strong enough lock on rec: do
 		nothing */
 
@@ -2640,7 +2639,6 @@ lock_rec_lock_slow(
 			mode, block, heap_no, trx);
 
 		if (wait_for != NULL) {
-
 			/* If another transaction has a non-gap conflicting
 			request in the queue, as this transaction does not
 			have a lock strong enough already granted on the
@@ -2660,7 +2658,6 @@ lock_rec_lock_slow(
 
 			err = DB_SUCCESS_LOCKED_REC;
 		} else {
-
 			err = DB_SUCCESS;
 		}
 	}
@@ -2695,10 +2692,11 @@ lock_rec_lock(
 	dict_index_t*		index,	/*!< in: index of record */
 	que_thr_t*		thr)	/*!< in: query thread */
 {
-	//Jiun: Not need to global mutex own check
+	//Jiun: No need to check global mutex own
 #ifndef ITE4068
 	ut_ad(lock_mutex_own());
 #endif
+
 	ut_ad(!srv_read_only_mode);
 	ut_ad((LOCK_MODE_MASK & mode) != LOCK_S
 	      || lock_table_has(thr_get_trx(thr), index->table, LOCK_IS));
@@ -2713,6 +2711,8 @@ lock_rec_lock(
 
 	/* We try a simplified and faster subroutine for the most
 	common cases */
+
+	//Jiun: Latch-free lock append
 	switch (lock_rec_lock_fast(impl, mode, block, heap_no, index, thr)) {
 	case LOCK_REC_SUCCESS:
 		return(DB_SUCCESS);
@@ -3262,6 +3262,7 @@ project4_lock_rec_dequeue_from_page(
 					get their lock requests granted,
 					if they are now qualified to it */
 {
+	//ib::info() <<  "project4_lock_rec_dequeue_from_page";
 	ulint		space;
 	ulint		page_no;
 	lock_t*		lock;
@@ -3281,6 +3282,9 @@ project4_lock_rec_dequeue_from_page(
 
 	lock_hash = lock_hash_get(in_lock->type_mode);
 
+	//ib::info() << "try release " <<in_lock << " of hash " << lock_hash;
+	//ib::info() << "space is " << space << " page_no is " << page_no;
+
 	hash_cell_t*    cell3333;
 	lock_t*       cur_lock;
 	lock_t*		  next_lock;
@@ -3289,55 +3293,69 @@ project4_lock_rec_dequeue_from_page(
 
 	cur_lock = (lock_t*) cell3333->head;
 
-	ib::info() << "try release " << in_lock <<" at cell " << cell3333 << " head is " << cur_lock;
+
+	ib::info() << cell3333 << " try release " << in_lock << " head is " << cur_lock; 
+
+	//ib::info() << lock_sys->gclist->tail << " is tail";
+
 	ut_a(cur_lock);
 
-	while (cur_lock != in_lock) {
-		//Jiun: Wait until physical deletion if end of list
-		//		Note that next_lock must be NULL if end of list.
-		//		If not, the physical deletion is in progress.
-		//		So wait until deletion done.
-		do {
-			next_lock = cur_lock->hash;
-		} while (next_lock == NULL && cell3333->tail != cur_lock);
-
-		if (next_lock != NULL && !next_lock->state) {
-			//Jihye : when change cur_lock's next pointer?
-			cur_lock->hash = next_lock->hash; // number 3 -> 1
-
-            lock_t* old_gclist_tail = (lock_t *)__sync_lock_test_and_set(&lock_sys->gclist->tail, (void*)next_lock);
-            if (old_gclist_tail == NULL) {
-                lock_sys->gclist->head = next_lock;
-            } else {
-                old_gclist_tail->hash = next_lock;
-            }
-
-			//Jihye : timestamp update, recently latest timestamp saved
-			if (next_lock->timestamp < in_lock->trx->start_time) {
-				next_lock->timestamp = in_lock->trx->start_time;
+	while (!cur_lock->state) {
+		if (! __sync_bool_compare_and_swap(&cell3333->head, cur_lock, cur_lock->hash)) {
+			lock_t* old_gclist_tail = (lock_t *) __sync_lock_test_and_set(&lock_sys->gclist->tail, (void*) cur_lock);
+			if (old_gclist_tail == NULL) {
+				lock_sys->gclist->head = cur_lock;
+			} else {
+				old_gclist_tail->hash = cur_lock;
 			}
-
-			// cur_lock = cur_lock->hash;
-		} else {
-			//Jiun: next is not deleted logically
-			cur_lock = next_lock;
+			
+			if (cur_lock->timestamp < in_lock->trx->start_time) {
+				cur_lock->timestamp = in_lock->trx->start_time;
+			}
 		}
-
-		//ut_a(cur_lock);
+		cur_lock = (lock_t*) cell3333->head;
+		ib::info() << cell3333 << " " << next_lock << " go to GC, next cur_lock is " << cur_lock;
 	}
 
-	ib::info() << "pred is " << cur_lock << " remove is " << in_lock << " next is " << in_lock->hash;
+	while (cur_lock != in_lock) {
+		if (cur_lock->hash == NULL) {
+			ib::info() << "TEST DEBUG: wtf";
+		}
+		next_lock = cur_lock->hash;
+		if (next_lock == NULL) {
+			ib::info() << "TEST DEBUG: wtfff";
+		}
 
-	//Jihye : if head and tail is same, can change, but not same, delay -> gclist do,
+		if (next_lock->state) {
+			cur_lock = next_lock;
+			continue;
+		} else {
+			while (next_lock->hash == NULL && cell3333->tail != next_lock);
+
+			if (__sync_bool_compare_and_swap(&cur_lock->hash, next_lock, next_lock->hash)) {
+				lock_t* old_gclist_tail = (lock_t*)__sync_lock_test_and_set(&lock_sys->gclist->tail, (void*)next_lock);
+
+				if (old_gclist_tail == NULL) {
+					lock_sys->gclist->head = next_lock;
+				} else {
+					old_gclist_tail->hash = next_lock;
+				}
+
+				if (next_lock->timestamp < in_lock->trx->start_time) {
+					next_lock->timestamp = in_lock->trx->start_time;
+				}
+			}
+		}
+	}
+
 	/*if(cur_lock->hash == NULL){
 		cell3333->head = NULL;
 		cell3333->tail = cell3333->head;
 	} else {
-		//Jihye : do not cut the next pointer, just mark deletion
 		cur_lock->state = false;
-		//cur_lock->hash = in_lock->hash;
+		//cur_lock->hash = in_lock->hash;		
 	}*/
-
+	
 	cur_lock->state = false;
 
 	UT_LIST_REMOVE(trx_lock->trx_locks, in_lock);
@@ -3346,7 +3364,7 @@ project4_lock_rec_dequeue_from_page(
 	== INNODB_LOCK_SCHEDULE_ALGORITHM_FCFS ||
 	thd_is_replication_slave_thread(in_lock->trx->mysql_thd)) {
 
-	ib::info() << "project4 DEBUG: in if";
+		ib::info() << "in if";
 
 	/* Check if waiting locks in the queue can now be granted:
 	grant locks if there are no conflicting locks ahead. Stop at
@@ -3383,12 +3401,9 @@ project4_lock_rec_dequeue_from_page(
 		lock_grant_and_move_on_page(lock_hash, space, page_no);
 	}
 
-	//Jihye : this physical deletion did by gclist
 	//ut_free(in_lock);
-
 	//ib::info() << "after free";
 }
-
 /*************************************************************//**
 Removes a record lock request, waiting or granted, from the queue. */
 void
@@ -5425,9 +5440,8 @@ lock_release(
 
 		if (lock_get_type_low(lock) == LOCK_REC) {
 
-			//Jiun: Release record lock from page
-			// lock_rec_dequeue_from_page(lock);
 			project4_lock_rec_dequeue_from_page(lock);
+			// lock_rec_dequeue_from_page(lock);
 
 		} else {
 			dict_table_t*	table;
@@ -5451,8 +5465,8 @@ lock_release(
 			/* Release the mutex for a while, so that we
 			do not monopolize it */
 
-			//Jiun: No need to enter global mutex in latch-free design
 			// lock_mutex_exit();
+
 			// lock_mutex_enter();
 
 			count = 0;
@@ -7389,7 +7403,7 @@ lock_clust_rec_read_check_and_lock(
 		lock_rec_convert_impl_to_expl(block, rec, index, offsets);
 	}
 
-	//Jiun: Not need global mutex in latch-free design
+	//Jiun: No need to enter global mutex
 #ifndef ITE4068
 	lock_mutex_enter();
 #endif
@@ -7403,10 +7417,10 @@ lock_clust_rec_read_check_and_lock(
 
 	MONITOR_INC(MONITOR_NUM_RECLOCK_REQ);
 
-	//Jiun: Not need global mutex in latch-free design
+	//Jiun: No need to enter global mutex
 #ifndef ITE4068
 	lock_mutex_exit();
-#endif 
+#endif
 
 	ut_ad(lock_rec_queue_validate(FALSE, block, rec, index, offsets));
 
@@ -7818,6 +7832,7 @@ lock_trx_release_locks(
 /*===================*/
 	trx_t*	trx)	/*!< in/out: transaction */
 {
+	//ib::info() << "lock_trx_release_locks";
 	check_trx_state(trx);
 
 	if (trx_state_eq(trx, TRX_STATE_PREPARED)) {
@@ -7834,7 +7849,6 @@ lock_trx_release_locks(
 
 		mutex_exit(&trx_sys->mutex);
 	} else {
-
 		ut_ad(trx_state_eq(trx, TRX_STATE_ACTIVE));
 	}
 
@@ -7844,11 +7858,9 @@ lock_trx_release_locks(
 
 	/* Don't take lock_sys mutex if trx didn't acquire any lock. */
 	if (release_lock) {
-
 		/* The transition of trx->state to TRX_STATE_COMMITTED_IN_MEMORY
 		is protected by both the lock_sys->mutex and the trx->mutex. */
-
-		//Jiun: No need to enter global mutex
+		
 		// lock_mutex_enter();
 	}
 
@@ -7875,9 +7887,8 @@ lock_trx_release_locks(
 	if (trx_is_referenced(trx)) {
 
 		ut_a(release_lock);
-		
-		//Jiun: No need to enter global mutex
-		// lock_mutex_exit();
+
+		//lock_mutex_exit();
 
 		while (trx_is_referenced(trx)) {
 
@@ -7893,9 +7904,8 @@ lock_trx_release_locks(
 		}
 
 		trx_mutex_exit(trx);
-		
-		//Jiun: No need to enter global mutex
-		// lock_mutex_enter();
+
+		//lock_mutex_enter();
 
 		trx_mutex_enter(trx);
 	}
@@ -7920,49 +7930,51 @@ lock_trx_release_locks(
 	if (release_lock) {
 
 		lock_release(trx);
-		
-		//Jihye : at this point, execute physical delete
-        if (!__sync_lock_test_and_set(&lock_sys->gclist_state, true)) {
-            time_t min_timestamp = std::numeric_limits<time_t>::max();
-            for (trx_t* t = UT_LIST_GET_FIRST(trx_sys->mysql_trx_list);
-            	t != NULL;
-            	t = UT_LIST_GET_NEXT(trx_list, t)) {
-                //ib::info() << t->state;
-                //if(t->state == TRX_STATE_COMMITTED_IN_MEMORY && t->start_time < min_timestamp){
-                if(t->state == TRX_STATE_ACTIVE && t->start_time < min_timestamp){
-                    min_timestamp = t->start_time;
-                }
-            }
 
-            lock_t* old_gclist_tail = (lock_t*)lock_sys->gclist->tail;
-            lock_t* prev_gclist_lock = NULL;
-            lock_t* cur_gclist_lock = (lock_t*)lock_sys->gclist->head;
+		//Jiun: Execute physical delete
+		if(!__sync_lock_test_and_set(&lock_sys->gclist_state, true)){
+			time_t min_timestamp = std::numeric_limits<time_t>::max();
+			for (trx_t* t = UT_LIST_GET_FIRST(trx_sys->mysql_trx_list);
+		     t != NULL;
+		     t = UT_LIST_GET_NEXT(trx_list, t)) {
+		     	//ib::info() << t->state;
+				//if(t->state == TRX_STATE_COMMITTED_IN_MEMORY && t->start_time < min_timestamp){
+		     	if(t->state == TRX_STATE_ACTIVE && t->start_time < min_timestamp){
+					min_timestamp = t->start_time;
+				}
+			}
 
-            //Jihye : cur_gclist_lock null check is valid if tail is updated but head is not updated
-            while(cur_gclist_lock != NULL && cur_gclist_lock != old_gclist_tail) {
-                //Jihye : do physical delete of head
-                if(cur_gclist_lock == lock_sys->gclist->head && cur_gclist_lock->timestamp < min_timestamp){
-                    lock_sys->gclist->head = cur_gclist_lock->hash;
-                    ut_free(cur_gclist_lock);
-                    cur_gclist_lock = (lock_t*)lock_sys->gclist->head;
-                    continue;
-                }
-                //Jihye : not head, delete middle node
-                if(cur_gclist_lock->timestamp < min_timestamp){
-                    prev_gclist_lock->hash = cur_gclist_lock->hash;
-                    ut_free(cur_gclist_lock);
-                    cur_gclist_lock = prev_gclist_lock->hash;
-                } else {
-                    //Jihye : cannot delete cur node because of timestamp
-                    prev_gclist_lock = cur_gclist_lock;
-                    cur_gclist_lock = cur_gclist_lock->hash;
-                }
-            }
-            __sync_lock_release(&lock_sys->gclist_state);
-        }
+			lock_t* old_gclist_tail = (lock_t*)lock_sys->gclist->tail;
+			lock_t* prev_gclist_lock = NULL;
+			lock_t* cur_gclist_lock = (lock_t*)lock_sys->gclist->head;
 
-		//Jiun: No need to enter global mutex
-		// lock_mutex_exit();
+			while(cur_gclist_lock != NULL && cur_gclist_lock != old_gclist_tail) {
+				//Jiun: Do physical delete of head
+				if(cur_gclist_lock == lock_sys->gclist->head && cur_gclist_lock->timestamp < min_timestamp){
+					lock_sys->gclist->head = cur_gclist_lock->hash;
+					ib::info() << "ut_free cur lock: " << cur_gclist_lock;
+					ut_free(cur_gclist_lock);
+					cur_gclist_lock = (lock_t*)lock_sys->gclist->head;
+					continue;
+				}
+				//Jiun: Not head, delete middle node
+				if(cur_gclist_lock->timestamp < min_timestamp){
+					prev_gclist_lock->hash = cur_gclist_lock->hash;
+					ib::info() << "ut_free cur lock: " << cur_gclist_lock;
+					ut_free(cur_gclist_lock);
+					cur_gclist_lock = prev_gclist_lock->hash;
+				} else {
+					//Jiun: Cannot delete cur node because of timestamp
+					prev_gclist_lock = cur_gclist_lock;
+					cur_gclist_lock = cur_gclist_lock->hash;
+				}
+
+			}
+
+			__sync_lock_release(&lock_sys->gclist_state);
+		}
+
+		//lock_mutex_exit();
 	}
 
 	trx->lock.n_rec_locks = 0;
