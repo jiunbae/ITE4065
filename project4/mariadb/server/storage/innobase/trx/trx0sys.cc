@@ -540,6 +540,11 @@ trx_sys_init_at_db_start()
 		ib::info() << "Trx id counter is " << trx_sys->max_trx_id;
 	}
 
+	//Jiun: Set transaction timestamp as 1
+#ifdef ITE4068
+	trx_sys->timestamp = 1;
+#endif
+
 	trx_sys_mutex_exit();
 
 	trx_sys->mvcc->clone_oldest_view(&purge_sys->view);

@@ -1271,6 +1271,11 @@ struct trx_t {
 
 	ulint		magic_n;
 
+	//Jiun: Timestamp of transaction
+#ifdef ITE4068
+	ulint 		timestamp;
+#endif
+
 	/** @return whether any persistent undo log has been generated */
 	bool has_logged_persistent() const
 	{

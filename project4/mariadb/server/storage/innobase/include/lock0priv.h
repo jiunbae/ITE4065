@@ -146,6 +146,9 @@ struct lock_t {
 
 	//Jiun: False for logical delete, default true
 	bool		state;
+
+	//Jiun: Next pointer for garbage collection
+	lock_t* 	gc_hash;
 #endif
 
 	/** Determine if the lock object is a record lock.

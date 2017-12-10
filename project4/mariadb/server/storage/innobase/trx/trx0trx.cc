@@ -210,6 +210,10 @@ trx_init(
 	trx->flush_observer = NULL;
 
 	++trx->version;
+
+#ifdef ITE4068
+	trx->timestamp = 0;
+#endif
 }
 
 /** For managing the life-cycle of the trx_t instance that we get
@@ -2007,6 +2011,10 @@ trx_commit(
 
 		mtr = NULL;
 	}
+
+#ifdef ITE4068
+	trx->timestamp = __sync_fetch_and_add(&trx_sys->timestamp, 1);
+#endif
 
 	trx_commit_low(trx, mtr);
 }

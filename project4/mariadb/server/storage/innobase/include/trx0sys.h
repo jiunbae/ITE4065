@@ -652,6 +652,11 @@ struct trx_sys_t {
 					while there were XA PREPARED
 					transactions. We disable query cache
 					if such transactions exist. */
+
+	//Jiun: Count of commited transaction
+#ifdef ITE4068
+	ulint 		timestamp;
+#endif
 };
 
 /** When a trx id which is zero modulo this number (which must be a power of
