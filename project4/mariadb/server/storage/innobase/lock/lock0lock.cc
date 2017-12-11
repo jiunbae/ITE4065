@@ -7868,7 +7868,7 @@ lock_trx_release_locks(
 #else
 		//Jiun: Execute physical delete
 		if (!__sync_lock_test_and_set(&lock_sys->gclist_state, true)) {
-			time_t min_timestamp = std::numeric_limits<time_t>::max();
+			ulint min_timestamp = std::numeric_limits<ulint>::max();
 			for (trx_t* t = UT_LIST_GET_FIRST(trx_sys->mysql_trx_list);
 				t != NULL;
 				t = UT_LIST_GET_NEXT(trx_list, t)) {
