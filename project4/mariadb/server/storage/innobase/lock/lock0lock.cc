@@ -505,10 +505,12 @@ lock_sys_create(
 		ut_a(lock_latest_err_file);
 	}
 
+#ifdef ITE4065
 	//Jiun: Initialize gclist
 	lock_sys->gclist = static_cast<hash_cell_t*>(ut_malloc_nokey(sizeof(hash_cell_t*)));
 	lock_sys->gclist->head = NULL;
 	lock_sys->gclist->tail = lock_sys->gclist->head;
+#endif
 }
 
 /** Calculates the fold value of a lock: used in migrating the hash table.
