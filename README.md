@@ -19,7 +19,7 @@ Parallel programming @ cs.hanyang
 
 ## Project
 
-- [x] [Project1: Signal](Project1)
-- [x] [Project2: Simple Two-phase locking with Readers-writer Lock](Porject2)
-- [x] [Project3: Wait-Free Snapshot](Project3)
-- [x] [Project4: Scalable Lock Manager (with mariaDB)](Project4)
+- [x] [Project1: Signal](../wiki/Project1)
+- [x] [Project2: Simple Two-phase locking with Readers-writer Lock](../wiki/Porject2)
+- [x] [Project3: Wait-Free Snapshot](../wiki/Project3)
+- [x] [Project4: Scalable Lock Manager (with mariaDB)](../wiki/Project4)
