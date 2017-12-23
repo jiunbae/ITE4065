@@ -690,6 +690,7 @@ myisam/sp_defs.h. We only support 2 dimension data */
 #define SPDIMS          2
 
 /* ITE4065 Project4: Scalable Lock Manager
+This option disable mutex enter and exit for latch-free implimentation
 Author: Bae jiun, MaybeS */
 #define ITE4065 		TRUE
 

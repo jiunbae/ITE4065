@@ -1936,6 +1936,8 @@ lock_rec_insert_to_head(
 	}
 }
 
+//Jiun: Only if ITE4065 Solution
+#ifdef ITE4065
 static
 void
 lock_rec_insert_to_tail(
@@ -1956,6 +1958,7 @@ lock_rec_insert_to_tail(
 	
 	//Jiun: Append lock to tail of hash 
 	//		using atomic test_and_set operation
+	//		so, this operation never failed
 	old_tail = (lock_t*) __sync_lock_test_and_set(&cell->tail, in_lock);
 
 	if (old_tail == NULL) {
@@ -1964,6 +1967,7 @@ lock_rec_insert_to_tail(
 		old_tail->hash = in_lock;
 	}
 }
+#endif
 
 /**
 Add the lock to the record lock hash and the transaction's lock list
@@ -2000,6 +2004,8 @@ RecLock::lock_add(lock_t* lock, bool add_to_hash)
 			HASH_INSERT(lock_t, hash, lock_hash, key, lock);
 		}
 #else
+		//Jiun: This part append lock to tail of list
+		//		And increse lock count with fetch_and_add
 		__sync_fetch_and_add(&lock->index->table->n_rec_locks, 1);
 
 		lock_rec_insert_to_tail(lock, m_rec_id.fold());
@@ -2715,6 +2721,7 @@ lock_rec_lock(
 	common cases */
 
 	//Jiun: Latch-free lock append
+	//		Atomic lock append with no-fail. so, lock_rec_lock_slow will never call
 	switch (lock_rec_lock_fast(impl, mode, block, heap_no, index, thr)) {
 	case LOCK_REC_SUCCESS:
 		return(DB_SUCCESS);
@@ -5054,7 +5061,9 @@ lock_table_dequeue(
 			behind will get their lock requests granted, if
 			they are now qualified to it */
 {
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
+#endif
 	ut_a(lock_get_type_low(in_lock) == LOCK_TABLE);
 
 	lock_t*	lock = UT_LIST_GET_NEXT(un_member.tab_lock.locks, in_lock);
