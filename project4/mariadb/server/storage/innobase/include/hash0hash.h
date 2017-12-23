@@ -469,7 +469,7 @@ hash_unlock_x_all_but(
 
 struct hash_cell_t{
 	void*	node;	/*!< hash chain node, NULL if none */
-#ifndef ITE4065
+#ifdef ITE4065
 	void*	tail;
 	void* 	head;
 #endif
