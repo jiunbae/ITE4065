@@ -5365,7 +5365,9 @@ lock_release(
 	ulint		count = 0;
 	trx_id_t	max_trx_id = trx_sys_get_max_trx_id();
 
+#ifndef ITE4065
 	ut_ad(lock_mutex_own());
+#endif
 	ut_ad(!trx_mutex_own(trx));
 
 	for (lock = UT_LIST_GET_LAST(trx->lock.trx_locks);
@@ -7878,6 +7880,8 @@ lock_trx_release_locks(
 		lock_mutex_exit();
 #else
 		//Jiun: Execute physical delete
+		//		Currently, this method places a heavy load on the victim thread.
+		//		In the future, can use object pools to improve physical deletion.
 		if (!__sync_lock_test_and_set(&lock_sys->gclist_state, true)) {
 			ulint min_timestamp = std::numeric_limits<ulint>::max();
 			for (trx_t* t = UT_LIST_GET_FIRST(trx_sys->mysql_trx_list);

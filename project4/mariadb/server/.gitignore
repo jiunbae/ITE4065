@@ -497,3 +497,4 @@ FakesAssemblies/
 !storage/innobase/data
 !dbug/user.r
 
+*.jar
