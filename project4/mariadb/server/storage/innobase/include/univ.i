@@ -698,6 +698,7 @@ Author: Bae jiun, MaybeS */
 # include "ite4065.h"
 # define ITE4065_READ_ONLY	TRUE
 # define ITE4065_READ_WRITE	FALSE
+// # define ITE4065_LOCK_POOL	TRUE
 #endif
 
 #endif
