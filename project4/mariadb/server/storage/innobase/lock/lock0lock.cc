@@ -7142,7 +7142,10 @@ lock_clust_rec_modify_check_and_lock(
 
 	lock_rec_convert_impl_to_expl(block, rec, index, offsets);
 
+#ifndef ITE4065
+	//Jiun: No need to enter global mutex
 	lock_mutex_enter();
+#endif
 
 	ut_ad(lock_table_has(thr_get_trx(thr), index->table, LOCK_IX));
 
@@ -7151,7 +7154,10 @@ lock_clust_rec_modify_check_and_lock(
 
 	MONITOR_INC(MONITOR_NUM_RECLOCK_REQ);
 
+#ifndef ITE4065
+	//Jiun: No need to enter global mutex
 	lock_mutex_exit();
+#endif
 
 	ut_ad(lock_rec_queue_validate(FALSE, block, rec, index, offsets));
 
@@ -7203,7 +7209,10 @@ lock_sec_rec_modify_check_and_lock(
 	index record, and this would not have been possible if another active
 	transaction had modified this secondary index record. */
 
+#ifndef ITE4065
+	//Jiun: No need to enter global mutex
 	lock_mutex_enter();
+#endif
 
 	ut_ad(lock_table_has(thr_get_trx(thr), index->table, LOCK_IX));
 
@@ -7212,7 +7221,10 @@ lock_sec_rec_modify_check_and_lock(
 
 	MONITOR_INC(MONITOR_NUM_RECLOCK_REQ);
 
+#ifndef ITE4065
+	//Jiun: No need to enter global mutex
 	lock_mutex_exit();
+#endif
 
 #ifdef UNIV_DEBUG
 	{
@@ -7303,7 +7315,10 @@ lock_sec_rec_read_check_and_lock(
 		lock_rec_convert_impl_to_expl(block, rec, index, offsets);
 	}
 
+#ifndef ITE4065
+	//Jiun: No need to enter global mutex
 	lock_mutex_enter();
+#endif
 
 	ut_ad(mode != LOCK_X
 	      || lock_table_has(thr_get_trx(thr), index->table, LOCK_IX));
@@ -7315,7 +7330,10 @@ lock_sec_rec_read_check_and_lock(
 
 	MONITOR_INC(MONITOR_NUM_RECLOCK_REQ);
 
+#ifndef ITE4065
+	//Jiun: No need to enter global mutex
 	lock_mutex_exit();
+#endif
 
 	ut_ad(lock_rec_queue_validate(FALSE, block, rec, index, offsets));
 
@@ -7376,8 +7394,8 @@ lock_clust_rec_read_check_and_lock(
 		lock_rec_convert_impl_to_expl(block, rec, index, offsets);
 	}
 
-	//Jiun: No need to enter global mutex
 #ifndef ITE4065
+	//Jiun: No need to enter global mutex
 	lock_mutex_enter();
 #endif
 
