@@ -11,21 +11,21 @@ namespace util {
     template <typename T>
     class Random {
     public:
-		using limit = std::numeric_limits<T>;
+        using limit = std::numeric_limits<T>;
 
-		// set default min, max as limit of type T
-		Random(T min = limit::lowest(), T max = limit::max(), std::mt19937::result_type seed = 0) noexcept
-			: gen(seed), dis(min, max) {
-		}
+        // set default min, max as limit of type T
+        Random(T min = limit::lowest(), T max = limit::max(), std::mt19937::result_type seed = 0) noexcept
+            : gen(seed), dis(min, max) {
+        }
 
-		// get random value
+        // get random value
         T next() { return dis(gen); }
 
-		// get various random value as tuple
-		template <size_t N>
-		auto next() {
-			std::unordered_set<T> ret;
-			while (ret.size() < N) {
+        // get various random value as tuple
+        template <size_t N>
+        auto next() {
+            std::unordered_set<T> ret;
+            while (ret.size() < N) {
                 T v = next();
                 if (ret.find(v) == ret.end())
                     ret.insert(v);
@@ -38,8 +38,8 @@ namespace util {
             }
 
             std::vector<T> v(ret.begin(), ret.end());
-			return tuple_from_vector(v, std::make_index_sequence<N>());
-		}
+            return tuple_from_vector(v, std::make_index_sequence<N>());
+        }
 
     private:
         std::mt19937 gen;
@@ -58,10 +58,10 @@ namespace util {
         // According to the standard, It must work but not on gcc, cuz const reference capture problem
         // It can reduce create temporary vector for make tuple from elements in runtime.
 
-		template <size_t... Indices>
-		auto tuple_from_vector(const std::vector<T>& v, std::index_sequence<Indices...>) {
+        template <size_t... Indices>
+        auto tuple_from_vector(const std::vector<T>& v, std::index_sequence<Indices...>) {
             return std::make_tuple(v[Indices]...);
-		}
+        }
     };
 }
 

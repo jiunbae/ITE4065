@@ -19,20 +19,20 @@ namespace util {
     template <typename T>
     class Random {
     public:
-		Random(std::mt19937::result_type seed, T min, T max) noexcept
-			: gen(seed), dis(min, max) {
-		}
+        Random(std::mt19937::result_type seed, T min, T max) noexcept
+            : gen(seed), dis(min, max) {
+        }
 
         Random(T min, T max) noexcept
-			: gen(std::random_device()()), dis(min, max) {
-		}
+            : gen(std::random_device()()), dis(min, max) {
+        }
 
         T next() { return dis(gen); }
 
-		template <size_t N>
-		auto next() {
-			std::unordered_set<T> ret;
-			while (ret.size() < N) {
+        template <size_t N>
+        auto next() {
+            std::unordered_set<T> ret;
+            while (ret.size() < N) {
                 T v = next();
                 if (ret.find(v) == ret.end())
                     ret.insert(v);
@@ -45,8 +45,8 @@ namespace util {
             }
 
             std::vector<T> v(ret.begin(), ret.end());
-			return tuple_from_vector(v, std::make_index_sequence<N>());
-		}
+            return tuple_from_vector(v, std::make_index_sequence<N>());
+        }
 
     private:
         std::mt19937 gen;
@@ -65,10 +65,10 @@ namespace util {
         // According to the standard, It must work but not on gcc, cuz const reference capture problem
         // It can reduce create temporary vector for make tuple from elements in runtime.
 
-		template <size_t... Indices>
-		auto tuple_from_vector(const std::vector<T>& v, std::index_sequence<Indices...>) {
+        template <size_t... Indices>
+        auto tuple_from_vector(const std::vector<T>& v, std::index_sequence<Indices...>) {
             return std::make_tuple(v[Indices]...);
-		}
+        }
     };
 }
 
