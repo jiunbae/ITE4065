@@ -1,8 +1,8 @@
 # Project1: Signal
 
-- [Master](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/tree/master)
-- [Single Thread](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/tree/single)
-- [Multi Thread](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/tree/multi)
+- [Master](https://github.com/MaybeS/ITE4065/tree/master/project1)
+- [Single Thread](https://github.com/MaybeS/ITE4065/tree/single/project1)
+- [Multi Thread](https://github.com/MaybeS/ITE4065/tree/multi/project1)
 
 ## Master Version
 
