@@ -29,7 +29,7 @@ You can check rate of `PolicyMutex` close to 50%. However, it can not be seen in
 
 The Process of read operation is as follow. *(The innobase on the left and right is my implementation.)*
 
-![lock_mutex](https://github.com/MaybeS/ITE4065/blob/master/project4/images/design2.png?raw=true)
+![lock_mutex](https://github.com/jiunbae/ITE4065/blob/master/project4/images/design2.png?raw=true)
 
 *Figure 1. Read-only workload structure*
 
@@ -43,7 +43,7 @@ In order to solve the performance degradation caused by global lock, the lock fo
 
 Requests coming in by read-only workload call `lock_rec_lock` via `lock_clust_rec_read_check_and_lock` function(see Figure 1). The original design is to hold the lock before `lock_rec_lock` and release it after acquire lock. However, to avoid that locking, change the root to point `lock_rec_lock` to the lock insert in the lock-free list. 
 
-*Optional: implemented a [generic lock-free linked list](https://gist.github.com/MaybeS/7835ac602ed5c7bbb5758f652b250982) for testing.*
+*Optional: implemented a [generic lock-free linked list](https://gist.github.com/jiunbae/7835ac602ed5c7bbb5758f652b250982) for testing.*
 
 In the modified implementation, it is executed according to the following function call.
 
@@ -91,7 +91,7 @@ But this is not clear and I am expecting that someday it'll get an error. (but n
 
 # Design
 
-![design](https://github.com/MaybeS/ITE4065/blob/master/project4/images/design.png?raw=true)
+![design](https://github.com/jiunbae/ITE4065/blob/master/project4/images/design.png?raw=true)
 
 ## Problem
 
@@ -113,16 +113,16 @@ Sysbench 1.0.10
 
 you can check the original result log on `project4/results`.
 
-![test result](https://github.com/MaybeS/ITE4065/blob/master/project4/results/result.png?raw=true)
+![test result](https://github.com/jiunbae/ITE4065/blob/master/project4/results/result.png?raw=true)
 
 *Image 1, Test result*
 
 And you can compare perf log between base and enhanced model.
 
-![perf_base](https://github.com/MaybeS/ITE4065/blob/master/project4/images/perf_base.png?raw=true)
+![perf_base](https://github.com/jiunbae/ITE4065/blob/master/project4/images/perf_base.png?raw=true)
 
 *Image 2, Perf record of base model*
 
-![perf_enhanced](https://github.com/MaybeS/ITE4065/blob/master/project4/images/perf_enhanced.png?raw=true)
+![perf_enhanced](https://github.com/jiunbae/ITE4065/blob/master/project4/images/perf_enhanced.png?raw=true)
 
 *Image 3, Perf record of enhanced model*

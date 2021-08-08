@@ -13,14 +13,14 @@ Implementation of Wait-Free Sanpshot
 
 The following classes are implemented. Click on the link to see my implementation.
 
-- [atomic::Snapshot](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/wikis/namespace::atomic#Snapshot)
-- [atomic::Snapshot::StampedSnap](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/wikis/namespace::atomic#Snapshot)
-- [atomic::Register](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/wikis/namespace::atomic#reigster)
-- [arg::Parser](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/wikis/Project2#argparser)
-- [thread::Pool](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/wikis/namespace::thread#pool)
-- [util::Random](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/wikis/namespace::util#random)
+- [atomic::Snapshot](https://github.com/jiunbae/ITE4065/wiki/Namespace::Atomic#snapshot)
+- [atomic::Snapshot::StampedSnap](https://github.com/jiunbae/ITE4065/wiki/Namespace::Atomic#snapshot)
+- [atomic::Register](https://github.com/jiunbae/ITE4065/wiki/namespace::atomic#reigster)
+- [arg::Parser](https://github.com/jiunbae/ITE4065/wiki/Project2#argparser)
+- [thread::Pool](https://github.com/jiunbae/ITE4065/wiki/namespace::thread#pool)
+- [util::Random](https://github.com/jiunbae/ITE4065/wiki/namespace::util#random)
 
-See [atomic::Snapshot](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/wikis/namespace::atomic#Snapshot), major implementation of wait-free atomic snapshot. This class implements the specifications required by the assignment. Main thread just push snapshot random update to `thread::Pool`. 
+See [atomic::Snapshot](https://github.com/jiunbae/ITE4065/wiki/Namespace::Atomic#snapshot), major implementation of wait-free atomic snapshot. This class implements the specifications required by the assignment. Main thread just push snapshot random update to `thread::Pool`. 
 
 The following code is the main content of the main thread.
 
@@ -63,7 +63,7 @@ Checked in many clients. Here is my clients specs.
 
 And each results is... (all result executed while 60 seconds)
 
-![result.png](https://hconnect.hanyang.ac.kr/2017_ITE4065_10074/2017_ITE4065_2015004584/raw/941c8fe0d7e5e2f1821f08804893694b6d8ae5e0/project3/results/result.png)
+![result.png](https://github.com/jiunbae/ITE4065/blob/master/project3/results/result.png?raw=true)
 
 I do not understand why SCSLab Server's return low performance than others.
 

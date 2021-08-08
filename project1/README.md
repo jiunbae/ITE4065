@@ -1,8 +1,8 @@
 # Project1: Signal
 
-- [Master](https://github.com/MaybeS/ITE4065/tree/master/project1)
-- [Single Thread](https://github.com/MaybeS/ITE4065/tree/single/project1)
-- [Multi Thread](https://github.com/MaybeS/ITE4065/tree/multi/project1)
+- [Master](https://github.com/jiunbae/ITE4065/tree/master/project1)
+- [Single Thread](https://github.com/jiunbae/ITE4065/tree/single/project1)
+- [Multi Thread](https://github.com/jiunbae/ITE4065/tree/multi/project1)
 
 ## Master Version
 
