@@ -1,8 +1,15 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ITE4065 병렬 프로그래밍</title>
+<meta name="description" content="ITE4065 병렬 프로그래밍 코드 감사 보고서 — 근거 기반 평가와 등급">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
+
 :root{
   --ground:#F3F4F1; --surface:#FCFCFA; --surface-2:#EDEFEA;
   --ink:#1A211C; --ink-soft:#5F6862; --ink-faint:#8A938C;
@@ -146,8 +153,108 @@ footer p + p{margin-top:6px}
   .grade{transform:none}
   .masthead{padding-block:30px 18px}
 }
-</style>
 
+/* ---------- index-only components ---------- */
+.thesis{font-family:var(--f-display); font-size:clamp(19px,2.9vw,24px); line-height:1.45; max-width:34ch}
+.dist{display:flex; height:34px; border-radius:3px; overflow:hidden; border:1px solid var(--rule); margin-top:10px}
+.dist span{display:flex; align-items:center; justify-content:center; overflow:hidden; white-space:nowrap; font-family:var(--f-mono); font-size:11px; font-weight:600; color:var(--surface)}
+@media (max-width:560px){ .dist span{font-size:0} .dist{height:22px} }
+.dist .d-hi{background:var(--good)} .dist .d-mid{background:var(--warn)} .dist .d-lo{background:var(--mark)} .dist .d-na{background:var(--ink-faint)}
+.legend{display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:10px; font-size:13px; color:var(--ink-soft)}
+.legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align:baseline}
+.yr{font-family:var(--f-mono); font-size:11px; font-weight:600; letter-spacing:.16em; color:var(--ink-faint); text-transform:uppercase;
+    padding-top:22px; margin-top:8px; border-top:1px solid var(--rule)}
+.yr:first-of-type{border-top:0; padding-top:0}
+.row{display:grid; grid-template-columns:auto 1fr auto; gap:4px 16px; align-items:baseline;
+     padding:14px 0; border-bottom:1px solid var(--rule-soft)}
+.row:last-child{border-bottom:0}
+.row .rc{font-family:var(--f-mono); font-size:12px; font-weight:600; color:var(--accent); letter-spacing:.06em; white-space:nowrap}
+.row .rn{font-family:var(--f-display); font-size:18px; font-weight:600}
+.row .rg{font-family:var(--f-display); font-size:20px; font-weight:600; white-space:nowrap; justify-self:end}
+.row .rv{grid-column:2/4; color:var(--ink-soft); font-size:14.5px; max-width:68ch}
+.row a{text-decoration:none}
+.row a:hover .rn{text-decoration:underline}
+@media (max-width:560px){
+  .row{grid-template-columns:1fr auto}
+  .row .rc{grid-column:1/3}
+  .row .rv{grid-column:1/3}
+}
+.two{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-top:22px}
+.act{background:var(--surface); border:1px solid var(--rule); border-left:4px solid var(--mark); border-radius:3px; padding:16px 18px; box-shadow:var(--shadow)}
+.act h4{font-size:16px; margin-bottom:6px}
+.act p{font-size:14px; color:var(--ink-soft)}
+.act.ok{border-left-color:var(--good)}
+
+
+/* ---------- prompt disclosure ---------- */
+details.prompt{margin-top:22px; border:1px solid var(--rule); border-radius:3px; background:var(--surface)}
+details.prompt > summary{cursor:pointer; padding:11px 16px; font-family:var(--f-mono); font-size:11.5px;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--ink-soft); list-style:none}
+details.prompt > summary::-webkit-details-marker{display:none}
+details.prompt > summary::before{content:"▸ "; color:var(--accent)}
+details.prompt[open] > summary::before{content:"▾ "}
+details.prompt > summary:hover{color:var(--accent)}
+.prompt-body{padding:0 16px 16px; border-top:1px solid var(--rule-soft)}
+.prompt-body p{font-size:13.5px; color:var(--ink-soft); margin:12px 0 0}
+.prompt-body pre{white-space:pre-wrap; word-break:break-word; font-size:12px; line-height:1.7}
+.sitenav .meth{margin-left:auto; color:var(--ink-soft); text-decoration:none}
+.sitenav .meth + .ext{margin-left:0}
+
+/* ---------- findings summary strip ---------- */
+.summary{display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin:-18px 0 0; padding:12px 0 0}
+.summary .lbl{margin-right:2px}
+.summary .chip{display:inline-flex; align-items:baseline; gap:5px; padding:3px 10px; border-radius:2px;
+  font-family:var(--f-mono); font-size:11px; letter-spacing:.06em; text-decoration:none; border:1px solid transparent}
+.summary .chip b{font-family:var(--f-display); font-size:15px; font-weight:600}
+.summary .s-critical{color:var(--mark); background:var(--mark-soft); border-color:var(--mark)}
+.summary .s-major{color:var(--warn); background:var(--warn-soft); border-color:var(--warn)}
+.summary .s-minor{color:var(--ink-soft); background:var(--surface-2); border-color:var(--rule)}
+.summary .chip:hover{filter:brightness(.96)}
+.summary .total{font-family:var(--f-mono); font-size:11px; color:var(--ink-faint); letter-spacing:.08em}
+.permalink{margin-left:auto; color:var(--ink-faint); text-decoration:none; font-family:var(--f-mono);
+  font-size:14px; opacity:0; transition:opacity .12s}
+.finding:hover .permalink, .permalink:focus{opacity:1}
+.finding:target{outline:2px solid var(--accent); outline-offset:4px}
+@media (prefers-reduced-motion:reduce){.permalink{transition:none}}
+/* ================= site chrome (Pages only) ================= */
+.sitenav{position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:14px;
+  padding:10px 20px; background:color-mix(in srgb, var(--ground) 88%, transparent);
+  backdrop-filter:saturate(150%) blur(8px); border-bottom:1px solid var(--rule);
+  font-family:var(--f-mono); font-size:12px}
+.sitenav .home{color:var(--accent); font-weight:600; text-decoration:none; letter-spacing:.04em}
+.sitenav .crumb{color:var(--ink-faint); letter-spacing:.14em}
+.sitenav .ext{margin-left:auto; color:var(--ink-soft); text-decoration:none}
+.sitenav a:hover{text-decoration:underline}
+.ev-head .src{color:inherit; text-decoration:none; border-bottom:1px dotted var(--ink-faint)}
+.ev-head .src:hover{color:var(--accent); border-bottom-color:var(--accent)}
+.ev-head .expand{margin-left:auto; font-family:var(--f-mono); font-size:10.5px; letter-spacing:.08em;
+  color:var(--ink-soft); background:transparent; border:1px solid var(--rule);
+  border-radius:2px; padding:2px 7px; cursor:pointer}
+.ev-head .expand:hover{color:var(--accent); border-color:var(--accent)}
+.ev-more{border-top:1px solid var(--rule-soft); background:var(--surface); max-height:420px; overflow:auto}
+.ev-more pre{margin:0; padding:12px 14px; font-family:var(--f-mono); font-size:12px; line-height:1.6}
+.ev-more .ln{display:inline-block; width:3.6em; color:var(--ink-faint); user-select:none; text-align:right; padding-right:1em}
+.ev-more mark{background:var(--mark-soft); color:var(--ink); display:inline-block; width:100%}
+.ev-more .err{padding:12px 14px; color:var(--mark); font-family:var(--f-mono); font-size:12px}
+/* filters */
+.filters{display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; align-items:center}
+.filters button{font-family:var(--f-mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+  padding:5px 11px; border:1px solid var(--rule); background:var(--surface); color:var(--ink-soft);
+  border-radius:2px; cursor:pointer}
+.filters button[aria-pressed="true"]{background:var(--accent); color:var(--surface); border-color:var(--accent)}
+.filters .lbl{margin-right:2px}
+.finding[hidden]{display:none!important}
+@media print{.sitenav,.filters,.expand{display:none}}
+
+</style>
+</head>
+<body>
+<nav class="sitenav">
+  <a class="home" href="https://cse.jiun.dev/">CS 커리큘럼 감사</a>
+  <span class="crumb">ITE4065</span>
+  <a class="meth" href="https://cse.jiun.dev/method.html">방법</a>
+  <a class="ext" href="https://github.com/jiunbae/ITE4065" target="_blank" rel="noopener">저장소 &#8599;</a>
+</nav>
 <div class="wrap">
 
   <header class="masthead">
@@ -164,6 +271,8 @@ footer p + p{margin-top:6px}
       <div class="grade"><b>B-</b><span class="lbl">종합</span></div>
     </div>
   </header>
+  <div class="note" style="margin:0 0 28px"><span class="lbl">오프라인 사본</span><p>이 파일은 저장소에 함께 두는 사본이다. 원본은 <a href="https://cse.jiun.dev/reviews/ITE4065.html">cse.jiun.dev</a>에 있고, 그쪽에서는 인용된 줄의 원본 코드를 그 자리에서 펼쳐 볼 수 있다.</p></div>
+  <div class="summary" role="group" aria-label="소견 요약"><span class="lbl">소견</span><a class="chip s-critical" href="#f01"><b>12</b> 치명적</a><a class="chip s-major" href="#f01"><b>11</b> 중대</a><a class="chip s-minor" href="#f01"><b>3</b> 경미</a><span class="total">합계 26</span></div>
 
   <section>
     <h2>총평</h2>
@@ -190,27 +299,22 @@ footer p + p{margin-top:6px}
     <p class="prose">패턴 집합에 대해 질의 문자열의 부분 일치를 찾고, 실행 중 패턴 추가(<code>A</code>)와 삭제(<code>D</code>)를 지원하는 과제. 저자는 Aho-Corasick 자동자를 표방했다.</p>
     <div class="stack-lg">
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3>제출 브랜치(master)에 스레드가 0개다</h3></header>
+      <article class="finding" id="f01" data-sev="critical">
+        <header><span class="tier">치명적</span><h3>제출 브랜치(master)에 스레드가 0개다</h3><a class="permalink" href="#f01" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>project1/src/main.cc</code>는 순수 싱글스레드다. <code>include/pool.h</code>에 스레드풀이 존재하지만 <code>main.cc</code> 어디서도 사용되지 않는다. 병렬 프로그래밍 과목의 첫 과제에서 기본 브랜치가 순차 코드인 것은 변명의 여지가 없다. <code>origin/multi</code> 브랜치에 병렬 버전이 있으나, 채점자가 <code>master</code>를 본다면 그것은 없는 것과 같다.</p>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>project1/README.md</b><span>· 저자 본인의 기록</span></div>
-          <pre>- [ ] Thread pool <span class="hl">(not in this version)</span>
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project1/README.md" target="_blank" rel="noopener"><b>project1/README.md</b></a><span>· 저자 본인의 기록</span></div><pre>- [ ] Thread pool <span class="hl">(not in this version)</span>
     - [ ] minimize cond lock
-    - [ ] find optimized thread size</pre>
-        </div>
+    - [ ] find optimized thread size</pre></div>
       </article>
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3>Aho-Corasick이 아니다</h3></header>
+      <article class="finding" id="f02" data-sev="critical">
+        <header><span class="tier">치명적</span><h3>Aho-Corasick이 아니다</h3><a class="permalink" href="#f02" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>README는 <code>- [x] make Failure Link and Output Link</code>로 체크되어 있지만, <code>include/ahocorasick.h</code> 어디에도 failure link를 구성하는 코드가 없다. <code>match()</code>는 모든 시작 위치마다 루트에서 트라이를 다시 타는 완전 탐색이다. 복잡도는 Aho-Corasick의 O(|q| + matches)가 아니라 <strong>O(|q| × L<sub>max</sub>)</strong>로, 실체는 “트라이로 최적화한 브루트포스”다. 이름과 문서가 구현을 잘못 광고하고 있다.</p>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>project1/include/ahocorasick.h</b><span>:45–68</span></div>
-          <pre><span class="cm">// 시작 위치마다 state_init에서 다시 출발 — failure link가 없다</span>
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project1/include/ahocorasick.h#L45-L68" target="_blank" rel="noopener"><b>project1/include/ahocorasick.h</b></a><span>:45–68</span><button class="expand" type="button" data-repo="ITE4065" data-path="project1/include/ahocorasick.h" data-start="45" data-end="68">전체 맥락</button></div><pre><span class="cm">// 시작 위치마다 state_init에서 다시 출발 — failure link가 없다</span>
 for (start = 0; start &lt; query.length(); start++) {
     string r = "";
     <span class="hl">state = state_init;</span>
@@ -223,26 +327,25 @@ for (start = 0; start &lt; query.length(); start++) {
             if (iter == result.end()) result.push_back(r);
         }
     } while ((state != -1) &amp;&amp; (pos &lt; query.length()));
-}</pre>
-        </div>
+}</pre></div>
       </article>
 
-      <article class="finding" data-sev="major">
-        <header><span class="tier">중대</span><h3>패턴 갱신이 전체 재구축이다</h3></header>
+      <article class="finding" id="f03" data-sev="major">
+        <header><span class="tier">중대</span><h3>패턴 갱신이 전체 재구축이다</h3><a class="permalink" href="#f03" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>sync()</code>(ahocorasick.h:102)는 <code>A</code>/<code>D</code> 이후 첫 질의에서 자동자 전체를 다시 만든다. 저자 본인의 주석에 <code>It's not necessary, and slow</code>라고 적혀 있고, README의 <code>- [ ] efficent delete algorithm</code>도 미완 표시다. 즉 <strong>이 과제에서 난이도가 몰려 있는 부분이 미해결 상태</strong>다.</p>
         </div>
       </article>
 
-      <article class="finding" data-sev="minor">
-        <header><span class="tier">경미</span><h3>쓰이지 않는 헬퍼에 남은 UB</h3></header>
+      <article class="finding" id="f04" data-sev="minor">
+        <header><span class="tier">경미</span><h3>쓰이지 않는 헬퍼에 남은 UB</h3><a class="permalink" href="#f04" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>include/unique.h:211</code>의 <code>unique::list::_insert(const T&amp;)</code>에 <code>return true</code>가 없다. 반환값을 사용하면 정의되지 않은 동작이다. 정작 이 클래스는 어디에서도 사용되지 않는다(dead code). 결함 자체보다 <em>쓰지도 않을 제네릭 컨테이너를 직접 만들었다</em>는 사실이 이 레포 전체의 우선순위 문제를 대변한다.</p>
         </div>
       </article>
 
-      <article class="finding" data-sev="major">
-        <header><span class="tier">중대</span><h3>multi 브랜치는 병렬화 축이 틀렸다</h3></header>
+      <article class="finding" id="f05" data-sev="major">
+        <header><span class="tier">중대</span><h3>multi 브랜치는 병렬화 축이 틀렸다</h3><a class="permalink" href="#f05" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>질의 하나를 <code>DEFAULT_THREAD_SIZE(17)</code>개로 쪼개 fork-join 한다. 질의 길이가 수십~수백 바이트면 <code>packaged_task</code> 할당 + 뮤텍스 큐 + <code>future::get</code> 비용이 매칭 본체보다 크다. 정석은 질의 <strong>간</strong> 파이프라인(입력 / 매칭 / 출력 순서 재배열)이다. 게다가 failure link가 없는 알고리즘을 그대로 병렬화했으므로, 잘못된 것을 빠르게 하는 구조다.</p>
         </div>
@@ -256,41 +359,36 @@ for (start = 0; start &lt; query.length(); start++) {
     <p class="prose">N개 스레드가 R개 레코드에 대해 읽기 1회·쓰기 2회로 구성된 트랜잭션을 수행하고, Readers-Writer 락과 2PL로 직렬성을 보장하며 데드락을 탐지해 abort하는 과제. 네 프로젝트 중 가장 상태가 나쁘다.</p>
     <div class="stack-lg">
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3>데드락 탐지가 실행되지 않는다</h3></header>
+      <article class="finding" id="f06" data-sev="critical">
+        <header><span class="tier">치명적</span><h3>데드락 탐지가 실행되지 않는다</h3><a class="permalink" href="#f06" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>330행의 <code>return true</code> 때문에 그 아래 <strong>wait-for 그래프 구성과 BFS 사이클 탐지 전체가 도달 불가능한 코드</strong>다. 실제 동작은 “데드락 탐지”가 아니라 <strong>“충돌하면 무조건 abort”</strong>다. 과제의 핵심 요구사항이 구현되어 있지 않다.</p>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>project2/include/container.hpp</b><span>:328–350</span></div>
-          <pre>bool assert_deadlock(Operation* request) {
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project2/include/container.hpp#L328-L350" target="_blank" rel="noopener"><b>project2/include/container.hpp</b></a><span>:328–350</span><button class="expand" type="button" data-repo="ITE4065" data-path="project2/include/container.hpp" data-start="328" data-end="350">전체 맥락</button></div><pre>bool assert_deadlock(Operation* request) {
     if (waiting[request-&gt;record_id()].empty()) return false;
     <span class="hl">return true;</span>                       <span class="cm">// ← 330행</span>
 
     <span class="cm">// 아래는 전부 실행되지 않는다</span>
     for (const auto&amp; wait : waiting[request-&gt;record_id()]) { ... }
     while (!qupend.empty()) { ... }       <span class="cm">// 사이클 탐지 BFS</span>
-}</pre>
-        </div>
+}</pre></div>
       </article>
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3>연쇄 결과 — README가 자랑한 RW 뮤텍스가 한 번도 대기하지 않는다</h3></header>
+      <article class="finding" id="f07" data-sev="critical">
+        <header><span class="tier">치명적</span><h3>연쇄 결과 — README가 자랑한 RW 뮤텍스가 한 번도 대기하지 않는다</h3><a class="permalink" href="#f07" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>락 보유자는 항상 <code>waiting[rid]</code>에 엔트리를 남긴다. 따라서 <code>try_acquire</code> 실패는 곧 <code>waiting[rid]</code>가 비어 있지 않음을 뜻하고, 위 결함에 의해 <strong>모든 충돌이 예외 없이 abort</strong>된다. 그 결과 블로킹 <code>acquire()</code>로 가는 <code>try_failed</code> 분기도 도달 불가능해진다.</p>
           <p>즉 README가 가장 길게 설명한 산출물 — 획득 순서를 보장하는 <code>thread::safe::Mutex</code>의 <code>lock()</code> / <code>lock_shared()</code> 대기 로직 — 이 <strong>프로그램 수명 동안 단 한 번도 실행되지 않는다.</strong> 실제로 쓰이는 것은 <code>try_lock</code> / <code>try_lock_shared</code>뿐이다. 노력의 대부분이 죽은 코드에 들어갔다.</p>
         </div>
       </article>
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3>그 뮤텍스 자체도 깨져 있다</h3></header>
+      <article class="finding" id="f08" data-sev="critical">
+        <header><span class="tier">치명적</span><h3>그 뮤텍스 자체도 깨져 있다</h3><a class="permalink" href="#f08" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>try_lock()</code>(mutex.hpp:50)은 FIFO 순서를 무시하고 <code>waiter</code> 큐 <strong>뒤에</strong> 자신을 넣으면서 <code>writing = true</code>로 만든다. 반면 <code>unlock()</code>은 “첫 번째 writer 엔트리”를 지운다. 따라서 <strong>대기 중인 다른 writer의 엔트리를 지울 수 있고</strong>, 그 writer는 영원히 만족될 수 없는 조건을 기다린다.</p>
           <p>또한 <code>do { wait(lock, pred); } while (writing);</code> 구조는, <code>wait(lock, pred)</code>가 술어가 참이면 <em>즉시 반환</em>한다는 점에서 위험하다. 이 상태에 빠지면 내부 <code>mutex</code>를 쥔 채 tight spin이 되고, <code>unlock()</code>이 그 뮤텍스를 얻지 못해 영구 정지한다.</p>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>project2/include/mutex.hpp</b><span>:36–42, 50–62</span></div>
-          <pre>waiter.emplace_back(true, tid);
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project2/include/mutex.hpp#L36-L42" target="_blank" rel="noopener"><b>project2/include/mutex.hpp</b></a><span>:36–42, 50–62</span><button class="expand" type="button" data-repo="ITE4065" data-path="project2/include/mutex.hpp" data-start="36" data-end="42">전체 맥락</button></div><pre>waiter.emplace_back(true, tid);
 do {
     writer.wait(lock, [&amp;w = this-&gt;waiter, tid](){
         return w.front() == std::make_pair(true, tid);
@@ -301,42 +399,38 @@ bool try_lock(size_t tid = 0) {
     if (writing || 0 &lt; reader_count) return false;
     <span class="hl">waiter.emplace_back(true, tid);</span>  <span class="cm">// 큐 맨 뒤에 넣고 락은 지금 획득</span>
     writing = true; return true;
-}</pre>
-        </div>
+}</pre></div>
       </article>
 
-      <article class="finding" data-sev="major">
-        <header><span class="tier">중대</span><h3>abort 경로마다 새는 메모리와 남는 dangling pointer</h3></header>
+      <article class="finding" id="f09" data-sev="major">
+        <header><span class="tier">중대</span><h3>abort 경로마다 새는 메모리와 남는 dangling pointer</h3><a class="permalink" href="#f09" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>container.hpp:167–169</code>에서 첫 연산이 abort될 때 <code>new</code>로 만든 <code>Operation</code> 3개를 해제하지 않는다. 위에서 보았듯 <em>모든</em> 충돌이 abort이므로 상시 누수다.</p>
           <p>더 나쁜 것은 overflow abort 경로다. <code>waiting[]</code>에 등록된 포인터를 제거하지 않은 채 <code>undo()</code>가 그 객체를 <code>delete</code>한다. <code>waiting</code>에 <strong>해제된 포인터가 영구히 남고</strong>, 그 레코드를 건드리는 이후 모든 트랜잭션은 영원히 abort한다.</p>
         </div>
       </article>
 
-      <article class="finding" data-sev="major">
-        <header><span class="tier">중대</span><h3>커밋 카운터가 초기화되지 않았고 락 없이 읽힌다</h3></header>
+      <article class="finding" id="f10" data-sev="major">
+        <header><span class="tier">중대</span><h3>커밋 카운터가 초기화되지 않았고 락 없이 읽힌다</h3><a class="permalink" href="#f10" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>container.hpp:313</code>의 <code>T count;</code>는 생성자 초기화 리스트에 없고 기본 멤버 초기자도 없다. 커밋 ID와 종료 조건(<code>order() &gt; e</code>)이 미정의 값에서 출발한다. 게다가 <code>order()</code>는 <code>global</code> 뮤텍스 없이 <code>count</code>를 읽어 데이터 레이스다.</p>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>project2/include/container.hpp</b><span>:311–316</span></div>
-          <pre>std::mutex global;
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project2/include/container.hpp#L311-L316" target="_blank" rel="noopener"><b>project2/include/container.hpp</b></a><span>:311–316</span><button class="expand" type="button" data-repo="ITE4065" data-path="project2/include/container.hpp" data-start="311" data-end="316">전체 맥락</button></div><pre>std::mutex global;
 
 <span class="hl">T count;</span>                             <span class="cm">// 초기화 없음</span>
 std::vector&lt;record*&gt; records;
-std::vector&lt;std::set&lt;size_t&gt;&gt; depend;</pre>
-        </div>
+std::vector&lt;std::set&lt;size_t&gt;&gt; depend;</pre></div>
       </article>
 
-      <article class="finding" data-sev="major">
-        <header><span class="tier">중대</span><h3>설계 차원의 아이러니 — 전역 뮤텍스</h3></header>
+      <article class="finding" id="f11" data-sev="major">
+        <header><span class="tier">중대</span><h3>설계 차원의 아이러니 — 전역 뮤텍스</h3><a class="permalink" href="#f11" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>transaction()</code>의 모든 락 획득·해제·커밋이 단 하나의 <code>std::mutex global</code> 안에서 일어난다. per-record RW 락을 만든 의미가 사라지고 사실상 전역 직렬화다. <strong>Project 4에서 저자가 비판한 <code>lock_sys-&gt;mutex</code> 병목을 Project 2에서 스스로 재현한 셈</strong>이다.</p>
         </div>
       </article>
 
-      <article class="finding" data-sev="minor">
-        <header><span class="tier">경미</span><h3>정확성의 증거가 레포에 없다</h3></header>
+      <article class="finding" id="f12" data-sev="minor">
+        <header><span class="tier">경미</span><h3>정확성의 증거가 레포에 없다</h3><a class="permalink" href="#f12" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>정답 검증 스크립트 <code>test.py</code>는 동료(Sangchul Lee)의 것이고 — 출처를 명시한 것은 옳다 — <strong>실행 결과가 하나도 커밋되어 있지 않다.</strong> 이 프로젝트가 옳게 동작했다는 증거가 레포에 존재하지 않는다. 또한 표준 라이브러리 분기를 <code>#if defined(__GNUC__) &amp;&amp; (__GNUC__ &lt; 7)</code>로 했는데, clang은 <code>__GNUC__ = 4</code>를 정의한다. 실제로 현재 빌드하면 <code>fatal error: 'experimental/string_view' file not found</code>로 죽는다. <code>__has_include</code>를 봤어야 한다.</p>
         </div>
@@ -350,25 +444,22 @@ std::vector&lt;std::set&lt;size_t&gt;&gt; depend;</pre>
     <p class="prose">N개 스레드가 각자의 레지스터를 갱신하면서, 어떤 스레드도 다른 스레드를 기다리지 않고(wait-free) 전체 배열의 일관된 스냅샷을 얻는 자료구조. 알고리즘 골격은 Herlihy–Shavit의 표준 구성을 정확히 따랐다. 문제는 그 아래층이다.</p>
     <div class="stack-lg">
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3><code>atomic::Snapshot</code>에 <code>std::atomic</code>이 없다</h3></header>
+      <article class="finding" id="f13" data-sev="critical">
+        <header><span class="tier">치명적</span><h3><code>atomic::Snapshot</code>에 <code>std::atomic</code>이 없다</h3><a class="permalink" href="#f13" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>이 알고리즘의 정확성 증명은 <strong>“레지스터의 읽기/쓰기가 원자적이고 순서가 보인다”</strong>를 전제한다. 코드에는 그 전제가 없다. x86에서 정렬된 포인터 저장이 찢어지지는 않지만, 메모리 배리어도 <code>volatile</code>도 없어 <code>-O3</code>에서 컴파일러가 객체 초기화와 저장을 재배열하거나 <code>table[i]</code> 로드를 루프 밖으로 끌어낼 수 있다. C++ 표준상으로는 그냥 data race, 즉 정의되지 않은 동작이다. 네임스페이스가 <code>atomic</code>인데 원자 연산이 0개다.</p>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>project3/include/snapshot.hpp</b><span>:117–121, 78–82</span></div>
-          <pre><span class="hl">std::valarray&lt;StampedSnap*&gt; table;</span>   <span class="cm">// 평범한 포인터 배열</span>
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project3/include/snapshot.hpp#L117-L121" target="_blank" rel="noopener"><b>project3/include/snapshot.hpp</b></a><span>:117–121, 78–82</span><button class="expand" type="button" data-repo="ITE4065" data-path="project3/include/snapshot.hpp" data-start="117" data-end="121">전체 맥락</button></div><pre><span class="hl">std::valarray&lt;StampedSnap*&gt; table;</span>   <span class="cm">// 평범한 포인터 배열</span>
 <span class="hl">std::valarray&lt;bool&gt; moved;</span>           <span class="cm">// 전 스레드 공유 (아래 참조)</span>
 std::valarray&lt;std::queue&lt;StampedSnap*&gt;&gt; trash;
 
 <span class="cm">// update() 안 — 평범한 저장, 배리어 없음</span>
 StampedSnap* new_value = new StampedSnap(value, old_value-&gt;get_stamp() + 1, snap);
-<span class="hl">table[tid] = new_value;</span></pre>
-        </div>
+<span class="hl">table[tid] = new_value;</span></pre></div>
       </article>
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3><code>moved</code> 배열이 스레드 간 공유다</h3></header>
+      <article class="finding" id="f14" data-sev="critical">
+        <header><span class="tier">치명적</span><h3><code>moved</code> 배열이 스레드 간 공유다</h3><a class="permalink" href="#f14" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>원 알고리즘에서 <code>moved[]</code>는 <strong>각 scan 호출의 지역 상태</strong>다. 여기서는 <code>Snapshot</code>의 멤버라 모든 스레드가 공유한다. 두 가지가 동시에 깨진다.</p>
           <ul>
@@ -376,37 +467,31 @@ StampedSnap* new_value = new StampedSnap(value, old_value-&gt;get_stamp() + 1, s
             <li>다른 스레드가 세워둔 <code>moved[i]</code>를 보고 “i가 두 번 움직였다”고 오판한다 → <strong>내 scan 시작보다 이전의 스냅샷을 정답으로 반환</strong>한다. 선형화 지점이 존재하지 않는 값을 돌려주는 것이므로 정확성 결함이다.</li>
           </ul>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>project3/include/snapshot.hpp</b><span>:88–100 (scan 내부)</span></div>
-          <pre>std::valarray&lt;StampedSnap*&gt; old_value = table;
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project3/include/snapshot.hpp#L88-L100" target="_blank" rel="noopener"><b>project3/include/snapshot.hpp</b></a><span>:88–100 (scan 내부)</span><button class="expand" type="button" data-repo="ITE4065" data-path="project3/include/snapshot.hpp" data-start="88" data-end="100">전체 맥락</button></div><pre>std::valarray&lt;StampedSnap*&gt; old_value = table;
 <span class="hl">std::fill(std::begin(moved), std::end(moved), false);</span>  <span class="cm">// 공유 상태를 리셋</span>
 ...
 if (old_value[i]-&gt;get_stamp() != new_value[i]-&gt;get_stamp()) {
     if (<span class="hl">moved[i]</span>) return old_value[i]-&gt;get_snap();  <span class="cm">// 남의 플래그일 수 있음</span>
     else { flag = moved[i] = true; old_value = new_value; break; }
-}</pre>
-        </div>
+}</pre></div>
       </article>
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3>벤치마크가 스냅샷 성능을 측정하지 않는다</h3></header>
+      <article class="finding" id="f15" data-sev="critical">
+        <header><span class="tier">치명적</span><h3>벤치마크가 스냅샷 성능을 측정하지 않는다</h3><a class="permalink" href="#f15" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>출력되는 숫자는 <strong>메인 스레드가 큐에 넣은 태스크 수</strong>이지 완료된 update 수가 아니다. 게다가 모든 <code>future</code>를 60초 내내 보관한다.</p>
           <p>직접 빌드해 돌린 결과(<code>g++ -O2</code>, 4스레드, 2초): <code>update : 2161742</code>, <strong>maximum resident set size 368,967,680 바이트</strong>. 60초로 환산하면 10GB급이다. 따라서 <code>results/out_SCS</code>의 56M, <code>out_server2</code>의 98M도 전부 push 카운트이고, <code>result.png</code>는 사실상 <strong>“단일 생산자 + 뮤텍스 하나짜리 태스크 큐”의 처리량 그래프</strong>다.</p>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>project3/src/main.cc</b><span>:39–46</span></div>
-          <pre>while (!pool.is_stop()) {
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project3/src/main.cc#L39-L46" target="_blank" rel="noopener"><b>project3/src/main.cc</b></a><span>:39–46</span><button class="expand" type="button" data-repo="ITE4065" data-path="project3/src/main.cc" data-start="39" data-end="46">전체 맥락</button></div><pre>while (!pool.is_stop()) {
     <span class="hl">tasks.emplace(</span>pool.push([&amp;snapshot, v=random.next()](size_t tid) {
         snapshot.update(tid, v);
     }));                          <span class="cm">// future를 전부 보관 → 메모리 폭증</span>
 }
-std::cout &lt;&lt; "update : " &lt;&lt; <span class="hl">tasks.size()</span> &lt;&lt; '\n';  <span class="cm">// 완료 수가 아니라 push 수</span></pre>
-        </div>
+std::cout &lt;&lt; "update : " &lt;&lt; <span class="hl">tasks.size()</span> &lt;&lt; '\n';  <span class="cm">// 완료 수가 아니라 push 수</span></pre></div>
       </article>
 
-      <article class="finding" data-sev="major">
-        <header><span class="tier">중대</span><h3>“왜 코어 많은 서버가 더 느린가”의 답</h3></header>
+      <article class="finding" id="f16" data-sev="major">
+        <header><span class="tier">중대</span><h3>“왜 코어 많은 서버가 더 느린가”의 답</h3><a class="permalink" href="#f16" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>README는 <em>“I do not understand why SCSLab Server's return low performance than others”</em>로 끝난다. 원인은 다섯 가지가 겹친 것이며, 전부 코드에서 확인된다.</p>
         </div>
@@ -427,8 +512,8 @@ std::cout &lt;&lt; "update : " &lt;&lt; <span class="hl">tasks.size()</span> &lt
         </div>
       </article>
 
-      <article class="finding" data-sev="major">
-        <header><span class="tier">중대</span><h3>메모리 회수가 “1000개면 괜찮겠지”다</h3></header>
+      <article class="finding" id="f17" data-sev="major">
+        <header><span class="tier">중대</span><h3>메모리 회수가 “1000개면 괜찮겠지”다</h3><a class="permalink" href="#f17" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>trash[tid]</code>에 1000개가 쌓이면 <code>delete</code>한다(snapshot.hpp:75). 그 순간 다른 스레드의 <code>scan()</code>이 <code>old_value[i]</code>로 그 포인터를 들고 있을 수 있다 → <strong>use-after-free</strong>. hazard pointer나 epoch reclamation이 필요한 자리를 상수 지연으로 대체했고, 주석에도 근거 없이 <code>I think do not need</code>라고만 적혀 있다. 초당 100만 회 갱신에서 1000회는 1밀리초도 되지 않는 유예다.</p>
         </div>
@@ -446,54 +531,46 @@ std::cout &lt;&lt; "update : " &lt;&lt; <span class="hl">tasks.size()</span> &lt
     <p class="prose">MariaDB 10.2 InnoDB의 락 매니저는 <code>lock_sys-&gt;mutex</code> 하나로 보호되어 코어 수가 늘면 병목이 된다. 이를 latch-free 설계로 바꿔 확장성을 확보하는 과제. 난이도와 야심 면에서 네 개 중 압도적이며, 설계 다이어그램·<code>perf</code> 전후 비교·원본 로그까지 갖춘 유일한 프로젝트다. 그러나 성능 향상의 상당 부분이 <strong>락을 걸지 않아서</strong> 나왔다.</p>
     <div class="stack-lg">
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3>충돌 검사가 존재하지 않는다</h3></header>
+      <article class="finding" id="f18" data-sev="critical">
+        <header><span class="tier">치명적</span><h3>충돌 검사가 존재하지 않는다</h3><a class="permalink" href="#f18" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>lock_rec_lock_fast</code>가 항상 새 락을 만들고 성공을 반환하므로, 충돌 검사(<code>lock_rec_other_has_conflicting</code>)·대기 큐 등록·데드락 탐지를 담당하는 <code>lock_rec_lock_slow</code>가 <strong>절대 호출되지 않는다</strong>. 저자 본인의 주석에도 그렇게 적혀 있다. <code>lock_set_lock_and_trx_wait</code>도 <code>#ifndef ITE4065</code>로 제거되어 어떤 트랜잭션도 락을 기다리지 않는다.</p>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>storage/innobase/lock/lock0lock.cc</b><span>:2612–2618, 2755–2757</span></div>
-          <pre>RecLock rec_lock(index, block, heap_no, mode);
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project4/mariadb/server/storage/innobase/lock/lock0lock.cc#L2612-L2618" target="_blank" rel="noopener"><b>storage/innobase/lock/lock0lock.cc</b></a><span>:2612–2618, 2755–2757</span><button class="expand" type="button" data-repo="ITE4065" data-path="project4/mariadb/server/storage/innobase/lock/lock0lock.cc" data-start="2612" data-end="2618">전체 맥락</button></div><pre>RecLock rec_lock(index, block, heap_no, mode);
 trx_mutex_enter(trx);
 rec_lock.create(NULL, trx, true, true);      <span class="cm">// 무조건 생성</span>
 trx_mutex_exit(trx);
 <span class="hl">status = LOCK_REC_SUCCESS_CREATED;</span>           <span class="cm">// 항상 성공</span>
 
-<span class="cm">//Jiun: Atomic lock append with no-fail. so, lock_rec_lock_slow will never call</span></pre>
-        </div>
+<span class="cm">//Jiun: Atomic lock append with no-fail. so, lock_rec_lock_slow will never call</span></pre></div>
       </article>
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3>락 객체가 “어떤 레코드”인지 모른다</h3></header>
+      <article class="finding" id="f19" data-sev="critical">
+        <header><span class="tier">치명적</span><h3>락 객체가 “어떤 레코드”인지 모른다</h3><a class="permalink" href="#f19" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>lock_alloc</code>이 <code>ut_malloc_nokey(sizeof(lock_t))</code>만 할당하고, <code>n_bits</code> 설정과 <code>lock_rec_set_nth_bit(lock, rec_id.m_heap_no)</code>를 건너뛴다. InnoDB는 레코드 비트맵으로 락 대상을 식별하는데 그 비트맵이 없다. <strong>충돌 검사를 하고 싶어도 정보가 없어 불가능</strong>하다.</p>
           <p>따라서 이것은 “확장 가능한 락 매니저”가 아니라 <strong>“락을 걸지 않는 락 매니저”</strong>다. read-only 워크로드는 S락끼리 어차피 충돌하지 않으므로 Milestone 1의 결과는 우연히 맞지만, <strong>Milestone 2(read/write)는 격리 수준이 사실상 사라진다.</strong> README의 <em>“I ran the sysbench test to write to it, but it was not a problem”</em>은 증거가 되지 못한다 — sysbench <code>oltp_read_write</code>는 쿼리 성공 여부만 보고 직렬성을 검증하지 않는다. 바로 다음 줄의 <em>“I am expecting that someday it'll get an error”</em>가 정확한 진단이다.</p>
         </div>
       </article>
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3>힙 오버플로우 — 포인터 크기만 할당하고 구조체로 쓴다</h3></header>
+      <article class="finding" id="f20" data-sev="critical">
+        <header><span class="tier">치명적</span><h3>힙 오버플로우 — 포인터 크기만 할당하고 구조체로 쓴다</h3><a class="permalink" href="#f20" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>sizeof(hash_cell_t*)</code>는 8바이트인데 <code>hash_cell_t</code>는 <code>{node, tail, head}</code>로 24바이트다. 16바이트를 힙 밖에 쓴다.</p>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>storage/innobase/lock/lock0lock.cc</b><span>:509–512</span></div>
-          <pre><span class="cm">//Jiun: Initialize gclist</span>
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project4/mariadb/server/storage/innobase/lock/lock0lock.cc#L509-L512" target="_blank" rel="noopener"><b>storage/innobase/lock/lock0lock.cc</b></a><span>:509–512</span><button class="expand" type="button" data-repo="ITE4065" data-path="project4/mariadb/server/storage/innobase/lock/lock0lock.cc" data-start="509" data-end="512">전체 맥락</button></div><pre><span class="cm">//Jiun: Initialize gclist</span>
 lock_sys-&gt;gclist = static_cast&lt;hash_cell_t*&gt;(ut_malloc_nokey(<span class="hl">sizeof(hash_cell_t*)</span>));
 lock_sys-&gt;gclist-&gt;head = NULL;     <span class="cm">// offset 16 — 할당 범위 밖</span>
-lock_sys-&gt;gclist-&gt;tail = lock_sys-&gt;gclist-&gt;head;</pre>
-        </div>
+lock_sys-&gt;gclist-&gt;tail = lock_sys-&gt;gclist-&gt;head;</pre></div>
       </article>
 
-      <article class="finding" data-sev="critical">
-        <header><span class="tier">치명적</span><h3>GC가 사실상 동작하지 않는다 — 타임스탬프 부여 시점 버그</h3></header>
+      <article class="finding" id="f21" data-sev="critical">
+        <header><span class="tier">치명적</span><h3>GC가 사실상 동작하지 않는다 — 타임스탬프 부여 시점 버그</h3><a class="permalink" href="#f21" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>물리 삭제는 실행 중 트랜잭션의 최소 타임스탬프를 구해 <code>cur_lock-&gt;timestamp &lt; min_timestamp</code>인 락만 해제한다. 그런데 <strong>ACTIVE 트랜잭션의 timestamp는 항상 0</strong>이다. 타임스탬프가 커밋 시점에만 부여되기 때문이다. 활성 트랜잭션이 하나라도 있으면 <code>min_timestamp = 0</code>이 되어 조건이 절대 참이 되지 않고, <strong>락이 영원히 회수되지 않는다.</strong></p>
           <p>README의 <em>“종료 전에 시간을 충분히 줘야 한다”</em>, <em>“mysqld가 메모리가 안 비워졌다며 에러를 낸다”</em>는 증상이 정확히 이것이다. 저자는 이를 <em>설계의 한계</em>(“victim 하나가 전부 처리해서 느리다”)로 서술했지만, 실제 원인은 두 줄짜리 시점 버그다. 시작 시점에 타임스탬프를 부여하면 대부분 해소된다.</p>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>storage/innobase/trx/trx0trx.cc</b><span>:214–216 · 2015–2017</span></div>
-          <pre><span class="cm">// 트랜잭션 초기화</span>
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project4/mariadb/server/storage/innobase/trx/trx0trx.cc#L214-L216" target="_blank" rel="noopener"><b>storage/innobase/trx/trx0trx.cc</b></a><span>:214–216 · 2015–2017</span><button class="expand" type="button" data-repo="ITE4065" data-path="project4/mariadb/server/storage/innobase/trx/trx0trx.cc" data-start="214" data-end="216">전체 맥락</button></div><pre><span class="cm">// 트랜잭션 초기화</span>
 #ifdef ITE4065
     <span class="hl">trx-&gt;timestamp = 0;</span>
 #endif
@@ -501,25 +578,21 @@ lock_sys-&gt;gclist-&gt;tail = lock_sys-&gt;gclist-&gt;head;</pre>
 <span class="cm">// ... 그리고 커밋 시점에서야 값이 들어간다</span>
 #ifdef ITE4065
     <span class="hl">trx-&gt;timestamp = __sync_fetch_and_add(&amp;trx_sys-&gt;timestamp, 1);</span>
-#endif</pre>
-        </div>
+#endif</pre></div>
       </article>
 
-      <article class="finding" data-sev="major">
-        <header><span class="tier">중대</span><h3>컴파일러가 지워버릴 수 있는 스핀</h3></header>
+      <article class="finding" id="f22" data-sev="major">
+        <header><span class="tier">중대</span><h3>컴파일러가 지워버릴 수 있는 스핀</h3><a class="permalink" href="#f22" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>원자 로드도 <code>volatile</code>도 배리어도 없다. <code>-O2</code>에서 로드가 루프 밖으로 hoist되면 무한 루프다. <code>__sync_*</code> 빌트인은 그 자체로 배리어지만, 그 사이의 평범한 읽기(<code>state</code>, <code>hash</code>, <code>head</code>)는 전혀 보호되지 않는다. 또 <code>trx_sys-&gt;mysql_trx_list</code> 순회를 <code>trx_sys-&gt;mutex</code> 없이 수행한다(1740행, 7937행).</p>
         </div>
-        <div class="ev">
-          <div class="ev-head"><b>storage/innobase/lock/lock0lock.cc</b><span>:3303–3306</span></div>
-          <pre><span class="cm">//Jiun: If next_lock is logically deleted,</span>
+        <div class="ev" data-linked="1"><div class="ev-head"><a class="src" href="https://github.com/jiunbae/ITE4065/blob/HEAD/project4/mariadb/server/storage/innobase/lock/lock0lock.cc#L3303-L3306" target="_blank" rel="noopener"><b>storage/innobase/lock/lock0lock.cc</b></a><span>:3303–3306</span><button class="expand" type="button" data-repo="ITE4065" data-path="project4/mariadb/server/storage/innobase/lock/lock0lock.cc" data-start="3303" data-end="3306">전체 맥락</button></div><pre><span class="cm">//Jiun: If next_lock is logically deleted,</span>
 <span class="cm">//      connect to next_lock-&gt;hash, wait for new transaction</span>
-<span class="hl">while (next_lock-&gt;hash == NULL &amp;&amp; cell3333-&gt;tail != next_lock);</span></pre>
-        </div>
+<span class="hl">while (next_lock-&gt;hash == NULL &amp;&amp; cell3333-&gt;tail != next_lock);</span></pre></div>
       </article>
 
-      <article class="finding" data-sev="major">
-        <header><span class="tier">중대</span><h3>성능 해석이 낙관적이다 — 64스레드 이하에서는 더 느리다</h3></header>
+      <article class="finding" id="f23" data-sev="major">
+        <header><span class="tier">중대</span><h3>성능 해석이 낙관적이다 — 64스레드 이하에서는 더 느리다</h3><a class="permalink" href="#f23" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p><code>results/</code>의 원본 sysbench 로그를 직접 집계했다(<code>th*</code> = enhanced, <code>oth*</code> = base, <code>result.png</code>로 교차 확인).</p>
         </div>
@@ -539,8 +612,8 @@ lock_sys-&gt;gclist-&gt;tail = lock_sys-&gt;gclist-&gt;head;</pre>
         </div>
       </article>
 
-      <article class="finding" data-sev="minor">
-        <header><span class="tier">경미</span><h3>제출 상태의 위생과 재현성</h3></header>
+      <article class="finding" id="f24" data-sev="minor">
+        <header><span class="tier">경미</span><h3>제출 상태의 위생과 재현성</h3><a class="permalink" href="#f24" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <ul>
             <li><code>cell3333</code> 같은 디버깅기 변수명이 최종 제출본에 남아 있다.</li>
@@ -562,14 +635,14 @@ lock_sys-&gt;gclist-&gt;tail = lock_sys-&gt;gclist-&gt;head;</pre>
   <section>
     <h2>저장소 차원</h2>
     <div class="stack">
-      <article class="finding" data-sev="major">
-        <header><span class="tier">중대</span><h3>MariaDB 전체 트리를 그대로 커밋했다</h3></header>
+      <article class="finding" id="f25" data-sev="major">
+        <header><span class="tier">중대</span><h3>MariaDB 전체 트리를 그대로 커밋했다</h3><a class="permalink" href="#f25" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>추적 파일 24,565개 중 <strong>24,428개가 <code>project4/mariadb</code></strong>다. fork + 패치나 submodule + patch였다면 실제 기여(수백 줄)가 diff 하나로 드러났을 텐데, 지금은 <code>grep ITE4065</code>를 해야만 보인다. <strong>리뷰 가능성 자체를 잃었고</strong>, 포트폴리오로서의 가치도 그만큼 깎인다. Xcode <code>Instruments.trace</code> 204개 파일도 함께 커밋되어 있다.</p>
         </div>
       </article>
-      <article class="finding" data-sev="major">
-        <header><span class="tier">중대</span><h3>라이선스 충돌</h3></header>
+      <article class="finding" id="f26" data-sev="major">
+        <header><span class="tier">중대</span><h3>라이선스 충돌</h3><a class="permalink" href="#f26" aria-label="이 소견으로 가는 링크">#</a></header>
         <div class="prose">
           <p>루트 <code>LICENSE</code>는 MIT인데 트리 안에 GPLv2인 MariaDB 소스가 통째로 들어 있다. GPL 코드를 MIT로 재배포할 수 없다. 공개 GitHub 저장소이므로 실제 문제다. 개별 수정 파일의 GPL 헤더를 보존하고 <code>ite4065.h</code>에 GPL 헤더를 직접 붙인 것은 좋은 감각이었다 — 루트 <code>LICENSE</code>만 어긋난다.</p>
         </div>
@@ -602,6 +675,112 @@ lock_sys-&gt;gclist-&gt;tail = lock_sys-&gt;gclist-&gt;head;</pre>
   <footer>
     <p>평가 대상: <code>github.com/jiunbae/ITE4065</code> · 커밋 359개 · 추적 파일 24,565개 · 마지막 푸시 2021-08-08(작업은 2017년 가을학기)</p>
     <p>검증 방식: 네 프로젝트의 전체 소스 정독, <code>origin/multi</code>·<code>origin/single</code> 브랜치 대조, Project 4의 <code>ITE4065</code> 매크로 블록 전수 확인, <code>results/</code>의 sysbench 원본 로그 재집계. Project 2·3은 실제로 컴파일을 시도했고 Project 3은 <code>g++ -O2</code>로 빌드해 4스레드 2초 실행 후 RSS를 측정했다. 인용된 행 번호는 모두 현재 <code>master</code> 기준 실측값이다.</p>
+  
+  <details class="prompt">
+    <summary>이 보고서를 만든 프롬프트</summary>
+    <div class="prompt-body">
+      <p>저장소마다 리뷰어 한 명이 아래 지시로 독립 조사했다. 공통 지침은 <a href="https://cse.jiun.dev/method.html">방법론</a>에 전문이 있다.</p>
+      <pre class="code">이 저장소는 상위 에이전트가 직접 조사했다. 네 프로젝트(Signal / Two-Phase Locking / Wait-Free Snapshot / Scalable Lock Manager)의 전체 소스를 정독하고, origin/multi·origin/single 브랜치를 대조했으며, project4의 ITE4065 매크로 블록을 전수 확인했다. results/의 sysbench 원본 로그를 재집계하고, Project 3은 g++ -O2로 빌드해 4스레드 2초 실행 후 RSS를 측정했다.</pre>
+    </div>
+  </details>
   </footer>
 
 </div>
+<script>
+(function(){
+  "use strict";
+  // ---- 1. expandable source from raw.githubusercontent ----
+  document.addEventListener("click", async function(e){
+    var b = e.target.closest(".expand"); if(!b) return;
+    var ev = b.closest(".ev"); var open = ev.querySelector(".ev-more");
+    if(open){ open.remove(); b.textContent="전체 맥락"; return; }
+    b.textContent="불러오는 중…"; b.disabled = true;
+    var repo=b.dataset.repo, path=b.dataset.path,
+        s=parseInt(b.dataset.start,10), t=parseInt(b.dataset.end,10)||s;
+    var box=document.createElement("div"); box.className="ev-more";
+    try{
+      var url="https://raw.githubusercontent.com/jiunbae/"+repo+"/HEAD/"+path
+              .split("/").map(encodeURIComponent).join("/");
+      var res=await fetch(url); if(!res.ok) throw new Error("HTTP "+res.status);
+      var lines=(await res.text()).split("\n");
+      var from=Math.max(1,s-15), to=Math.min(lines.length,t+15);
+      var pre=document.createElement("pre");
+      for(var i=from;i<=to;i++){
+        var row=document.createElement(i>=s&&i<=t?"mark":"span");
+        var n=document.createElement("span"); n.className="ln"; n.textContent=i;
+        row.appendChild(n); row.appendChild(document.createTextNode(lines[i-1]+"\n"));
+        pre.appendChild(row);
+      }
+      box.appendChild(pre);
+    }catch(err){
+      var d=document.createElement("div"); d.className="err";
+      d.textContent="원본을 불러오지 못했습니다 ("+err.message+"). 위 파일명을 눌러 GitHub에서 확인하세요.";
+      box.appendChild(d);
+    }
+    ev.appendChild(box); b.textContent="접기"; b.disabled=false;
+  });
+
+  // ---- 2. severity filter on report pages ----
+  var findings = document.querySelectorAll(".finding[data-sev]");
+  if(findings.length > 2){
+    var counts={critical:0,major:0,minor:0};
+    findings.forEach(function(f){ var k=f.dataset.sev; if(k in counts) counts[k]++; });
+    var host = document.querySelector("section");
+    if(host){
+      var bar=document.createElement("div"); bar.className="filters";
+      bar.innerHTML='<span class="lbl">심각도</span>';
+      [["all","전체",findings.length],["critical","치명적",counts.critical],
+       ["major","중대",counts.major],["minor","경미",counts.minor]].forEach(function(o){
+        if(o[0]!=="all" && !o[2]) return;
+        var btn=document.createElement("button");
+        btn.type="button"; btn.dataset.sev=o[0];
+        btn.setAttribute("aria-pressed", o[0]==="all");
+        btn.textContent=o[1]+" "+o[2];
+        bar.appendChild(btn);
+      });
+      host.parentNode.insertBefore(bar, host);
+      bar.addEventListener("click", function(e){
+        var b=e.target.closest("button"); if(!b) return;
+        bar.querySelectorAll("button").forEach(function(x){
+          x.setAttribute("aria-pressed", x===b); });
+        var want=b.dataset.sev;
+        findings.forEach(function(f){
+          f.hidden = (want!=="all" && f.dataset.sev!==want); });
+      });
+    }
+  }
+
+  // ---- 3. index: grade / year filter ----
+  var rows=document.querySelectorAll(".row");
+  if(rows.length>4 && document.querySelector(".yr")){
+    var grades=[...new Set([...rows].map(function(r){
+      var g=r.querySelector(".rg"); return g?g.textContent.trim():""; }))].filter(Boolean).sort();
+    var sec=document.querySelector(".yr").parentNode;
+    var bar=document.createElement("div"); bar.className="filters";
+    bar.innerHTML='<span class="lbl">등급</span>';
+    [["all","전체"]].concat(grades.map(function(g){return [g,g];})).forEach(function(o){
+      var b=document.createElement("button"); b.type="button"; b.dataset.g=o[0];
+      b.setAttribute("aria-pressed", o[0]==="all"); b.textContent=o[1];
+      bar.appendChild(b);
+    });
+    sec.insertBefore(bar, document.querySelector(".yr"));
+    bar.addEventListener("click", function(e){
+      var b=e.target.closest("button"); if(!b) return;
+      bar.querySelectorAll("button").forEach(function(x){ x.setAttribute("aria-pressed", x===b); });
+      var want=b.dataset.g;
+      rows.forEach(function(r){
+        var g=r.querySelector(".rg"); var m = want==="all" || (g && g.textContent.trim()===want);
+        r.style.display = m ? "" : "none";
+      });
+      document.querySelectorAll(".yr").forEach(function(y){
+        var n=0, el=y.nextElementSibling;
+        while(el && el.classList.contains("row")){ if(el.style.display!=="none") n++; el=el.nextElementSibling; }
+        y.style.display = n ? "" : "none";
+      });
+    });
+  }
+})();
+
+</script>
+</body>
+</html>
